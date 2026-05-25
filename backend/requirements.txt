@@ -1,0 +1,9 @@
+# Core — reliable on Python 3.14, no native build steps required
+fastapi>=0.110
+uvicorn>=0.29
+sqlalchemy>=2.0
+python-multipart>=0.0.9
+httpx>=0.27
+
+# Optional resume parsing (install separately if you want PDF/DOCX support):
+#   pip install -r requirements-optional.txt

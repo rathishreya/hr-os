@@ -1,0 +1,52 @@
+# Production-shaped stack: Postgres + FastAPI backend + nginx-served frontend.
+#   docker compose up --build
+# Then open http://localhost:8080  (API at http://localhost:8000/docs)
+#
+# Configure AI / email by exporting env vars or putting them in a .env file next to this.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hros
+      POSTGRES_PASSWORD: hros
+      POSTGRES_DB: hros
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hros"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://hros:hros@db:5432/hros
+      AI_PROVIDER: ${AI_PROVIDER:-auto}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-hash}
+      FRONTEND_ORIGIN: http://localhost:8080
+      COMPANY_NAME: ${COMPANY_NAME:-Our Company}
+      EMAIL_FROM: ${EMAIL_FROM:-talent@example.com}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Talent Team}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:

@@ -1,0 +1,91 @@
+# Render Blueprint — one-click free deploy of HR-OS.
+#
+# Spins up THREE free resources:
+#   • hr-os-db        — managed PostgreSQL (free)
+#   • hr-os-backend   — FastAPI API + public careers pages + job feeds (Docker, free)
+#   • hr-os-frontend  — the React admin UI (static site, free)
+#
+# How to deploy:
+#   1. Push this repo to GitHub (done).
+#   2. On https://render.com → New → Blueprint → connect this repo. Render reads this file.
+#   3. It prompts for the "sync: false" secrets below — paste your Gemini key etc.
+#   4. After the backend goes live, copy its URL (https://hr-os-backend-XXXX.onrender.com)
+#      and set the frontend's VITE_API_BASE to "<that URL>/api", then redeploy the frontend.
+#
+# Notes:
+#   • PUBLIC_BASE_URL auto-resolves from Render's RENDER_EXTERNAL_URL — the careers pages
+#     and job feeds are served by the backend and are immediately crawlable. Submit the
+#     backend's /careers/sitemap.xml + /careers/feed.xml to the free aggregators.
+#   • Free web services sleep after ~15 min idle (first request cold-starts in ~50s) and
+#     the free Postgres is removed after ~30 days — fine for launch/testing; upgrade to a
+#     paid instance ($7/mo each) for always-on production.
+
+databases:
+  - name: hr-os-db
+    plan: free
+    databaseName: hros
+    user: hros
+
+services:
+  # ── Backend: API + careers pages + job feeds ────────────────────────────────
+  - type: web
+    name: hr-os-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hr-os-db
+          property: connectionString
+      - key: AI_PROVIDER
+        value: auto
+      # Free Google Gemini (set OPENAI_API_KEY to your key from https://aistudio.google.com/apikey)
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai
+      - key: OPENAI_MODEL
+        value: gemini-2.5-flash
+      - key: OPENAI_JSON_MODE
+        value: "false"
+      - key: EMBEDDINGS_PROVIDER
+        value: hash
+      - key: COMPANY_NAME
+        sync: false
+      - key: COMPANY_COUNTRY
+        value: India
+      - key: EMAIL_FROM
+        sync: false
+      # PUBLIC_BASE_URL is left unset → auto-uses RENDER_EXTERNAL_URL (this service's URL).
+      # Optional real email — paste if you have SMTP creds (e.g. Gmail app password):
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+
+  # ── Frontend: React admin UI (static) ───────────────────────────────────────
+  - type: web
+    name: hr-os-frontend
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/dist
+    pullRequestPreviewsEnabled: false
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      # Set this to the backend URL + /api after the backend's first deploy, then redeploy:
+      #   https://hr-os-backend-XXXX.onrender.com/api
+      - key: VITE_API_BASE
+        sync: false
+    routes:
+      # SPA fallback so client-side routes (/distribution, /roles/…) resolve.
+      - type: rewrite
+        source: /*
+        destination: /index.html

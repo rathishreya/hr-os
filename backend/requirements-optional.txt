@@ -1,0 +1,4 @@
+# Optional: richer resume text extraction (PDF / DOCX).
+# The app works without these — it just falls back to .txt / pasted text.
+pdfplumber>=0.11
+python-docx>=1.1

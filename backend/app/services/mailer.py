@@ -1,0 +1,148 @@
+"""Real outbound email engine.
+
+- Sends via SMTP when SMTP_HOST is configured (works with Gmail app passwords,
+  SendGrid, Resend, Mailgun, SES — anything SMTP).
+- When SMTP is NOT configured, it *logs* the email (console + DB) instead of failing,
+  so the workflow is fully functional in dev without sending to real inboxes.
+- Every email is persisted to the EmailMessage table and the audit log.
+"""
+from __future__ import annotations
+
+import smtplib
+import ssl
+from email.message import EmailMessage as MimeEmail
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from .. import models
+from ..config import settings
+from .ai import ai
+from .recruitment import log
+
+# --- deterministic templates (used when AI is off or as fallback) ---
+TEMPLATES: dict[str, dict[str, str]] = {
+    "acknowledgment": {
+        "subject": "We received your application for {role}",
+        "body": "Hi {name},\n\nThanks for applying for the {role} role at {company}. "
+        "Our team is reviewing your profile and we'll be in touch with next steps shortly.\n\n"
+        "Warm regards,\n{sender}",
+    },
+    "shortlisted": {
+        "subject": "Good news — you've been shortlisted for {role}",
+        "body": "Hi {name},\n\nWe were impressed by your background and have shortlisted you for "
+        "the {role} role at {company}. We'll reach out shortly to schedule the next round.\n\n"
+        "Best,\n{sender}",
+    },
+    "interview_invite": {
+        "subject": "Interview invitation — {role} at {company}",
+        "body": "Hi {name},\n\nWe'd like to invite you to interview for the {role} role. "
+        "Please reply with your availability over the next few days and we'll confirm a slot.\n\n"
+        "Looking forward to speaking,\n{sender}",
+    },
+    "rejection": {
+        "subject": "Update on your application for {role}",
+        "body": "Hi {name},\n\nThank you for taking the time to apply for the {role} role at "
+        "{company}. After careful review, we won't be moving forward at this time. We genuinely "
+        "appreciate your interest and wish you the very best.\n\nSincerely,\n{sender}",
+    },
+    "offer": {
+        "subject": "We'd love to have you on board — {role}",
+        "body": "Hi {name},\n\nWe're delighted to extend an offer for the {role} role at {company}! "
+        "Our team will share the formal offer details shortly. Congratulations!\n\n"
+        "Warm regards,\n{sender}",
+    },
+}
+
+TEMPLATE_LABELS = {
+    "acknowledgment": "Application acknowledgment",
+    "shortlisted": "Shortlisted notification",
+    "interview_invite": "Interview invitation",
+    "rejection": "Respectful rejection",
+    "offer": "Offer notification",
+    "custom": "Custom message",
+}
+
+
+def render_template(template: str, ctx: dict[str, Any]) -> tuple[str, str]:
+    t = TEMPLATES.get(template, TEMPLATES["acknowledgment"])
+    safe = {
+        "name": ctx.get("name") or "there",
+        "role": ctx.get("role") or "the role",
+        "company": ctx.get("company") or settings.COMPANY_NAME,
+        "sender": ctx.get("sender") or settings.EMAIL_FROM_NAME,
+    }
+    return t["subject"].format(**safe), t["body"].format(**safe)
+
+
+def _smtp_send(to_email: str, to_name: str, subject: str, body: str) -> None:
+    msg = MimeEmail()
+    msg["From"] = f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM}>"
+    msg["To"] = f"{to_name} <{to_email}>" if to_name else to_email
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as server:
+        if settings.SMTP_STARTTLS:
+            server.starttls(context=ssl.create_default_context())
+        if settings.SMTP_USER:
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        server.send_message(msg)
+
+
+def compose(
+    db: Session,
+    *,
+    to_email: str,
+    to_name: str = "",
+    template: str = "acknowledgment",
+    role: str = "",
+    subject: str | None = None,
+    body: str | None = None,
+    use_ai: bool = False,
+    candidate_id: int | None = None,
+    application_id: int | None = None,
+) -> models.EmailMessage:
+    """Build (optionally with AI), send-or-log, and persist an email."""
+    ctx = {"name": to_name, "role": role, "company": settings.COMPANY_NAME, "sender": settings.EMAIL_FROM_NAME}
+    ai_generated = False
+
+    if subject and body:
+        pass  # caller supplied a fully custom message
+    elif use_ai and template != "custom":
+        composed, _provider = ai.compose_email(template, ctx)
+        subject = composed.get("subject") or render_template(template, ctx)[0]
+        body = composed.get("body") or render_template(template, ctx)[1]
+        ai_generated = True
+    else:
+        subject, body = render_template(template, ctx)
+
+    rec = models.EmailMessage(
+        candidate_id=candidate_id,
+        application_id=application_id,
+        to_email=to_email,
+        to_name=to_name,
+        template=template,
+        subject=subject,
+        body=body,
+        ai_generated=ai_generated,
+    )
+
+    if not to_email:
+        rec.status = "failed"
+        rec.error = "No recipient email address."
+    elif settings.email_configured:
+        try:
+            _smtp_send(to_email, to_name, subject, body)
+            rec.status = "sent"
+        except Exception as exc:  # don't crash the request on a send failure
+            rec.status = "failed"
+            rec.error = str(exc)
+    else:
+        rec.status = "logged"
+        print(f"\n[EMAIL · logged — SMTP not configured]\nTo: {to_email}\nSubject: {subject}\n{body}\n")
+
+    db.add(rec)
+    db.flush()
+    log(db, "email.sent", "email", rec.id, {"to": to_email, "template": template, "status": rec.status})
+    return rec
