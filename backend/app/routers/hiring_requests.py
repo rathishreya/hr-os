@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..config import settings
 from ..database import get_db
 from ..services.ai import ai
 from ..services.jobs_table import row_from_hiring_request
@@ -171,7 +172,8 @@ def generate_jd(hr_id: int, db: Session = Depends(get_db)):
     job.description = result.get("description", "")
     job.responsibilities = result.get("responsibilities", [])
     job.requirements = result.get("requirements", [])
-    job.company_description = result.get("company_description", "")
+    # Always use the canonical company "About" (EZ Works) so every JD describes the real company.
+    job.company_description = settings.COMPANY_ABOUT or result.get("company_description", "")
     job.benefits = result.get("benefits", [])
     job.culture = result.get("culture", "")
     job.linkedin_copy = result.get("linkedin_copy", "")

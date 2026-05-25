@@ -63,11 +63,21 @@ class Settings:
     SMTP_USER: str = os.getenv("SMTP_USER", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_STARTTLS: bool = os.getenv("SMTP_STARTTLS", "true").lower() == "true"
-    EMAIL_FROM: str = os.getenv("EMAIL_FROM", "talent@example.com")
-    EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "Talent Team")
-    COMPANY_NAME: str = os.getenv("COMPANY_NAME", "Our Company")
-    COMPANY_WEBSITE: str = os.getenv("COMPANY_WEBSITE", "")  # shown on careers/feeds
+    EMAIL_FROM: str = os.getenv("EMAIL_FROM", "talent@ez.works")
+    EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "EZ Works Talent")
+    COMPANY_NAME: str = os.getenv("COMPANY_NAME", "EZ Works")
+    COMPANY_WEBSITE: str = os.getenv("COMPANY_WEBSITE", "https://www.ez.works")  # shown on careers/feeds
     COMPANY_COUNTRY: str = os.getenv("COMPANY_COUNTRY", "India")
+    COMPANY_ABOUT: str = os.getenv(
+        "COMPANY_ABOUT",
+        "EZ Works is a global “services factory” — an extended team for business professionals "
+        "worldwide. Through 1,000+ subject-matter experts across five continents, we deliver 70+ on-demand "
+        "business solutions spanning creative & design, language & communications, research & data, and "
+        "technology & AI, available 24/7. Trusted by 100+ multinational organizations and ISO 27001:2022 "
+        "certified, EZ Works is known for rapid turnaround — acknowledging requests within minutes and "
+        "getting expert work underway fast — so clients can focus on what they do best. "
+        "Learn more at https://www.ez.works.",
+    )
 
     # Public base URL of the deployed careers site (e.g. https://careers.acme.com).
     # Job-board aggregators require ABSOLUTE urls in feeds, so this is used to build

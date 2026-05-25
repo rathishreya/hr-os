@@ -235,18 +235,86 @@ def update_notes(app_id: int, body: schemas.NotesUpdate, db: Session = Depends(g
 @router.get("/analytics/overview")
 def analytics_overview(db: Session = Depends(get_db)):
     apps = db.scalars(select(models.Application)).all()
+    candidates = db.scalars(select(models.Candidate)).all()
+    roles = db.scalars(select(models.HiringRequest)).all()
+
     funnel = {s: 0 for s in STAGES}
     for a in apps:
         funnel[a.stage] = funnel.get(a.stage, 0) + 1
     total = len(apps)
     hired = funnel.get("hired", 0)
+
+    # Candidate sources
+    sources: dict[str, int] = {}
+    for c in candidates:
+        key = (c.source or "direct").strip() or "direct"
+        sources[key] = sources.get(key, 0) + 1
+
+    # AI score distribution (scored applications only)
+    buckets = {"0-40": 0, "40-60": 0, "60-75": 0, "75-90": 0, "90-100": 0}
+    for a in apps:
+        s = a.score_overall or 0
+        if s <= 0:
+            continue
+        if s < 40:
+            buckets["0-40"] += 1
+        elif s < 60:
+            buckets["40-60"] += 1
+        elif s < 75:
+            buckets["60-75"] += 1
+        elif s < 90:
+            buckets["75-90"] += 1
+        else:
+            buckets["90-100"] += 1
+
+    # Roles by difficulty / status, and average estimated time-to-hire
+    by_difficulty: dict[str, int] = {}
+    by_status: dict[str, int] = {}
+    tth: list[int] = []
+    for r in roles:
+        by_difficulty[r.difficulty_label or "unrated"] = by_difficulty.get(r.difficulty_label or "unrated", 0) + 1
+        by_status[r.status or "draft"] = by_status.get(r.status or "draft", 0) + 1
+        if r.est_time_to_hire_days:
+            tth.append(r.est_time_to_hire_days)
+
+    # AI recommendations across applications
+    recs: dict[str, int] = {}
+    for a in apps:
+        if a.recommendation:
+            recs[a.recommendation] = recs.get(a.recommendation, 0) + 1
+
+    # Top roles by applicant volume
+    counts: dict[int, int] = {}
+    hired_by_role: dict[int, int] = {}
+    for a in apps:
+        counts[a.hiring_request_id] = counts.get(a.hiring_request_id, 0) + 1
+        if a.stage == "hired":
+            hired_by_role[a.hiring_request_id] = hired_by_role.get(a.hiring_request_id, 0) + 1
+    role_pos = {r.id: r.position for r in roles}
+    top_roles = sorted(
+        (
+            {"position": role_pos.get(rid, f"Role #{rid}"), "applicants": n, "hired": hired_by_role.get(rid, 0)}
+            for rid, n in counts.items()
+        ),
+        key=lambda x: x["applicants"],
+        reverse=True,
+    )[:6]
+
     return {
-        "total_roles": db.query(models.HiringRequest).count(),
-        "total_candidates": db.query(models.Candidate).count(),
+        "total_roles": len(roles),
+        "total_candidates": len(candidates),
         "total_applications": total,
+        "published_roles": by_status.get("published", 0),
         "funnel": funnel,
         "conversion_rate": round(100 * hired / total, 1) if total else 0,
         "avg_score": round(sum(a.score_overall for a in apps) / total, 1) if total else 0,
+        "avg_time_to_hire": round(sum(tth) / len(tth)) if tth else 0,
+        "sources": sources,
+        "score_distribution": buckets,
+        "roles_by_difficulty": by_difficulty,
+        "roles_by_status": by_status,
+        "recommendations": recs,
+        "top_roles": top_roles,
     }
 
 

@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search, AlertTriangle, Briefcase, LayoutGrid, List, X } from 'lucide-react'
+import { Plus, Search, AlertTriangle, Briefcase, LayoutGrid, List, X, Megaphone, GraduationCap } from 'lucide-react'
 import { api } from '../api'
 import { Card, Badge, Button, Field, Spinner, Skeleton, PageHeader, EmptyState, inputClass, cx } from '../ui'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import JobsListTable from '../components/jobs/JobsListTable'
+import MultiSelect from '../components/MultiSelect'
+import { POST_PLATFORMS } from '../constants'
 
 const VIEW_KEY = 'hr-os-jobs-view'
+const PLATFORM_OPTS = POST_PLATFORMS.map((p) => ({ value: p.id, label: p.label }))
 
 const EMPTY = {
   position: '', department: '', budget_ctc: '', yoe_min: 0, yoe_max: 0,
@@ -25,6 +28,19 @@ function NewRoleForm({ onCreated, onCancel }) {
   const [err, setErr] = useState('')
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
 
+  // Posting + campus outreach
+  const [post, setPost] = useState(true)
+  const [platforms, setPlatforms] = useState(POST_PLATFORMS.map((p) => p.id))
+  const [tpos, setTpos] = useState([])
+  const [tpoIds, setTpoIds] = useState([])
+  const [tpoMsg, setTpoMsg] = useState('')
+  useEffect(() => { api.listTpos().then(setTpos).catch(() => setTpos([])) }, [])
+
+  const tpoOpts = tpos.map((t) => ({
+    value: t.id,
+    label: t.college ? (t.name ? `${t.college} — ${t.name}` : t.college) : (t.name || `TPO #${t.id}`),
+  }))
+
   async function submit(e) {
     e.preventDefault()
     setBusy(true); setErr('')
@@ -35,7 +51,18 @@ function NewRoleForm({ onCreated, onCancel }) {
         mandatory_skills: csv(f.mandatory_skills), preferred_skills: csv(f.preferred_skills),
         interview_panel: [],
       })
-      onCreated(role)
+      let posted = false
+      if (post) {
+        const jd = await api.generateJD(role.id)   // AI writes the JD
+        await api.publishJob(jd.id, platforms)      // publish to careers page + selected boards
+        posted = true
+      }
+      let tpoNote = ''
+      if (tpoIds.length) {
+        const r = await api.sendToTpos(role.id, { tpo_ids: tpoIds, message: tpoMsg })
+        tpoNote = ` · emailed ${r.delivered}/${r.total} college${r.total !== 1 ? 's' : ''}`
+      }
+      onCreated(role, { posted, tpoNote })
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
 
@@ -64,9 +91,31 @@ function NewRoleForm({ onCreated, onCancel }) {
           <Field label="Hiring deadline"><input type="date" className={inputClass} value={f.hiring_deadline} onChange={set('hiring_deadline')} /></Field>
           <Field label="Openings"><input type="number" min="1" className={inputClass} value={f.num_openings} onChange={set('num_openings')} /></Field>
         </div>
+
+        <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <input type="checkbox" checked={post} onChange={(e) => setPost(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
+            <Megaphone className="h-4 w-4 text-violet-600" /> Post this job now — AI writes the JD and publishes it
+          </label>
+          {post && (
+            <Field label="Post to free job boards">
+              <MultiSelect options={PLATFORM_OPTS} value={platforms} onChange={setPlatforms} placeholder="Select platforms" allLabel="All free boards" />
+            </Field>
+          )}
+          <Field
+            label={<span className="inline-flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" /> Send to college placement officers</span>}
+            hint={tpos.length ? 'Each selected college gets an email with the role details.' : 'Add placement officers in Settings → Placement officers.'}
+          >
+            <MultiSelect options={tpoOpts} value={tpoIds} onChange={setTpoIds} placeholder={tpos.length ? 'Select colleges' : 'No placement officers yet'} disabled={!tpos.length} />
+          </Field>
+          {tpoIds.length > 0 && (
+            <textarea className={`${inputClass} h-16 resize-y`} placeholder="Optional note to include in the email to TPOs…" value={tpoMsg} onChange={(e) => setTpoMsg(e.target.value)} />
+          )}
+        </div>
+
         {err && <p className="text-sm text-rose-600">{err}</p>}
         <div className="flex gap-3">
-          <Button type="submit" disabled={busy}>{busy ? <><Spinner /> AI is analyzing…</> : 'Post Job (AI checks it)'}</Button>
+          <Button type="submit" disabled={busy}>{busy ? <><Spinner /> {post ? 'Posting…' : 'AI is analyzing…'}</> : (post ? 'Post Job (AI checks it)' : 'Create Job (AI checks it)')}</Button>
           <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         </div>
       </form>
@@ -268,9 +317,9 @@ export default function Roles() {
       {creating && (
         <NewRoleForm
           onCancel={() => setCreating(false)}
-          onCreated={(r) => {
+          onCreated={(r, meta) => {
             setCreating(false)
-            toast('Job created')
+            toast((meta?.posted ? 'Job posted' : 'Job created') + (meta?.tpoNote || ''))
             load()
           }}
         />

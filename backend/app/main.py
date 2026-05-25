@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import init_db
-from .routers import candidates, careers, comms, documents, hiring_requests, interview_rounds, jobs, onboarding, pipeline, screening
+from .routers import candidates, careers, comms, documents, hiring_requests, interview_rounds, jobs, onboarding, outreach, pipeline, screening, tpos, users, video
 from .services.ai import ai
 
 
@@ -52,12 +52,27 @@ app.include_router(screening.router)
 app.include_router(interview_rounds.router)
 app.include_router(documents.router)
 app.include_router(onboarding.router)
+app.include_router(users.router)
+app.include_router(tpos.router)
+app.include_router(outreach.router)
+app.include_router(video.router)
 app.include_router(careers.router)  # public careers pages (no /api prefix)
 
 
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/company")
+def company() -> dict:
+    """Canonical company identity, used for the 'About the company' sections and careers pages."""
+    return {
+        "name": settings.COMPANY_NAME,
+        "website": settings.COMPANY_WEBSITE,
+        "about": settings.COMPANY_ABOUT,
+        "country": settings.COMPANY_COUNTRY,
+    }
 
 
 @app.get("/api/ai-status")

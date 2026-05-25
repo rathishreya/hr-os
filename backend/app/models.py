@@ -79,6 +79,8 @@ class Job(Base):
     interview_rubric: Mapped[list] = mapped_column(JSON, default=list)
 
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|published
+    target_platforms: Mapped[list] = mapped_column(JSON, default=list)  # free boards chosen at posting time
+    video_questions: Mapped[list] = mapped_column(JSON, default=list)  # pre-defined async video-interview Qs
     ai_provider: Mapped[str] = mapped_column(String(20), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
@@ -249,6 +251,94 @@ class OnboardingPlan(Base):
     buddy: Mapped[str] = mapped_column(String(160), default="")
     status: Mapped[str] = mapped_column(String(20), default="active")
     ai_provider: Mapped[str] = mapped_column(String(20), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class VideoInterview(Base):
+    """An async one-way video interview for an application. Questions are PRE-DEFINED
+    (set per role, not AI-generated). The candidate records a video answer per question;
+    open-source Whisper transcribes on-device. Video + transcript are kept for human review."""
+
+    __tablename__ = "video_interviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.id"))
+    candidate_id: Mapped[int] = mapped_column(ForeignKey("candidates.id"))
+    role_position: Mapped[str] = mapped_column(String(200), default="")
+
+    questions: Mapped[list] = mapped_column(JSON, default=list)  # snapshot of the pre-defined questions
+    status: Mapped[str] = mapped_column(String(20), default="in_progress")  # in_progress|completed
+    summary: Mapped[str] = mapped_column(Text, default="")
+    scores: Mapped[dict] = mapped_column(JSON, default=dict)
+    ai_provider: Mapped[str] = mapped_column(String(20), default="")
+
+    # Single continuous (proctored) recording of the whole session — anti-cheat.
+    transcript: Mapped[str] = mapped_column(Text, default="")
+    timeline: Mapped[list] = mapped_column(JSON, default=list)      # [{q_index, question, at}] seconds into the take
+    proctoring: Mapped[dict] = mapped_column(JSON, default=dict)    # {focus_lost, fullscreen_exits, events:[...]}
+    recording: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    recording_mime: Mapped[str] = mapped_column(String(120), default="video/webm")
+    duration: Mapped[float] = mapped_column(Float, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    answers: Mapped[list["VideoAnswer"]] = relationship(back_populates="interview", cascade="all, delete-orphan")
+
+
+class VideoAnswer(Base):
+    """One recorded answer (video blob + transcript) to a pre-defined question."""
+
+    __tablename__ = "video_answers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    interview_id: Mapped[int] = mapped_column(ForeignKey("video_interviews.id"))
+    q_index: Mapped[int] = mapped_column(Integer, default=0)
+    question: Mapped[str] = mapped_column(Text, default="")
+    transcript: Mapped[str] = mapped_column(Text, default="")
+    video: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    mime: Mapped[str] = mapped_column(String(120), default="video/webm")
+    duration: Mapped[float] = mapped_column(Float, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    interview: Mapped["VideoInterview"] = relationship(back_populates="answers")
+
+
+class User(Base):
+    """A team member of the hiring org. Carries one or more roles that determine where
+    they're placed in the tool (e.g. a 'panellist' becomes selectable on interview rounds).
+
+    NOTE: login/auth is not enforced yet — this is a directory + role assignment. Passwords
+    are stored hashed (never plaintext) so credential email + future login are real.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    phone: Mapped[str] = mapped_column(String(60), default="")
+    title: Mapped[str] = mapped_column(String(160), default="")  # designation
+    roles: Mapped[list] = mapped_column(JSON, default=list)  # ["recruiter","manager","admin","panellist"]
+    password_hash: Mapped[str] = mapped_column(String(255), default="")
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class TPO(Base):
+    """Training & Placement Officer at a college — for sending hiring requests to campuses."""
+
+    __tablename__ = "tpos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), default="")
+    college: Mapped[str] = mapped_column(String(200), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    phone: Mapped[str] = mapped_column(String(60), default="")
+    linkedin: Mapped[str] = mapped_column(String(300), default="")
+    designation: Mapped[str] = mapped_column(String(160), default="")
+    address: Mapped[str] = mapped_column(Text, default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 

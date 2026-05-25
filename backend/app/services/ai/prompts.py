@@ -34,7 +34,14 @@ Hiring request:
 
 
 def job_description(hr: dict[str, Any]) -> tuple[str, str]:
-    user = f"""Write a complete, modern job posting. Return JSON with this exact shape:
+    from ...config import settings
+
+    company_ctx = (
+        f'The hiring company is "{settings.COMPANY_NAME}". '
+        f'Use THIS for "company_description" (lightly edited to fit, do not invent other facts): '
+        f'{settings.COMPANY_ABOUT}\n\n' if settings.COMPANY_ABOUT else ""
+    )
+    user = f"""{company_ctx}Write a complete, modern job posting. Return JSON with this exact shape:
 {{
   "title": "<clean role title>",
   "seo_title": "<search-optimized title>",

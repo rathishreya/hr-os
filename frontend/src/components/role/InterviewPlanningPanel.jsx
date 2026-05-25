@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Calendar, Clock, Link2, MapPin, Plus, Trash2, Users, ChevronDown, ChevronUp, Bot,
+  Calendar, Clock, Link2, MapPin, Plus, Trash2, Users, ChevronDown, ChevronUp, Bot, Video, Copy, Check,
+  ShieldAlert, ShieldCheck,
 } from 'lucide-react'
 import { api } from '../../api'
 import { Badge, Button, Field, Spinner, inputClass, cx } from '../../ui'
@@ -322,6 +323,145 @@ function RoundCard({ round, panelSuggestions, onUpdated, onDeleted }) {
   )
 }
 
+const fmtTime = (s) => `${String(Math.floor((s || 0) / 60)).padStart(2, '0')}:${String(Math.floor((s || 0) % 60)).padStart(2, '0')}`
+
+function VideoInterviewReview({ app }) {
+  const { toast } = useToast()
+  const [vi, setVi] = useState(null)
+  const [job, setJob] = useState(null)
+  const [qs, setQs] = useState([])
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const vidRef = useRef(null)
+  const link = `${window.location.origin}/interview/${app.id}`
+
+  const loadVi = () => api.getVideoInterview(app.id).then(setVi).catch(() => {})
+  useEffect(() => {
+    loadVi()
+    api.getJD(app.hiring_request_id).then((j) => { setJob(j); setQs(j.video_questions?.length ? j.video_questions : ['', '', '']) }).catch(() => setJob(null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.id, app.hiring_request_id])
+
+  async function copy() { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1800) }
+  function seek(at) { if (vidRef.current) { vidRef.current.currentTime = at || 0; vidRef.current.play().catch(() => {}) } }
+
+  async function saveQuestions() {
+    if (!job) { toast('Generate the job description first (Job post tab) to set questions.', 'error'); return }
+    setSaving(true)
+    try {
+      const clean = qs.map((q) => q.trim()).filter(Boolean)
+      await api.setVideoQuestions(job.id, clean)
+      setQs(clean.length ? clean : [''])
+      await loadVi()
+      toast('Questions saved'); setSaved(true); setTimeout(() => setSaved(false), 2000)
+    } catch (e) { toast(e.message, 'error') } finally { setSaving(false) }
+  }
+
+  const [retx, setRetx] = useState(false)
+  async function deleteRecording() {
+    if (!vi || !window.confirm('Delete this interview recording, transcript and summary? The candidate can re-record using the same link.')) return
+    try { await api.deleteVideoInterview(vi.id); await loadVi(); toast('Recording deleted') } catch (e) { toast(e.message, 'error') }
+  }
+  async function generateTranscript() {
+    setRetx(true)
+    try { setVi(await api.retranscribeVideo(vi.id)); toast('Transcript & summary generated') }
+    catch (e) { toast(e.message, 'error') } finally { setRetx(false) }
+  }
+
+  const proc = vi?.proctoring || {}
+  const flags = (proc.focus_lost || 0) + (proc.fullscreen_exits || 0)
+
+  return (
+    <div className="mt-2 space-y-3">
+      {/* 1) Write the questions */}
+      <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Interview questions {vi?.status === 'completed' && <span className="font-normal text-slate-300">· edits apply to future candidates</span>}</div>
+        {job ? (
+          <>
+            <div className="space-y-1.5">
+              {qs.map((q, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="w-4 text-xs tabular-nums text-slate-400">{i + 1}</span>
+                  <input className={inputClass} value={q} onChange={(e) => setQs(qs.map((x, j) => (j === i ? e.target.value : x)))} placeholder="Question the AI will ask" />
+                  <button type="button" onClick={() => setQs(qs.filter((_, j) => j !== i))} className="shrink-0 text-slate-300 hover:text-rose-500" aria-label="Remove"><Trash2 className="h-4 w-4" /></button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex gap-2">
+              <Button variant="ghost" className="text-xs" onClick={() => setQs([...qs, ''])}><Plus className="h-3.5 w-3.5" /> Add question</Button>
+              <Button className="text-xs" onClick={saveQuestions} disabled={saving}>{saving ? <Spinner /> : saved ? <><Check className="h-3.5 w-3.5" /> Saved</> : 'Save questions'}</Button>
+            </div>
+          </>
+        ) : <p className="text-xs text-slate-400">Generate the job description first (Job post tab) to set questions.</p>}
+      </div>
+
+      {/* 2) Share the link to start */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+        <p className="mb-1.5 text-xs text-slate-500">Then share this link — one <strong>continuous, proctored</strong> recording (AI asks, candidate answers, auto-advances on silence, transcribed free on their device).</p>
+        <div className="flex items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">{link}</code>
+          <Button variant="ghost" className="shrink-0 px-2 py-1 text-xs" onClick={copy}>{copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}{copied ? 'Copied' : 'Copy link'}</Button>
+        </div>
+      </div>
+
+      {/* 3) Review after the interview */}
+      {!vi ? null : !vi.has_recording ? (
+        <p className="text-xs text-slate-400">{vi.status === 'completed' ? 'Completed (no recording stored).' : 'Not taken yet.'}</p>
+      ) : (
+        <>
+          <video ref={vidRef} controls src={api.videoRecordingUrl(vi.id)} className="aspect-video w-full rounded-lg bg-slate-900" />
+          <div className="flex justify-end">
+            <button type="button" onClick={deleteRecording} className="inline-flex items-center gap-1 text-xs font-medium text-rose-500 hover:text-rose-700"><Trash2 className="h-3.5 w-3.5" /> Delete recording</button>
+          </div>
+
+          <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border p-2.5 text-xs ${flags ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+            {flags ? <ShieldAlert className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+            <span><strong>{proc.focus_lost || 0}</strong> tab switch{(proc.focus_lost || 0) !== 1 ? 'es' : ''}</span>
+            <span><strong>{proc.fullscreen_exits || 0}</strong> fullscreen exit{(proc.fullscreen_exits || 0) !== 1 ? 's' : ''}</span>
+            <span>Duration {fmtTime(vi.duration)}</span>
+          </div>
+
+          {!vi.transcript && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs">
+              <p className="mb-2 text-amber-800">No transcript yet — the candidate&apos;s on-device transcription didn&apos;t run, or the AI quota was hit during the interview. The recording is saved; generate it now (retries on the saved video):</p>
+              <Button className="text-xs" onClick={generateTranscript} disabled={retx}>{retx ? <Spinner /> : 'Generate transcript & summary'}</Button>
+            </div>
+          )}
+
+          {vi.summary && (
+            <div>
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400"><Bot className="h-3.5 w-3.5" /> AI summary</div>
+              <p className="whitespace-pre-wrap rounded-lg bg-violet-50 p-2.5 text-xs text-slate-700">{vi.summary}</p>
+            </div>
+          )}
+
+          {vi.timeline?.length > 0 && (
+            <div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Questions (click to jump)</div>
+              <div className="space-y-1">
+                {vi.timeline.map((t, i) => (
+                  <button key={i} type="button" onClick={() => seek(t.at)} className="flex w-full items-start gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-violet-50">
+                    <span className="font-mono text-violet-600">{fmtTime(t.at)}</span>
+                    <span className="text-slate-600">{t.question}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {vi.transcript && (
+            <div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Transcript</div>
+              <p className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50 p-2.5 text-xs text-slate-600">{vi.transcript}</p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function InterviewPlanningPanel({ app, onChange }) {
   const { toast } = useToast()
   const [rounds, setRounds] = useState([])
@@ -330,18 +470,21 @@ export default function InterviewPlanningPanel({ app, onChange }) {
   const [busy, setBusy] = useState(false)
   const [panelSuggestions, setPanelSuggestions] = useState([])
   const [showAiScreen, setShowAiScreen] = useState(false)
+  const [showVideo, setShowVideo] = useState(false)
   const [newRound, setNewRound] = useState({ ...EMPTY_ROUND })
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [list, role] = await Promise.all([
+      const [list, role, panellists] = await Promise.all([
         api.listInterviewRounds(app.id),
         api.getRole(app.hiring_request_id).catch(() => null),
+        api.listUsers('panellist').catch(() => []),
       ])
       setRounds(list)
-      const panel = (role?.interview_panel || []).filter(Boolean)
-      setPanelSuggestions(panel)
+      const fromRole = (role?.interview_panel || []).filter(Boolean)
+      const fromUsers = (panellists || []).map((u) => u.name || u.email).filter(Boolean)
+      setPanelSuggestions([...new Set([...fromUsers, ...fromRole])])
       const next = (list.length ? Math.max(...list.map((r) => r.round_number)) + 1 : 1)
       setNewRound((f) => ({ ...f, round_number: next }))
     } catch {
@@ -445,6 +588,18 @@ export default function InterviewPlanningPanel({ app, onChange }) {
           ))}
         </div>
       )}
+
+      <div className="border-t border-slate-100 pt-4">
+        <button
+          type="button"
+          onClick={() => setShowVideo((v) => !v)}
+          className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-xs font-medium text-slate-500 hover:bg-slate-50"
+        >
+          <span className="inline-flex items-center gap-1.5"><Video className="h-3.5 w-3.5" /> Async video interview (pre-defined questions)</span>
+          {showVideo ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+        {showVideo && <VideoInterviewReview app={app} />}
+      </div>
 
       <div className="border-t border-slate-100 pt-4">
         <button

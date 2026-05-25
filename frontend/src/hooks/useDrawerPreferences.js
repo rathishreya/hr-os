@@ -75,11 +75,13 @@ export function useDrawerPreferences() {
   return { prefs, updatePrefs, resetPrefs, visibleTabs }
 }
 
+// Static pixel widths so the popup is a consistent size (not viewport-relative).
+// max-w-[94vw] only caps it on small screens so it never overflows. Gear menu switches.
 export const WIDTH_CLASSES = {
-  narrow: 'max-w-md',
-  medium: 'max-w-xl',
-  wide: 'max-w-3xl',
-  full: 'max-w-[96vw] w-full',
+  narrow: 'w-[600px] max-w-[94vw]',
+  medium: 'w-[880px] max-w-[94vw]',
+  wide: 'w-[1120px] max-w-[94vw]',
+  full: 'w-[1400px] max-w-[96vw]',
 }
 
 export const OVERLAY_CLASSES = {

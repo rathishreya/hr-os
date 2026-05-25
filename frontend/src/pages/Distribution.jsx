@@ -77,16 +77,16 @@ export default function Distribution() {
               <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{data.channels.length}</div>
             </Card>
             <Card className="p-4">
-              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">Reachability</div>
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">Visible to job boards</div>
               {data.is_public
-                ? <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-emerald-600"><CheckCircle2 className="h-4 w-4" /> Public — crawlable</div>
-                : <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-amber-600"><AlertTriangle className="h-4 w-4" /> Localhost only</div>}
+                ? <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-emerald-600"><CheckCircle2 className="h-4 w-4" /> Yes — live</div>
+                : <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-amber-600"><AlertTriangle className="h-4 w-4" /> Not yet (local)</div>}
             </Card>
           </div>
 
           <Card className="p-5">
-            <h3 className="text-sm font-semibold text-slate-800">Company feeds &amp; free channels</h3>
-            <p className="mt-1 text-xs text-slate-500">One feed covers <strong>all</strong> published roles. Register these URLs once with each aggregator below — new roles you publish appear automatically on their next crawl.</p>
+            <h3 className="text-sm font-semibold text-slate-800">Where your jobs get posted</h3>
+            <p className="mt-1 text-xs text-slate-500">All free, and one feed covers every published role. Set up the “connect once” boards a single time — after that, each job you publish appears on them automatically.</p>
             <DistributionDetails data={data} />
           </Card>
 

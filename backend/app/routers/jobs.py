@@ -26,12 +26,26 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{job_id}/publish", response_model=schemas.JobOut)
-def publish_job(job_id: int, db: Session = Depends(get_db)):
+def publish_job(job_id: int, payload: schemas.PublishRequest | None = None, db: Session = Depends(get_db)):
     job = db.get(models.Job, job_id)
     if not job:
         raise HTTPException(404, "Job not found")
     job.status = "published"
-    log(db, "job.published", "job", job.id, {})
+    if payload and payload.platforms:
+        job.target_platforms = payload.platforms
+    log(db, "job.published", "job", job.id, {"platforms": job.target_platforms or []})
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@router.patch("/{job_id}/video-questions", response_model=schemas.JobOut)
+def set_video_questions(job_id: int, payload: schemas.VideoQuestionsUpdate, db: Session = Depends(get_db)):
+    job = db.get(models.Job, job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    job.video_questions = [q.strip() for q in payload.questions if q and q.strip()]
+    log(db, "job.video_questions", "job", job.id, {"count": len(job.video_questions)})
     db.commit()
     db.refresh(job)
     return job

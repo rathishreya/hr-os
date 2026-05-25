@@ -61,7 +61,7 @@ export default function JobDetailShell({
   const recruiter = summary?.recruiter || role?.interview_panel?.[0] || ''
 
   return (
-    <header className="shrink-0 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
+    <header className="relative z-40 shrink-0 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
       {/* Top bar */}
       <div className="flex items-center gap-3 px-4 py-2.5 lg:px-5">
         <Link

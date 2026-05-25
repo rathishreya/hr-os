@@ -64,6 +64,8 @@ class JobOut(BaseModel):
     knockout_questions: list[Any]
     interview_rubric: list[Any]
     status: str
+    target_platforms: list[Any] = Field(default_factory=list)
+    video_questions: list[Any] = Field(default_factory=list)
     ai_provider: str
     created_at: datetime
 
@@ -125,6 +127,132 @@ class StageUpdate(BaseModel):
 
 class HiringRequestUpdate(BaseModel):
     status: str | None = None
+
+
+# ---------- Publish / distribution ----------
+class PublishRequest(BaseModel):
+    platforms: list[str] = Field(default_factory=list)  # free boards selected at posting time
+
+
+# ---------- Users & roles ----------
+ROLE_CHOICES = ["recruiter", "manager", "admin", "panellist"]
+
+
+class UserCreate(BaseModel):
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+    title: str = ""
+    roles: list[str] = Field(default_factory=lambda: ["recruiter"])
+    password: str = ""          # blank → auto-generated server-side
+    send_credentials: bool = False
+
+
+class UserUpdate(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    title: str | None = None
+    roles: list[str] | None = None
+    active: bool | None = None
+    password: str | None = None
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    email: str
+    phone: str
+    title: str
+    roles: list[str]
+    active: bool
+    created_at: datetime
+    has_password: bool = False
+
+
+# ---------- TPO (campus placement officers) ----------
+class TPOCreate(BaseModel):
+    name: str = ""
+    college: str = ""
+    email: str = ""
+    phone: str = ""
+    linkedin: str = ""
+    designation: str = ""
+    address: str = ""
+    notes: str = ""
+
+
+class TPOUpdate(BaseModel):
+    name: str | None = None
+    college: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    linkedin: str | None = None
+    designation: str | None = None
+    address: str | None = None
+    notes: str | None = None
+
+
+class TPOOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    college: str
+    email: str
+    phone: str
+    linkedin: str
+    designation: str
+    address: str
+    notes: str
+    created_at: datetime
+
+
+class SendToTposRequest(BaseModel):
+    tpo_ids: list[int] = Field(default_factory=list)
+    message: str = ""       # optional extra note from the recruiter
+    use_ai: bool = False    # AI-compose the outreach email
+
+
+# ---------- Video interview (pre-defined questions, async one-way) ----------
+class VideoQuestionsUpdate(BaseModel):
+    questions: list[str] = Field(default_factory=list)
+
+
+class VideoAnswerOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    q_index: int
+    question: str
+    transcript: str
+    mime: str
+    duration: float
+    has_video: bool = False
+    created_at: datetime
+
+
+class VideoInterviewOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    application_id: int
+    candidate_id: int
+    role_position: str
+    questions: list[Any]
+    status: str
+    summary: str
+    scores: dict[str, Any]
+    transcript: str = ""
+    timeline: list[Any] = Field(default_factory=list)
+    proctoring: dict[str, Any] = Field(default_factory=dict)
+    duration: float = 0
+    has_recording: bool = False
+    created_at: datetime
+    completed_at: datetime | None
+    answers: list[VideoAnswerOut] = Field(default_factory=list)
 
 
 class ApplyToRoleRequest(BaseModel):

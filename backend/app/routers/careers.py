@@ -12,7 +12,7 @@ import re
 from datetime import date, datetime, timezone
 from email.utils import format_datetime
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..config import settings
 from ..database import get_db
+from ..services import recruitment, resume_parser
 
 router = APIRouter(tags=["careers"])
 
@@ -73,8 +74,9 @@ def _description_html(job: models.Job) -> str:
     section("Responsibilities", job.responsibilities)
     section("Requirements", job.requirements)
     section("Benefits", job.benefits)
-    if job.company_description:
-        parts.append(f"<h3>About {_e(settings.COMPANY_NAME)}</h3><p>{_e(job.company_description)}</p>")
+    about = settings.COMPANY_ABOUT or job.company_description
+    if about:
+        parts.append(f"<h3>About {_e(settings.COMPANY_NAME)}</h3><p>{_e(about)}</p>")
     if job.culture:
         parts.append(f"<h3>Culture</h3><p>{_e(job.culture)}</p>")
     return "".join(parts)
@@ -153,6 +155,21 @@ a.jobcard{display:block;text-decoration:none;color:inherit;margin-bottom:12px}
 a.jobcard .card{transition:border-color .15s,box-shadow .15s}
 a.jobcard:hover .card{border-color:#c4b5fd;box-shadow:0 4px 14px rgba(124,58,237,.08)}
 .muted{color:var(--muted);font-size:13px}
+.field{margin:16px 0}
+label.lbl{display:block;font-size:13px;font-weight:600;color:#334155;margin:0 0 6px}
+label.lbl .req{color:#e11d48}
+.hint{font-size:12px;color:var(--muted);margin:4px 0 0}
+input.inp,textarea.inp{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+font-size:14px;font-family:inherit;color:var(--ink);background:#fff;outline:none}
+input.inp:focus,textarea.inp:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(124,58,237,.12)}
+input[type=file].inp{padding:8px}
+textarea.inp{resize:vertical}
+.err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:10px 12px;font-size:13px;margin:0 0 16px}
+button.apply{border:0;cursor:pointer;font-size:15px}
+.back{display:inline-block;margin-bottom:16px;color:var(--brand);text-decoration:none;font-size:13px;font-weight:600}
+.back:hover{text-decoration:underline}
+.success{width:46px;height:46px;border-radius:50%;background:#dcfce7;color:#16a34a;display:flex;
+align-items:center;justify-content:center;font-size:24px;font-weight:800;margin:0 0 14px}
 """
 
 
@@ -415,6 +432,101 @@ def distribution_channels(request: Request, db: Session = Depends(get_db)):
     }
 
 
+# ───────────────────────── Public job application form ──────────────────────
+# "Apply now" → a public, no-auth form that creates a Candidate + Application
+# (auto-scored, source="careers") so the applicant lands directly in that job's
+# pipeline in the portal. `/careers/{id}/apply` is two-segment so it never clashes
+# with the single-segment `/careers/{job_id}` catch-all below.
+_NOT_OPEN = ('<div class="card"><h1>Role not found</h1>'
+             '<p class="muted">This role isn\'t accepting applications.</p>'
+             '<a class="apply" href="/careers">View open roles</a></div>')
+
+
+def _apply_form(job: models.Job, *, values: dict | None = None, error: str = "") -> str:
+    hr = job.hiring_request
+    title = job.title or (hr.position if hr else "Role")
+    v = values or {}
+    err_html = f'<div class="err">{_e(error)}</div>' if error else ""
+    body = (
+        f'<a class="back" href="/careers/{job.id}">&larr; Back to role</a>'
+        f'<div class="card"><h1>Apply: {_e(title)}</h1>'
+        f'<p class="sub">{_e(settings.COMPANY_NAME)}</p>{err_html}'
+        f'<form method="post" action="/careers/{job.id}/apply" enctype="multipart/form-data">'
+        f'<div class="field"><label class="lbl">Full name <span class="req">*</span></label>'
+        f'<input class="inp" name="name" value="{_e(v.get("name"))}" required></div>'
+        f'<div class="field"><label class="lbl">Email <span class="req">*</span></label>'
+        f'<input class="inp" type="email" name="email" value="{_e(v.get("email"))}" required></div>'
+        f'<div class="field"><label class="lbl">Phone</label>'
+        f'<input class="inp" name="phone" value="{_e(v.get("phone"))}"></div>'
+        f'<div class="field"><label class="lbl">Resume</label>'
+        f'<input class="inp" type="file" name="file" accept=".pdf,.docx,.doc,.txt">'
+        f'<p class="hint">PDF, DOCX or TXT — we parse it automatically to match you to the role.</p></div>'
+        f'<div class="field"><label class="lbl">Or paste your resume / a short note</label>'
+        f'<textarea class="inp" name="resume_text" rows="6">{_e(v.get("resume_text"))}</textarea></div>'
+        f'<button class="apply" type="submit">Submit application</button>'
+        f'</form></div>'
+    )
+    return _page(f"Apply — {title} · {settings.COMPANY_NAME}", body)
+
+
+@router.get("/careers/{job_id}/apply", response_class=HTMLResponse)
+def apply_form(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(models.Job, job_id)
+    if not job or job.status != "published":
+        return HTMLResponse(_page("Not found", _NOT_OPEN), status_code=404)
+    return HTMLResponse(_apply_form(job))
+
+
+@router.post("/careers/{job_id}/apply", response_class=HTMLResponse)
+def submit_application(
+    job_id: int,
+    name: str = Form(""),
+    email: str = Form(""),
+    phone: str = Form(""),
+    resume_text: str = Form(""),
+    file: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+):
+    job = db.get(models.Job, job_id)
+    if not job or job.status != "published":
+        return HTMLResponse(_page("Not found", _NOT_OPEN), status_code=404)
+    hr = job.hiring_request
+    values = {"name": name, "email": email, "phone": phone, "resume_text": resume_text}
+
+    if not name.strip() or not email.strip():
+        return HTMLResponse(_apply_form(job, values=values, error="Please enter your name and email."), status_code=400)
+
+    file_bytes = None
+    filename = mime = ""
+    text = resume_text or ""
+    if file is not None and file.filename:
+        file_bytes = file.file.read()
+        filename = file.filename
+        mime = file.content_type or ""
+        extracted = resume_parser.extract_text(filename, file_bytes)
+        if extracted.strip():
+            text = extracted
+
+    cand = recruitment.ingest_candidate(
+        db, name=name.strip(), email=email.strip(), phone=phone.strip(),
+        source="careers", resume_text=text,
+        file_bytes=file_bytes, filename=filename, mime=mime,
+    )
+    recruitment.apply_candidate(db, cand, hr, auto_score=True)
+    db.commit()
+
+    title = job.title or (hr.position if hr else "the role")
+    thanks = (
+        '<div class="card"><div class="success">&#10003;</div>'
+        '<h1>Application received</h1>'
+        f'<p class="sub">Thanks, {_e(name.strip())} — your application for <strong>{_e(title)}</strong> '
+        f'at {_e(settings.COMPANY_NAME)} has been submitted.</p>'
+        f'<p class="muted">Our team will review it and reach out at {_e(email.strip())}.</p>'
+        '<a class="apply" href="/careers">View other open roles</a></div>'
+    )
+    return HTMLResponse(_page(f"Application received — {settings.COMPANY_NAME}", thanks))
+
+
 # Declared LAST: this int catch-all must come after the literal /careers/* routes
 # (feed.xml, rss.xml, sitemap.xml, {job_id}.json) so they aren't parsed as a job id.
 @router.get("/careers/{job_id}", response_class=HTMLResponse)
@@ -438,14 +550,12 @@ def career_page(job_id: int, db: Session = Depends(get_db)):
         if sal.get("min"):
             rng = f"{round(sal['min']/100000)}–{round(sal.get('max', sal['min'])/100000)} LPA" if sal.get("max") else f"{round(sal['min']/100000)} LPA"
             chips.append(f'<span class="chip alt">{_e(rng)}</span>')
-    apply_to = settings.EMAIL_FROM
-    subj = f"Application: {job.title or (hr.position if hr else 'role')}"
     body = (
         f'<div class="card"><h1>{_e(job.title or (hr.position if hr else "Role"))}</h1>'
         f'<p class="sub">{_e(settings.COMPANY_NAME)}</p>'
         f'<div class="chips">{"".join(chips)}</div>'
         f'<div>{_description_html(job)}</div>'
-        f'<a class="apply" href="mailto:{_e(apply_to)}?subject={_e(subj)}">Apply now</a>'
+        f'<a class="apply" href="/careers/{job.id}/apply">Apply now</a>'
         f'</div>'
     )
     head = f'<script type="application/ld+json">{_ld_script(ld)}</script>'

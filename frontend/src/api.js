@@ -49,10 +49,23 @@ function enrichBoardRow(app) {
 
 export const api = {
   aiStatus: () => req('/ai-status'),
+  company: () => req('/company'),
   analytics: () => req('/analytics/overview'),
-  audit: (limit = 100) => req(`/audit?limit=${limit}`),
-  publishJob: (jobId) => req(`/jobs/${jobId}/publish`, { method: 'POST' }),
+  publishJob: (jobId, platforms = []) => req(`/jobs/${jobId}/publish`, { method: 'POST', body: JSON.stringify({ platforms }) }),
   distributionChannels: () => req('/distribution/channels'),
+
+  // Users & roles (team directory; roles place people in the tool, e.g. panellists)
+  listUsers: (role = '') => req(`/users${role ? `?role=${encodeURIComponent(role)}` : ''}`),
+  createUser: (body) => req('/users', { method: 'POST', body: JSON.stringify(body) }),
+  updateUser: (id, body) => req(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteUser: (id) => req(`/users/${id}`, { method: 'DELETE' }),
+
+  // Placement officers (TPO) + campus outreach
+  listTpos: () => req('/tpos'),
+  createTpo: (body) => req('/tpos', { method: 'POST', body: JSON.stringify(body) }),
+  updateTpo: (id, body) => req(`/tpos/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteTpo: (id) => req(`/tpos/${id}`, { method: 'DELETE' }),
+  sendToTpos: (hrId, body) => req(`/hiring-requests/${hrId}/send-to-tpos`, { method: 'POST', body: JSON.stringify(body) }),
 
   listRoles: () => req('/hiring-requests'),
   listRolesTable: (q = '', status = '') => {
@@ -118,6 +131,26 @@ export const api = {
   listDocuments: (applicationId) => req(`/documents?application_id=${applicationId}`),
   generateDocument: (body) => req('/documents/generate', { method: 'POST', body: JSON.stringify(body) }),
   approveDocument: (id, by = 'recruiter') => req(`/documents/${id}/approve`, { method: 'POST', body: JSON.stringify({ by }) }),
+
+  // Video interview (pre-defined questions, async one-way, open-source on-device transcription)
+  setVideoQuestions: (jobId, questions) => req(`/jobs/${jobId}/video-questions`, { method: 'PATCH', body: JSON.stringify({ questions }) }),
+  getVideoInterview: (applicationId) => req(`/video-interview?application_id=${applicationId}`),
+  submitVideoAnswer: (interviewId, formData) =>
+    fetch(BASE + `/video-interview/${interviewId}/answer`, { method: 'POST', body: formData }).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Upload failed')
+      return r.json()
+    }),
+  completeVideoInterview: (id) => req(`/video-interview/${id}/complete`, { method: 'POST' }),
+  deleteVideoInterview: (id) => req(`/video-interview/${id}`, { method: 'DELETE' }),
+  retranscribeVideo: (id) => req(`/video-interview/${id}/transcribe`, { method: 'POST' }),
+  videoAnswerUrl: (answerId) => `${BASE}/video-interview/answers/${answerId}/video`,
+  // Single continuous (proctored) recording of the whole session
+  submitVideoRecording: (interviewId, formData) =>
+    fetch(BASE + `/video-interview/${interviewId}/recording`, { method: 'POST', body: formData }).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Upload failed')
+      return r.json()
+    }),
+  videoRecordingUrl: (interviewId) => `${BASE}/video-interview/${interviewId}/recording`,
 
   // Onboarding
   listOnboarding: (applicationId) => req(`/onboarding?application_id=${applicationId}`),

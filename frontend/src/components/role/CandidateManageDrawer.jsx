@@ -70,14 +70,14 @@ export default function CandidateManageDrawer({ app, open, onClose, onRefresh })
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex justify-end">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6">
       <button
         type="button"
         aria-label="Close"
-        className={`absolute inset-0 ${OVERLAY_CLASSES[prefs.overlay] || OVERLAY_CLASSES.light}`}
+        className={`absolute inset-0 backdrop-blur-sm ${OVERLAY_CLASSES[prefs.overlay] || OVERLAY_CLASSES.light}`}
         onClick={onClose}
       />
-      <aside className={`relative z-10 flex h-full w-full ${WIDTH_CLASSES[prefs.width] || WIDTH_CLASSES.medium} flex-col border-l border-slate-200 bg-white shadow-2xl`}>
+      <aside className={`relative z-10 flex h-[720px] max-h-[90vh] ${WIDTH_CLASSES[prefs.width] || WIDTH_CLASSES.medium} flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl`}>
         <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
           <div className="min-w-0 flex-1 pr-2">
             <h2 className="text-lg font-semibold text-slate-900">{c.name || 'Unnamed'}</h2>

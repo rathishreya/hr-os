@@ -56,6 +56,17 @@ const COL_WIDTH = {
   applied_by: 'w-28',
 }
 
+const SCORE_PILL = {
+  green: 'bg-emerald-100 text-emerald-700',
+  blue: 'bg-sky-100 text-sky-700',
+  amber: 'bg-amber-100 text-amber-700',
+  rose: 'bg-rose-100 text-rose-700',
+}
+const STAGE_DOT = {
+  gray: 'bg-slate-400', blue: 'bg-sky-500', violet: 'bg-violet-500',
+  amber: 'bg-amber-500', green: 'bg-emerald-500', rose: 'bg-rose-500',
+}
+
 export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
   const { visible, updateVisible, resetVisible, activeColumns } = useTalentPoolColumns()
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -182,11 +193,20 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
           ? <span className="inline-flex max-w-[140px] items-center gap-1 truncate text-sm text-slate-700"><MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />{row.location}</span>
           : <span className="text-slate-300">—</span>
       case 'pipeline':
+        if (!row.application_count) return <span className="text-xs text-slate-400">Not applied</span>
         return (
-          <div className="flex flex-wrap items-center gap-1">
-            {row.top_score > 0 && <Badge tone={scoreTone(row.top_score)}>{Math.round(row.top_score)}</Badge>}
-            {row.latest_stage && <Badge tone={stageTone[row.latest_stage] || 'gray'}>{row.latest_stage}</Badge>}
-            {!row.application_count && <span className="text-xs text-slate-400">not applied</span>}
+          <div className="flex items-center gap-2 whitespace-nowrap">
+            {row.top_score > 0 && (
+              <span className={cx('inline-flex h-5 items-center rounded-full px-2 text-xs font-semibold tabular-nums', SCORE_PILL[scoreTone(row.top_score)])}>
+                {Math.round(row.top_score)}
+              </span>
+            )}
+            {row.latest_stage && (
+              <span className="inline-flex items-center gap-1.5 text-sm capitalize text-slate-700">
+                <span className={cx('h-1.5 w-1.5 rounded-full', STAGE_DOT[stageTone[row.latest_stage]] || 'bg-slate-400')} />
+                {row.latest_stage}
+              </span>
+            )}
           </div>
         )
       case 'added':
@@ -280,7 +300,7 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
                 <tr
                   key={row.id}
                   onClick={() => onRowClick(row)}
-                  className="group cursor-pointer border-b border-slate-100 transition hover:bg-violet-50/40"
+                  className="group cursor-pointer border-b border-slate-100 transition hover:bg-violet-50"
                 >
                   {activeColumns.map((col) => {
                     const isSticky = stickyIds.has(col.id)
@@ -291,7 +311,7 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
                           cellPad,
                           COL_WIDTH[col.id],
                           'align-middle',
-                          isSticky && 'sticky z-20 bg-white group-hover:bg-violet-50/40 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.04)]',
+                          isSticky && 'sticky z-20 bg-white group-hover:bg-violet-50 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.04)]',
                         )}
                         style={isSticky ? { left: stickyOffsets[col.id] } : undefined}
                       >
