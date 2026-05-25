@@ -5,6 +5,15 @@ rule-based fallback — nothing is faked/static), and upgrades to full AI + real
 moment you add credentials. Ships with a **Docker/Postgres** production stack and an
 **MCP server** so AI agents can drive the whole hiring workflow.
 
+### Deploy free in one click
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rathishreya/hr-os)
+
+Click the button → sign into Render → paste your free [Gemini key](https://aistudio.google.com/apikey).
+Render reads [`render.yaml`](render.yaml) and provisions Postgres + backend + frontend on its free tier.
+After the backend is live, set the frontend's `VITE_API_BASE` to `<backend-url>/api` and redeploy it.
+(Full steps in [option C](#run-it--option-c-deploy-free-on-render) below.)
+
 ## What works today (all verified)
 
 ```
