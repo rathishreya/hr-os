@@ -1,15 +1,15 @@
 # Render Blueprint — one-click free deploy of HR-OS (single service).
 #
 # Spins up TWO free resources:
-#   • hr-os-db        — managed PostgreSQL (free)
-#   • hr-os-backend   — FastAPI backend that ALSO serves the React admin UI + public
-#                       careers pages + job feeds (Docker, free). One service, one URL,
-#                       same origin — no separate static host, no VITE_API_BASE to wire.
+#   • hr-os-db   — managed PostgreSQL (free)
+#   • hrms-ez    — FastAPI backend that ALSO serves the React admin UI + public careers
+#                 pages + job feeds (Docker, free). One service, one URL (hrms-ez.onrender.com),
+#                 same origin — no separate static host, no VITE_API_BASE to wire.
 #
-# NOTE: this used to be a split deploy (separate hr-os-backend + hr-os-frontend). It's
-# now combined into hr-os-backend. The service NAME/URL is preserved, so existing careers
-# /feed links keep working — after re-syncing the Blueprint you can DELETE the now-unused
-# hr-os-frontend static service in the Render dashboard.
+# NOTE: the web service is named `hrms-ez` → URL https://hrms-ez.onrender.com. Render can't
+# rename an existing service's URL, so re-syncing this Blueprint creates a NEW service
+# `hrms-ez`; afterwards DELETE the old `hr-os-backend` (and the unused `hr-os-frontend`)
+# in the dashboard. You'll re-enter the `sync: false` env values on the new service.
 #
 # Deploy:
 #   1. Push this repo to GitHub.
@@ -32,7 +32,7 @@ databases:
 
 services:
   - type: web
-    name: hr-os-backend     # reuse the existing service name → same URL, feeds stay valid
+    name: hrms-ez           # → https://hrms-ez.onrender.com
     runtime: docker
     plan: free
     dockerfilePath: ./backend/Dockerfile
