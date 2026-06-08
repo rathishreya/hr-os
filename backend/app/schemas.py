@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Note: email fields are plain `str` so we don't require the optional
 # email-validator dependency. Validation can be tightened later.
@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # ---------- Hiring Request ----------
 class HiringRequestCreate(BaseModel):
-    position: str
-    department: str = ""
+    position: str = Field(max_length=200)
+    department: str = Field("", max_length=120)
     budget_ctc: str = ""
     yoe_min: float = 0
     yoe_max: float = 0
@@ -23,8 +23,26 @@ class HiringRequestCreate(BaseModel):
     hiring_deadline: str = ""
     location: str = ""
     work_mode: str = "onsite"
-    interview_panel: list[str] = Field(default_factory=list)
+    interview_panel: list[str] = Field(default_factory=list)  # panelists
+    hiring_manager: str = ""
+    recruiter: str = ""
     num_openings: int = 1
+    start_hiring_date: str = ""
+    application_questions: list[dict[str, Any]] = Field(default_factory=list)
+    interview_types: list[str] = Field(default_factory=list)
+
+
+class SuggestSkillsIn(BaseModel):
+    position: str = ""
+    department: str = ""
+    yoe_min: float = 0
+    yoe_max: float = 0
+
+
+class SuggestSkillsOut(BaseModel):
+    mandatory_skills: list[str] = Field(default_factory=list)
+    preferred_skills: list[str] = Field(default_factory=list)
+    provider: str = ""
 
 
 class HiringRequestOut(HiringRequestCreate):
@@ -66,17 +84,33 @@ class JobOut(BaseModel):
     status: str
     target_platforms: list[Any] = Field(default_factory=list)
     video_questions: list[Any] = Field(default_factory=list)
+    distribution: dict[str, Any] = Field(default_factory=dict)
     ai_provider: str
     created_at: datetime
 
 
+class JobUpdate(BaseModel):
+    """Human edits to an AI-generated JD. Every field optional; only sent ones are applied."""
+
+    title: str | None = None
+    seo_title: str | None = None
+    description: str | None = None
+    responsibilities: list[str] | None = None
+    requirements: list[str] | None = None
+    company_description: str | None = None
+    benefits: list[str] | None = None
+    culture: str | None = None
+    screening_questions: list[str] | None = None
+    knockout_questions: list[str] | None = None
+
+
 # ---------- Candidate ----------
 class CandidateCreate(BaseModel):
-    name: str = ""
-    email: str = ""
-    phone: str = ""
-    source: str = "direct"
-    resume_text: str = ""
+    name: str = Field("", max_length=160)
+    email: str = Field("", max_length=200)
+    phone: str = Field("", max_length=60)
+    source: str = Field("direct", max_length=40)
+    resume_text: str = Field("", max_length=100_000)
     hiring_request_id: int | None = None  # if set, auto-create an application + score
 
 
@@ -109,11 +143,18 @@ class ApplicationOut(BaseModel):
     score_overall: float
     score_dimensions: dict[str, Any]
     score_rationale: str
+    score_breakdown: dict[str, Any] = Field(default_factory=dict)
     recommendation: str
     fit_label: str
     human_override: dict[str, Any]
+    application_answers: list[Any] = Field(default_factory=list)
     scored_at: datetime | None
     created_at: datetime
+
+    @field_validator("application_answers", mode="before")
+    @classmethod
+    def _coerce_answers(cls, v):
+        return v if isinstance(v, list) else []
 
 
 class ApplicationWithCandidate(ApplicationOut):
@@ -127,11 +168,38 @@ class StageUpdate(BaseModel):
 
 class HiringRequestUpdate(BaseModel):
     status: str | None = None
+    position: str | None = None
+    department: str | None = None
+    budget_ctc: str | None = None
+    yoe_min: float | None = None
+    yoe_max: float | None = None
+    mandatory_skills: list[str] | None = None
+    preferred_skills: list[str] | None = None
+    priority: str | None = None
+    hiring_deadline: str | None = None
+    location: str | None = None
+    work_mode: str | None = None
+    interview_panel: list[str] | None = None
+    hiring_manager: str | None = None
+    recruiter: str | None = None
+    num_openings: int | None = None
+    start_hiring_date: str | None = None
+    application_questions: list[dict[str, Any]] | None = None
+    interview_types: list[str] | None = None
 
 
 # ---------- Publish / distribution ----------
 class PublishRequest(BaseModel):
     platforms: list[str] = Field(default_factory=list)  # free boards selected at posting time
+
+
+class JobRef(BaseModel):
+    job_id: int
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(max_length=200)
+    password: str = Field(max_length=200)
 
 
 # ---------- Users & roles ----------
@@ -279,11 +347,18 @@ class ScreeningOut(BaseModel):
     summary: str
     strengths: list[Any]
     concerns: list[Any]
+    per_question: list[Any] = Field(default_factory=list)
     recommendation: str
     ai_provider: str
     created_at: datetime
     completed_at: datetime | None
     current_question: str | None = None
+
+    # The migration-added per_question column is nullable; tolerate NULL / non-list on read.
+    @field_validator("strengths", "concerns", "per_question", mode="before")
+    @classmethod
+    def _coerce_list(cls, v):
+        return v if isinstance(v, list) else []
 
 
 class StartScreeningRequest(BaseModel):
@@ -306,6 +381,23 @@ class InterviewRoundCreate(BaseModel):
     location_or_link: str = ""
     notes: str = ""
     feedback: str = ""
+    assessment_id: int | None = None
+
+
+class BulkInterviewRoundsRequest(BaseModel):
+    """Apply a set of interview types to many applications at once (job-level plan → candidates)."""
+
+    application_ids: list[int] = Field(default_factory=list)
+    interview_types: list[str] = Field(default_factory=list)
+    duration_minutes: int = 60
+    panelists: list[str] = Field(default_factory=list)
+    skip_existing: bool = True  # don't duplicate a type a candidate already has
+
+
+class BulkInterviewRoundsOut(BaseModel):
+    created: int
+    skipped: int
+    applications: int
 
 
 class InterviewRoundUpdate(BaseModel):
@@ -318,6 +410,7 @@ class InterviewRoundUpdate(BaseModel):
     location_or_link: str | None = None
     notes: str | None = None
     feedback: str | None = None
+    assessment_id: int | None = None
 
 
 class InterviewRoundOut(BaseModel):
@@ -334,8 +427,16 @@ class InterviewRoundOut(BaseModel):
     location_or_link: str
     notes: str
     feedback: str
+    panel_feedback: list[Any] = Field(default_factory=list)
+    assessment_id: int | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class PanelFeedbackRequest(BaseModel):
+    rating: int = 0                # 1–5 (0 = not rated)
+    recommendation: str = ""       # strong_yes | yes | no | strong_no
+    feedback: str = Field("", max_length=8000)
 
 
 # ---------- Communications ----------
@@ -349,6 +450,15 @@ class SendEmailRequest(BaseModel):
     subject: str | None = None
     body: str | None = None
     use_ai: bool = False
+    raw: bool = False  # preview: return the unrendered template (with {name} tokens) for editing
+
+
+class BulkEmailRequest(BaseModel):
+    application_ids: list[int]
+    template: str = "acknowledgment"
+    use_ai: bool = False
+    subject: str | None = None  # optional edited template (with {name}/{role} tokens)
+    body: str | None = None
 
 
 class EmailOut(BaseModel):
@@ -371,12 +481,29 @@ class EmailOut(BaseModel):
 # ---------- Documents (offers / contracts) ----------
 class GenerateDocumentRequest(BaseModel):
     application_id: int
-    doc_type: str = "offer_letter"  # offer_letter|employment_agreement|nda|contractor_agreement
+    doc_type: str = "offer_letter"  # offer_letter|employment_contract|traineeship_offer|nda|...
+    template_key: str = ""  # EZ Lab template; defaults from doc_type when blank
+    terms: dict[str, Any] = Field(default_factory=dict)  # name, designation, manager, start_date, annual_ctc, responsibilities, ...
+
+
+class RegenerateDocumentRequest(BaseModel):
+    template_key: str = ""  # switch template; blank keeps the document's current one
     terms: dict[str, Any] = Field(default_factory=dict)
 
 
 class ApproveDocumentRequest(BaseModel):
     by: str = "recruiter"
+
+
+class MoveToOnboardingRequest(BaseModel):
+    move: bool = True
+
+
+class DocumentTemplateOut(BaseModel):
+    key: str
+    label: str
+    description: str
+    doc_type: str
 
 
 class DocumentOut(BaseModel):
@@ -386,14 +513,98 @@ class DocumentOut(BaseModel):
     application_id: int | None
     candidate_id: int
     doc_type: str
+    template_key: str = ""
     title: str
     content: str
+    blocks: list[Any] = Field(default_factory=list)
     terms: dict[str, Any]
     status: str
     ai_provider: str
     approved_by: str
     approved_at: datetime | None
+    move_to_onboarding: bool = False
+    upload_filename: str = ""
+    has_upload: bool = False
     created_at: datetime
+    candidate_name: str = ""  # enriched by the list endpoint for the Offer & Docs page
+    email: str = ""
+    contact: str = ""
+    position: str = ""
+    department: str = ""
+    compensation: str = ""
+    location: str = ""
+    joining_date: str = ""
+    entity: str = "EZ"
+    reporting_manager: str = ""
+    approving_manager: str = ""
+
+    # The migration-added columns are nullable; tolerate NULL on read of older rows.
+    @field_validator("blocks", mode="before")
+    @classmethod
+    def _coerce_blocks(cls, v):
+        return v if isinstance(v, list) else []
+
+    @field_validator("template_key", mode="before")
+    @classmethod
+    def _coerce_template_key(cls, v):
+        return v if isinstance(v, str) else ""
+
+    @field_validator("move_to_onboarding", mode="before")
+    @classmethod
+    def _coerce_move(cls, v):
+        return bool(v)
+
+
+# ---------- Assessments ----------
+class AssessmentFileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filename: str
+    mime: str
+    size: int
+
+
+class AssessmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str
+    filename: str          # first file (back-compat)
+    mime: str
+    size: int
+    files: list[AssessmentFileOut] = Field(default_factory=list)
+    created_at: datetime
+
+    @field_validator("files", mode="before")
+    @classmethod
+    def _coerce_files(cls, v):
+        return v if isinstance(v, list) else []
+
+
+class DraftAssessmentEmailRequest(BaseModel):
+    application_id: int | None = None  # used to fill role/company; name stays a {name} placeholder
+    use_ai: bool = False
+
+
+class DraftAssessmentEmailOut(BaseModel):
+    subject: str
+    body: str
+    provider: str = ""
+
+
+class SendAssessmentRequest(BaseModel):
+    application_ids: list[int] = Field(default_factory=list)
+    subject: str = ""
+    body: str = ""
+
+
+class SendAssessmentOut(BaseModel):
+    sent: int
+    logged: int
+    failed: int
+    total: int
 
 
 # ---------- Onboarding ----------
@@ -404,6 +615,10 @@ class GenerateOnboardingRequest(BaseModel):
 class ToggleTaskRequest(BaseModel):
     task_id: int
     done: bool
+
+
+class UpdateOnboardingDetailsRequest(BaseModel):
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class OnboardingOut(BaseModel):
@@ -417,9 +632,25 @@ class OnboardingOut(BaseModel):
     induction: list[Any]
     tools: list[Any]
     buddy: str
+    details: dict[str, Any] = Field(default_factory=dict)  # HR-filled hire details (entity, comp, managers, ...)
     status: str
     ai_provider: str
     created_at: datetime
+    candidate_name: str = ""  # enriched by the list endpoint for the Onboarding page
+    email: str = ""
+    contact: str = ""
+    position: str = ""
+    department: str = ""
+
+    @field_validator("tasks", "induction", "tools", mode="before")
+    @classmethod
+    def _coerce_list(cls, v):
+        return v if isinstance(v, list) else []
+
+    @field_validator("details", mode="before")
+    @classmethod
+    def _coerce_details(cls, v):
+        return v if isinstance(v, dict) else {}
 
 
 class ScoringWeights(BaseModel):

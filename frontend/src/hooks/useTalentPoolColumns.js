@@ -14,6 +14,7 @@ export const TALENT_POOL_COLUMNS = [
   { id: 'source', label: 'Source' },
   { id: 'sub_source', label: 'Sub-source' },
   { id: 'location', label: 'Location' },
+  { id: 'suggested_role', label: 'Suggested role' },
   { id: 'pipeline', label: 'Pipeline' },
   { id: 'added', label: 'Date added' },
   { id: 'applied_by', label: 'Applied by' },

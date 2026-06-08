@@ -28,7 +28,7 @@ export default function FunnelChart({ funnel = {} }) {
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-slate-100">
             <div
-              className={`h-full rounded-full transition-all ${stage === 'rejected' ? 'bg-rose-400' : stage === 'hired' ? 'bg-emerald-500' : 'bg-violet-500'}`}
+              className={`h-full rounded-full transition-[width] duration-300 ease-snappy ${stage === 'rejected' ? 'bg-rose-400' : stage === 'hired' ? 'bg-emerald-500' : 'bg-brand-500'}`}
               style={{ width: `${(count / max) * 100}%` }}
             />
           </div>

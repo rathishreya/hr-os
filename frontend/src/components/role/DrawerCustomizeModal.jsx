@@ -23,9 +23,9 @@ function OptionPills({ value, options, onChange }) {
           type="button"
           onClick={() => onChange(opt.value)}
           className={cx(
-            'rounded-lg border px-3 py-1.5 text-xs font-medium transition',
+            'rounded-lg border px-3 py-1.5 text-xs font-medium transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
             value === opt.value
-              ? 'border-violet-300 bg-violet-50 text-violet-800'
+              ? 'border-brand-300 bg-brand-50 text-brand-800'
               : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
           )}
         >

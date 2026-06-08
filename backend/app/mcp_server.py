@@ -21,6 +21,7 @@ Claude Desktop config (claude_desktop_config.json):
       }
     }
 """
+
 from __future__ import annotations
 
 from typing import Any

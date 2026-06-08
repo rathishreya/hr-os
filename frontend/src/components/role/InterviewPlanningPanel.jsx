@@ -1,24 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Calendar, Clock, Link2, MapPin, Plus, Trash2, Users, ChevronDown, ChevronUp, Bot, Video, Copy, Check,
-  ShieldAlert, ShieldCheck,
+  ShieldAlert, ShieldCheck, CheckCircle2, AlertTriangle, ThumbsUp, ThumbsDown, HelpCircle,
 } from 'lucide-react'
 import { api } from '../../api'
 import { Badge, Button, Field, Spinner, inputClass, cx } from '../../ui'
 import { useToast } from '../Toast'
+import { INTERVIEW_TYPES } from '../../constants'
 import ScreeningPanel from './ScreeningPanel'
-
-const INTERVIEW_TYPES = [
-  { value: 'phone_screen', label: 'Phone screen' },
-  { value: 'technical', label: 'Technical' },
-  { value: 'system_design', label: 'System design' },
-  { value: 'cultural', label: 'Cultural fit' },
-  { value: 'hr', label: 'HR / behavioural' },
-  { value: 'panel', label: 'Panel' },
-  { value: 'final', label: 'Final' },
-  { value: 'assignment', label: 'Take-home / assignment' },
-  { value: 'other', label: 'Other' },
-]
+import SendAssessmentModal from './SendAssessmentModal'
 
 const STATUSES = [
   { value: 'draft', label: 'Draft', tone: 'gray' },
@@ -40,6 +30,7 @@ const EMPTY_ROUND = {
   location_or_link: '',
   notes: '',
   feedback: '',
+  assessment_id: null,
 }
 
 function typeLabel(v) {
@@ -75,9 +66,9 @@ function PanelistInput({ panelists, suggestions, onChange }) {
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1.5">
         {panelists.map((p) => (
-          <span key={p} className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-800">
+          <span key={p} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-800">
             {p}
-            <button type="button" onClick={() => remove(p)} className="text-violet-400 hover:text-rose-600" aria-label={`Remove ${p}`}>×</button>
+            <button type="button" onClick={() => remove(p)} className="text-brand-400 transition-transform duration-150 ease-snappy hover:text-rose-600 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50" aria-label={`Remove ${p}`}>×</button>
           </span>
         ))}
         {!panelists.length && <span className="text-xs text-slate-400">No panelists yet</span>}
@@ -89,7 +80,7 @@ function PanelistInput({ panelists, suggestions, onChange }) {
               key={s}
               type="button"
               onClick={() => add(s)}
-              className="rounded-md border border-dashed border-slate-200 px-2 py-0.5 text-xs text-slate-600 hover:border-violet-300 hover:bg-violet-50"
+              className="rounded-md border border-dashed border-slate-200 px-2 py-0.5 text-xs text-slate-600 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-50 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
             >
               + {s}
             </button>
@@ -110,9 +101,15 @@ function PanelistInput({ panelists, suggestions, onChange }) {
   )
 }
 
-function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, busy, isNew }) {
+function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, busy, isNew, app }) {
+  const [assessments, setAssessments] = useState([])
+  useEffect(() => {
+    if (form.interview_type === 'assessment' && assessments.length === 0) {
+      api.listAssessments().then(setAssessments).catch(() => {})
+    }
+  }, [form.interview_type, assessments.length])
   return (
-    <div className="space-y-3 rounded-xl border border-violet-200 bg-violet-50/40 p-4">
+    <div className="space-y-3 rounded-xl border border-brand-200 bg-brand-50/40 p-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Round #">
           <input
@@ -163,6 +160,29 @@ function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, busy, is
           </Field>
         </div>
       </div>
+      {form.interview_type === 'assessment' && (
+        <Field label="Assessment to send" hint="Manage assessments on the Assessments page">
+          <div className="flex items-center gap-2">
+            <select className={inputClass} value={form.assessment_id || ''} onChange={(e) => setForm({ ...form, assessment_id: Number(e.target.value) || null })}>
+              <option value="">Select an assessment…</option>
+              {assessments.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            {form.assessment_id ? (
+              <a href={api.assessmentFileUrl(form.assessment_id)} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-600 hover:border-brand-300 hover:text-brand-700">Preview</a>
+            ) : null}
+          </div>
+          {assessments.length === 0 && <p className="mt-1 text-xs text-amber-600">No assessments yet — add one on the Assessments page first.</p>}
+        </Field>
+      )}
+      {form.interview_type === 'ai_interview' && app && (
+        <div className="rounded-lg border border-brand-200 bg-white p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <Bot className="h-3.5 w-3.5 text-brand-600" /> AI video interview
+          </div>
+          <p className="mb-2 text-xs text-slate-500">Add your own questions or generate them with AI, then share the link. The candidate records one proctored video; AI transcribes &amp; evaluates.</p>
+          <AiVideoSetup app={app} />
+        </div>
+      )}
       <Field label="Panelists">
         <PanelistInput
           panelists={form.panelists}
@@ -196,7 +216,7 @@ function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, busy, is
   )
 }
 
-function RoundCard({ round, panelSuggestions, onUpdated, onDeleted }) {
+function RoundCard({ round, panelSuggestions, onUpdated, onDeleted, app }) {
   const { toast } = useToast()
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -252,10 +272,10 @@ function RoundCard({ round, panelSuggestions, onUpdated, onDeleted }) {
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
       <button
         type="button"
-        className="flex w-full items-start gap-3 p-4 text-left"
+        className="flex w-full items-start gap-3 rounded-xl p-4 text-left transition-colors duration-150 ease-snappy hover:bg-slate-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
         onClick={() => setExpanded((e) => !e)}
       >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-sm font-bold text-violet-700">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-sm font-bold text-brand-700">
           {round.round_number}
         </div>
         <div className="min-w-0 flex-1">
@@ -284,6 +304,7 @@ function RoundCard({ round, panelSuggestions, onUpdated, onDeleted }) {
               onSave={save}
               onCancel={() => { setForm(null); setExpanded(false) }}
               busy={busy}
+              app={app}
             />
           ) : (
             <div className="space-y-3 text-sm">
@@ -291,7 +312,7 @@ function RoundCard({ round, panelSuggestions, onUpdated, onDeleted }) {
                 <div className="flex gap-2 text-slate-600">
                   {round.location_or_link.startsWith('http') ? <Link2 className="h-4 w-4 shrink-0" /> : <MapPin className="h-4 w-4 shrink-0" />}
                   {round.location_or_link.startsWith('http') ? (
-                    <a href={round.location_or_link} target="_blank" rel="noreferrer" className="text-violet-600 hover:underline break-all">{round.location_or_link}</a>
+                    <a href={round.location_or_link} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline break-all">{round.location_or_link}</a>
                   ) : (
                     <span>{round.location_or_link}</span>
                   )}
@@ -325,26 +346,133 @@ function RoundCard({ round, panelSuggestions, onUpdated, onDeleted }) {
 
 const fmtTime = (s) => `${String(Math.floor((s || 0) / 60)).padStart(2, '0')}:${String(Math.floor((s || 0) % 60)).padStart(2, '0')}`
 
-function VideoInterviewReview({ app }) {
+const ratingTone = (v) =>
+  v >= 75 ? 'bg-emerald-100 text-emerald-700' : v >= 50 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-700'
+
+// Overall fit verdict → headline card styling + icon.
+const VERDICT = {
+  fit: { label: 'Fit', Icon: ThumbsUp, card: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+  maybe: { label: 'Maybe', Icon: HelpCircle, card: 'border-amber-200 bg-amber-50 text-amber-800' },
+  unfit: { label: 'Unfit', Icon: ThumbsDown, card: 'border-rose-200 bg-rose-50 text-rose-800' },
+}
+
+// Structured AI assessment of a completed video interview: overall fit verdict + reasoning,
+// strengths/gaps, and a per-question transcript (question → answer → rating). Kept as its own
+// component (not an inline IIFE) so `seek` reads the recording ref only from event handlers.
+function VideoEvaluation({ vi, seek, evaluating, onEvaluate }) {
+  const ev = vi.evaluation || {}
+  const pq = Array.isArray(ev.per_question) ? ev.per_question : []
+  const atFor = (qi) => (vi.timeline || []).find((t) => t.q_index === qi)?.at
+  const v = VERDICT[ev.verdict]
+  return (
+    <>
+      {/* Overall fit verdict + reasoning */}
+      {v && (
+        <div className={cx('rounded-lg border p-3', v.card)}>
+          <div className="flex items-center gap-2">
+            <v.Icon className="h-4 w-4 shrink-0" />
+            <span className="text-sm font-bold">{v.label}</span>
+            {typeof ev.scores?.overall === 'number' && <span className="text-xs font-medium opacity-80">· {ev.scores.overall}/100 overall</span>}
+            <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide opacity-60"><Bot className="h-3 w-3" /> AI assessment</span>
+          </div>
+          {ev.reasoning && <p className="mt-1.5 text-xs leading-relaxed opacity-90">{ev.reasoning}</p>}
+        </div>
+      )}
+
+      {/* Strengths & gaps */}
+      {(ev.strengths?.length > 0 || ev.gaps?.length > 0) && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {ev.strengths?.length > 0 && (
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 p-2.5">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Strengths</div>
+              <ul className="space-y-1">{ev.strengths.map((s, i) => (<li key={i} className="flex gap-1.5 text-xs text-slate-700"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" /><span>{s}</span></li>))}</ul>
+            </div>
+          )}
+          {ev.gaps?.length > 0 && (
+            <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-2.5">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">Gaps &amp; concerns</div>
+              <ul className="space-y-1">{ev.gaps.map((g, i) => (<li key={i} className="flex gap-1.5 text-xs text-slate-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" /><span>{g}</span></li>))}</ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Per-question transcript: question → answer → rating (click the timestamp to jump) */}
+      {pq.length > 0 ? (
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Transcript &amp; ratings</span>
+            <button type="button" onClick={onEvaluate} disabled={evaluating} className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-500 transition-colors duration-150 ease-snappy hover:text-brand-700 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:opacity-50">{evaluating ? <Spinner /> : <><Bot className="h-3 w-3" /> Re-evaluate</>}</button>
+          </div>
+          <div className="space-y-2">
+            {pq.map((p, i) => {
+              const at = atFor(p.q_index)
+              return (
+                <div key={i} className="rounded-xl border border-slate-100 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-left text-xs font-medium text-slate-700">
+                      {at != null && <button type="button" onClick={() => seek(at)} className="mr-1 font-mono text-brand-500 transition-colors duration-150 ease-snappy hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50" title="Jump to this answer in the recording">{fmtTime(at)}</button>}
+                      Q{i + 1}. {p.question}
+                    </p>
+                    {typeof p.rating === 'number' && <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums', ratingTone(p.rating))}>{p.rating}/100</span>}
+                  </div>
+                  <p className="mt-1.5 whitespace-pre-wrap rounded-lg bg-slate-50 p-2 text-xs text-slate-600">{p.answer || <span className="italic text-slate-400">No answer captured for this question.</span>}</p>
+                  {p.comment && <p className="mt-1 flex gap-1 text-xs text-slate-500"><Bot className="mt-0.5 h-3 w-3 shrink-0 text-brand-400" /><span>{p.comment}</span></p>}
+                </div>
+              )
+            })}
+          </div>
+          <details className="mt-2 text-xs">
+            <summary className="cursor-pointer text-slate-400 hover:text-slate-600">Full raw transcript</summary>
+            <p className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50 p-2.5 text-slate-600">{vi.transcript}</p>
+          </details>
+        </div>
+      ) : (
+        /* Transcript exists but no structured assessment yet (e.g. an interview taken before this feature). */
+        <div className="space-y-2">
+          <div className="rounded-lg border border-brand-200 bg-brand-50 p-2.5 text-xs">
+            <p className="mb-2 text-brand-800">Transcript captured. Generate the AI assessment — per-question ratings plus an overall fit verdict with strengths and gaps.</p>
+            <Button className="text-xs" onClick={onEvaluate} disabled={evaluating}>{evaluating ? <Spinner /> : <><Bot className="h-3.5 w-3.5" /> Generate AI assessment</>}</Button>
+          </div>
+          <div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Transcript</div>
+            <p className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50 p-2.5 text-xs text-slate-600">{vi.transcript}</p>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// Set up the AI video interview: add questions (manually or AI-generated) + share the link.
+// Reused both when scheduling an "AI Interview" round and in the async-video section below.
+function AiVideoSetup({ app, onSaved }) {
   const { toast } = useToast()
-  const [vi, setVi] = useState(null)
   const [job, setJob] = useState(null)
   const [qs, setQs] = useState([])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [genning, setGenning] = useState(false)
   const [copied, setCopied] = useState(false)
-  const vidRef = useRef(null)
   const link = `${window.location.origin}/interview/${app.id}`
 
-  const loadVi = () => api.getVideoInterview(app.id).then(setVi).catch(() => {})
   useEffect(() => {
-    loadVi()
-    api.getJD(app.hiring_request_id).then((j) => { setJob(j); setQs(j.video_questions?.length ? j.video_questions : ['', '', '']) }).catch(() => setJob(null))
+    api.getJD(app.hiring_request_id)
+      .then((j) => { setJob(j); setQs(j.video_questions?.length ? j.video_questions : ['', '', '']) })
+      .catch(() => setJob(null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app.id, app.hiring_request_id])
+  }, [app.hiring_request_id])
 
   async function copy() { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1800) }
-  function seek(at) { if (vidRef.current) { vidRef.current.currentTime = at || 0; vidRef.current.play().catch(() => {}) } }
+
+  async function generate() {
+    setGenning(true)
+    try {
+      const r = await api.generateVideoQuestions(app.id)
+      if (r.questions?.length) setQs(r.questions)
+      toast('Questions generated — review and save')
+    } catch (e) { toast(e.message, 'error') } finally { setGenning(false) }
+  }
 
   async function saveQuestions() {
     if (!job) { toast('Generate the job description first (Job post tab) to set questions.', 'error'); return }
@@ -353,30 +481,20 @@ function VideoInterviewReview({ app }) {
       const clean = qs.map((q) => q.trim()).filter(Boolean)
       await api.setVideoQuestions(job.id, clean)
       setQs(clean.length ? clean : [''])
-      await loadVi()
       toast('Questions saved'); setSaved(true); setTimeout(() => setSaved(false), 2000)
+      onSaved?.()
     } catch (e) { toast(e.message, 'error') } finally { setSaving(false) }
   }
 
-  const [retx, setRetx] = useState(false)
-  async function deleteRecording() {
-    if (!vi || !window.confirm('Delete this interview recording, transcript and summary? The candidate can re-record using the same link.')) return
-    try { await api.deleteVideoInterview(vi.id); await loadVi(); toast('Recording deleted') } catch (e) { toast(e.message, 'error') }
-  }
-  async function generateTranscript() {
-    setRetx(true)
-    try { setVi(await api.retranscribeVideo(vi.id)); toast('Transcript & summary generated') }
-    catch (e) { toast(e.message, 'error') } finally { setRetx(false) }
-  }
-
-  const proc = vi?.proctoring || {}
-  const flags = (proc.focus_lost || 0) + (proc.fullscreen_exits || 0)
-
   return (
-    <div className="mt-2 space-y-3">
-      {/* 1) Write the questions */}
+    <div className="space-y-3">
       <div className="rounded-lg border border-slate-200 bg-white p-2.5">
-        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Interview questions {vi?.status === 'completed' && <span className="font-normal text-slate-300">· edits apply to future candidates</span>}</div>
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Interview questions</span>
+          <Button variant="ghost" className="text-xs" onClick={generate} disabled={genning} title="Let AI write questions from the role & JD">
+            {genning ? <Spinner /> : <><Bot className="h-3.5 w-3.5" /> Generate with AI</>}
+          </Button>
+        </div>
         {job ? (
           <>
             <div className="space-y-1.5">
@@ -384,7 +502,7 @@ function VideoInterviewReview({ app }) {
                 <div key={i} className="flex items-center gap-2">
                   <span className="w-4 text-xs tabular-nums text-slate-400">{i + 1}</span>
                   <input className={inputClass} value={q} onChange={(e) => setQs(qs.map((x, j) => (j === i ? e.target.value : x)))} placeholder="Question the AI will ask" />
-                  <button type="button" onClick={() => setQs(qs.filter((_, j) => j !== i))} className="shrink-0 text-slate-300 hover:text-rose-500" aria-label="Remove"><Trash2 className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setQs(qs.filter((_, j) => j !== i))} className="shrink-0 text-slate-300 transition-transform duration-150 ease-snappy hover:text-rose-500 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50" aria-label="Remove"><Trash2 className="h-4 w-4" /></button>
                 </div>
               ))}
             </div>
@@ -396,14 +514,54 @@ function VideoInterviewReview({ app }) {
         ) : <p className="text-xs text-slate-400">Generate the job description first (Job post tab) to set questions.</p>}
       </div>
 
-      {/* 2) Share the link to start */}
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-        <p className="mb-1.5 text-xs text-slate-500">Then share this link — one <strong>continuous, proctored</strong> recording (AI asks, candidate answers, auto-advances on silence, transcribed free on their device).</p>
+        <p className="mb-1.5 text-xs text-slate-500">Share this link — one <strong>continuous, proctored</strong> recording (AI asks, candidate answers, auto-advances on silence, transcribed free on their device).</p>
         <div className="flex items-center gap-2">
           <code className="min-w-0 flex-1 truncate rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">{link}</code>
           <Button variant="ghost" className="shrink-0 px-2 py-1 text-xs" onClick={copy}>{copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}{copied ? 'Copied' : 'Copy link'}</Button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function VideoInterviewReview({ app }) {
+  const { toast } = useToast()
+  const [vi, setVi] = useState(null)
+  const vidRef = useRef(null)
+
+  const loadVi = () => api.getVideoInterview(app.id).then(setVi).catch(() => {})
+  useEffect(() => {
+    loadVi()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.id])
+
+  function seek(at) { if (vidRef.current) { vidRef.current.currentTime = at || 0; vidRef.current.play().catch(() => {}) } }
+
+  const [retx, setRetx] = useState(false)
+  const [evaluating, setEvaluating] = useState(false)
+  async function deleteRecording() {
+    if (!vi || !window.confirm('Delete this interview recording, transcript and assessment? The candidate can re-record using the same link.')) return
+    try { await api.deleteVideoInterview(vi.id); await loadVi(); toast('Recording deleted') } catch (e) { toast(e.message, 'error') }
+  }
+  async function generateTranscript() {
+    setRetx(true)
+    try { setVi(await api.retranscribeVideo(vi.id)); toast('Transcript & assessment generated') }
+    catch (e) { toast(e.message, 'error') } finally { setRetx(false) }
+  }
+  async function generateEvaluation() {
+    setEvaluating(true)
+    try { setVi(await api.evaluateVideo(vi.id)); toast('AI assessment generated') }
+    catch (e) { toast(e.message, 'error') } finally { setEvaluating(false) }
+  }
+
+  const proc = vi?.proctoring || {}
+  const flags = (proc.focus_lost || 0) + (proc.fullscreen_exits || 0)
+
+  return (
+    <div className="mt-2 space-y-3">
+      {/* 1+2) Questions (manual or AI) + share link */}
+      <AiVideoSetup app={app} onSaved={loadVi} />
 
       {/* 3) Review after the interview */}
       {!vi ? null : !vi.has_recording ? (
@@ -412,7 +570,7 @@ function VideoInterviewReview({ app }) {
         <>
           <video ref={vidRef} controls src={api.videoRecordingUrl(vi.id)} className="aspect-video w-full rounded-lg bg-slate-900" />
           <div className="flex justify-end">
-            <button type="button" onClick={deleteRecording} className="inline-flex items-center gap-1 text-xs font-medium text-rose-500 hover:text-rose-700"><Trash2 className="h-3.5 w-3.5" /> Delete recording</button>
+            <button type="button" onClick={deleteRecording} className="inline-flex items-center gap-1 text-xs font-medium text-rose-500 transition-colors duration-150 ease-snappy hover:text-rose-700 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50"><Trash2 className="h-3.5 w-3.5" /> Delete recording</button>
           </div>
 
           <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border p-2.5 text-xs ${flags ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
@@ -425,36 +583,12 @@ function VideoInterviewReview({ app }) {
           {!vi.transcript && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs">
               <p className="mb-2 text-amber-800">No transcript yet — the candidate&apos;s on-device transcription didn&apos;t run, or the AI quota was hit during the interview. The recording is saved; generate it now (retries on the saved video):</p>
-              <Button className="text-xs" onClick={generateTranscript} disabled={retx}>{retx ? <Spinner /> : 'Generate transcript & summary'}</Button>
-            </div>
-          )}
-
-          {vi.summary && (
-            <div>
-              <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400"><Bot className="h-3.5 w-3.5" /> AI summary</div>
-              <p className="whitespace-pre-wrap rounded-lg bg-violet-50 p-2.5 text-xs text-slate-700">{vi.summary}</p>
-            </div>
-          )}
-
-          {vi.timeline?.length > 0 && (
-            <div>
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Questions (click to jump)</div>
-              <div className="space-y-1">
-                {vi.timeline.map((t, i) => (
-                  <button key={i} type="button" onClick={() => seek(t.at)} className="flex w-full items-start gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-violet-50">
-                    <span className="font-mono text-violet-600">{fmtTime(t.at)}</span>
-                    <span className="text-slate-600">{t.question}</span>
-                  </button>
-                ))}
-              </div>
+              <Button className="text-xs" onClick={generateTranscript} disabled={retx}>{retx ? <Spinner /> : 'Generate transcript & assessment'}</Button>
             </div>
           )}
 
           {vi.transcript && (
-            <div>
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Transcript</div>
-              <p className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50 p-2.5 text-xs text-slate-600">{vi.transcript}</p>
-            </div>
+            <VideoEvaluation vi={vi} seek={seek} evaluating={evaluating} onEvaluate={generateEvaluation} />
           )}
         </>
       )}
@@ -472,6 +606,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
   const [showAiScreen, setShowAiScreen] = useState(false)
   const [showVideo, setShowVideo] = useState(false)
   const [newRound, setNewRound] = useState({ ...EMPTY_ROUND })
+  const [sendAssessmentId, setSendAssessmentId] = useState(null)  // opens the send-assessment modal
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -506,6 +641,8 @@ export default function InterviewPlanningPanel({ app, onChange }) {
 
   async function createRound() {
     setBusy(true)
+    // An assessment round with a chosen assessment → offer to email it to the candidate after.
+    const offerSend = newRound.interview_type === 'assessment' ? newRound.assessment_id : null
     try {
       await api.createInterviewRound({
         application_id: app.id,
@@ -516,6 +653,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
       setNewRound({ ...EMPTY_ROUND, round_number: newRound.round_number + 1 })
       await load()
       onChange?.()
+      if (offerSend) setSendAssessmentId(offerSend)
     } catch (e) {
       toast(e.message, 'error')
     } finally {
@@ -544,7 +682,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
           <div className="text-[10px] uppercase text-slate-400">Rounds</div>
         </div>
         <div className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-2">
-          <div className="text-lg font-semibold text-violet-700">{summary.scheduled}</div>
+          <div className="text-lg font-semibold text-brand-700">{summary.scheduled}</div>
           <div className="text-[10px] uppercase text-slate-400">Scheduled</div>
         </div>
         <div className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-2">
@@ -554,7 +692,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
       </div>
 
       {summary.next && (
-        <p className="rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-800">
+        <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800">
           Next: Round {summary.next.round_number} · {typeLabel(summary.next.interview_type)} · {formatSlot(summary.next.scheduled_at)}
         </p>
       )}
@@ -568,6 +706,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
           onCancel={() => setShowAdd(false)}
           busy={busy}
           isNew
+          app={app}
         />
       )}
 
@@ -584,6 +723,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
               panelSuggestions={panelSuggestions}
               onUpdated={load}
               onDeleted={load}
+              app={app}
             />
           ))}
         </div>
@@ -593,7 +733,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
         <button
           type="button"
           onClick={() => setShowVideo((v) => !v)}
-          className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-xs font-medium text-slate-500 hover:bg-slate-50"
+          className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-xs font-medium text-slate-500 transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
         >
           <span className="inline-flex items-center gap-1.5"><Video className="h-3.5 w-3.5" /> Async video interview (pre-defined questions)</span>
           {showVideo ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -606,7 +746,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
           type="button"
           onClick={() => setShowAiScreen((v) => !v)}
           className={cx(
-            'flex w-full items-center justify-between rounded-lg px-2 py-2 text-xs font-medium text-slate-500 hover:bg-slate-50',
+            'flex w-full items-center justify-between rounded-lg px-2 py-2 text-xs font-medium text-slate-500 transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
           )}
         >
           <span className="inline-flex items-center gap-1.5"><Bot className="h-3.5 w-3.5" /> Async AI pre-screen (optional)</span>
@@ -618,6 +758,13 @@ export default function InterviewPlanningPanel({ app, onChange }) {
           </div>
         )}
       </div>
+
+      <SendAssessmentModal
+        open={!!sendAssessmentId}
+        onClose={() => setSendAssessmentId(null)}
+        applicationIds={[app.id]}
+        assessmentId={sendAssessmentId}
+      />
     </div>
   )
 }

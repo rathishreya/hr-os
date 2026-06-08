@@ -12,13 +12,29 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from .ai import ai
-from .recruitment import hr_to_dict, log
+from .recruitment import hr_to_dict, log, str_list, to_rating
+
+
+def _role_with_jd(hr: models.HiringRequest) -> dict:
+    """Role dict enriched with the JD so the AI grounds its questions in the actual job description
+    (responsibilities/requirements), not just the hiring-request fields."""
+    role = hr_to_dict(hr)
+    job = hr.job
+    if job:
+        role["jd"] = {
+            "title": job.title,
+            "description": job.description,
+            "responsibilities": list(job.responsibilities or []),
+            "requirements": list(job.requirements or []),
+            "screening_questions": list(job.screening_questions or []),
+        }
+    return role
 
 
 def start_interview(db: Session, application: models.Application) -> models.ScreeningInterview:
     hr = application.hiring_request
     cand = application.candidate
-    result, provider = ai.screening_questions(hr_to_dict(hr), cand.parsed or {})
+    result, provider = ai.screening_questions(_role_with_jd(hr), cand.parsed or {})
     questions = result.get("questions") or []
     # Fall back to the JD's screening questions, then a generic set.
     if not questions and hr.job and hr.job.screening_questions:
@@ -70,11 +86,31 @@ def _evaluate(db: Session, interview: models.ScreeningInterview) -> None:
     hr_d = hr_to_dict(hr) if hr else {}
     result, provider = ai.evaluate_screening(hr_d, interview.transcript or [])
 
-    interview.scores = result.get("scores", {})
-    interview.summary = result.get("summary", "")
-    interview.strengths = result.get("strengths", [])
-    interview.concerns = result.get("concerns", [])
-    interview.recommendation = result.get("recommendation", "")
+    scores = result.get("scores")
+    interview.scores = scores if isinstance(scores, dict) else {}
+    interview.summary = str(result.get("summary") or "")
+    interview.strengths = str_list(result.get("strengths"))
+    interview.concerns = str_list(result.get("concerns"))
+    # Per-answer ratings: build EXACTLY one entry per transcript question, by index, so the
+    # frontend's transcript[i] <-> per_question[i] mapping always holds even if the model
+    # returns a wrong count, non-dict entries, or odd-shaped strengths/gaps. Crash-proof so a
+    # malformed answer can never strand the interview mid-completion.
+    n = len(interview.transcript or [])
+    raw_pq = result.get("per_question")
+    raw_pq = raw_pq if isinstance(raw_pq, list) else []
+    try:
+        interview.per_question = [
+            {
+                "rating": to_rating(pq.get("rating")) if isinstance(pq, dict) else 0,
+                "strengths": str_list(pq.get("strengths"), cap=3) if isinstance(pq, dict) else [],
+                "gaps": str_list(pq.get("gaps"), cap=3) if isinstance(pq, dict) else [],
+            }
+            for pq in [(raw_pq[i] if i < len(raw_pq) else {}) for i in range(n)]
+        ]
+    except Exception:
+        interview.per_question = []
+    rec = result.get("recommendation")
+    interview.recommendation = rec if rec in ("advance", "hold", "reject") else ""
     interview.status = "completed"
     interview.completed_at = datetime.now(timezone.utc)
     interview.ai_provider = provider

@@ -1,23 +1,72 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Megaphone, Globe, ExternalLink, CheckCircle2, AlertTriangle, Briefcase } from 'lucide-react'
+import { Megaphone, Globe, ExternalLink, CheckCircle2, AlertTriangle, Briefcase, Plug, Check, Loader, Zap } from 'lucide-react'
 import { api } from '../api'
-import { Card, Button, Spinner, EmptyState, PageHeader } from '../ui'
-import { CopyBtn, DistributionDetails } from '../components/distribution/DistributionPanel'
+import { Card, Button, Spinner, EmptyState, PageHeader, Badge } from '../ui'
+import { CopyBtn, DistributionDetails, LinkedinIcon } from '../components/distribution/DistributionPanel'
+import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 
-function RoleRow({ role }) {
+function StatusChip({ state }) {
+  if (!state) return null
+  if (state.ok) return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600"><Check className="h-3 w-3" /> done</span>
+  if (state.error) return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-500" title={state.error}><AlertTriangle className="h-3 w-3" /> failed</span>
+  return null
+}
+
+function RoleRow({ role, integrations, busyKey, onGoogle, onLinkedin }) {
   const meta = [role.location, role.work_mode, role.department].filter(Boolean).join(' · ')
+  const g = role.distribution?.google
+  const li = role.distribution?.linkedin
+  const gBusy = busyKey === `g${role.id}`
+  const liBusy = busyKey === `l${role.id}`
   return (
     <div className="flex flex-col gap-2 border-b border-slate-100 px-4 py-3 last:border-0 sm:flex-row sm:items-center">
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-slate-800">{role.title}</div>
         {meta && <div className="mt-0.5 truncate text-xs text-slate-400">{meta}</div>}
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {/* Google for Jobs — Indexing API push */}
+        {integrations?.google?.configured && (
+          <button
+            type="button"
+            onClick={() => onGoogle(role.id)}
+            disabled={gBusy}
+            title="Notify Google to index this role now"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97] disabled:opacity-50"
+          >
+            {gBusy ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <Globe className="h-3.5 w-3.5" />} {g?.ok ? 'Re-index' : 'Index on Google'}
+          </button>
+        )}
+        <StatusChip state={g} />
+
+        {/* LinkedIn — auto-post if connected, else the manual share link */}
+        {integrations?.linkedin?.configured ? (
+          <button
+            type="button"
+            onClick={() => onLinkedin(role.id)}
+            disabled={liBusy}
+            title="Post this role to your LinkedIn company page"
+            className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700 transition-colors duration-150 ease-snappy hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97] disabled:opacity-50"
+          >
+            {liBusy ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <LinkedinIcon className="h-3.5 w-3.5" />} {li?.urn ? 'Re-post' : 'Post to LinkedIn'}
+          </button>
+        ) : (
+          <a
+            href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(`${role.url}?src=linkedin`)}`}
+            target="_blank"
+            rel="noreferrer"
+            title="Share on LinkedIn — applicants flow back into this role's pipeline, tagged linkedin"
+            className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700 transition-colors duration-150 ease-snappy hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]"
+          >
+            <LinkedinIcon className="h-3.5 w-3.5" /> LinkedIn
+          </a>
+        )}
+        <StatusChip state={li} />
+
         <CopyBtn value={role.url} label="Copy link" />
-        <a href={role.json_url} target="_blank" rel="noreferrer" className="text-xs text-violet-600 hover:underline">Data</a>
-        <a href={role.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:border-violet-300 hover:text-violet-700">
+        <a href={role.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]">
           <ExternalLink className="h-3.5 w-3.5" /> View
         </a>
       </div>
@@ -25,18 +74,59 @@ function RoleRow({ role }) {
   )
 }
 
+function IntegrationRow({ name, configured, hint }) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-white p-3">
+      <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${configured ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+        {configured ? <CheckCircle2 className="h-4 w-4" /> : <Plug className="h-4 w-4" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-slate-800">{name}</span>
+          <Badge tone={configured ? 'green' : 'gray'}>{configured ? 'Connected' : 'Setup needed'}</Badge>
+        </div>
+        {!configured && <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{hint}</p>}
+      </div>
+    </div>
+  )
+}
+
 export default function Distribution() {
   usePageTitle('Distribution')
+  const { toast } = useToast()
   const [data, setData] = useState(null)
+  const [integrations, setIntegrations] = useState(null)
   const [err, setErr] = useState('')
+  const [busyKey, setBusyKey] = useState('')
+
+  const loadChannels = () => api.distributionChannels().then(setData).catch((e) => setErr(e.message))
 
   useEffect(() => {
     let alive = true
-    api.distributionChannels()
-      .then((d) => { if (alive) setData(d) })
-      .catch((e) => { if (alive) setErr(e.message) })
+    api.distributionChannels().then((d) => { if (alive) setData(d) }).catch((e) => { if (alive) setErr(e.message) })
+    api.distributionIntegrations().then((d) => { if (alive) setIntegrations(d) }).catch(() => {})
     return () => { alive = false }
   }, [])
+
+  async function pushGoogle(jobId) {
+    setBusyKey(`g${jobId}`)
+    try {
+      const r = await api.googleIndexJob(jobId)
+      toast(r.ok ? 'Sent to Google for indexing' : `Google: ${r.error || 'failed'}`, r.ok ? 'success' : 'error')
+      await loadChannels()
+    } catch (e) { toast(e.message, 'error') } finally { setBusyKey('') }
+  }
+
+  async function pushLinkedin(jobId) {
+    setBusyKey(`l${jobId}`)
+    try {
+      const r = await api.linkedinShareJob(jobId)
+      toast(r.ok ? 'Posted to LinkedIn' : `LinkedIn: ${r.error || 'failed'}`, r.ok ? 'success' : 'error')
+      await loadChannels()
+    } catch (e) { toast(e.message, 'error') } finally { setBusyKey('') }
+  }
+
+  const anyAuto = integrations && (integrations.google.configured || integrations.linkedin.configured)
 
   return (
     <div className="space-y-6">
@@ -69,11 +159,11 @@ export default function Distribution() {
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Card className="p-4">
-              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400"><Briefcase className="h-4 w-4 text-violet-500" /> Published roles</div>
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400"><Briefcase className="h-4 w-4 text-brand-500" /> Published roles</div>
               <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{data.published_count}</div>
             </Card>
             <Card className="p-4">
-              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400"><Globe className="h-4 w-4 text-violet-500" /> Free channels</div>
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400"><Globe className="h-4 w-4 text-brand-500" /> Free channels</div>
               <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{data.channels.length}</div>
             </Card>
             <Card className="p-4">
@@ -83,6 +173,27 @@ export default function Distribution() {
                 : <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-amber-600"><AlertTriangle className="h-4 w-4" /> Not yet (local)</div>}
             </Card>
           </div>
+
+          {/* Automated direct posting */}
+          {integrations && (
+            <Card className="p-5">
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><Zap className="h-4 w-4 text-brand-500" /> Automated direct posting</h3>
+              <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                Push each published role straight to Google for Jobs (via the Indexing API) and your LinkedIn company page. Connect once in the backend environment — then it fires automatically on publish, and you can re‑push any role below.
+              </p>
+              {!integrations.public_url_ok && (
+                <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>Set <code className="rounded bg-amber-100 px-1">PUBLIC_BASE_URL</code> to your deployed site — Google can&apos;t index <code>localhost</code>, and LinkedIn links need a public URL.</span>
+                </div>
+              )}
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <IntegrationRow name="Google for Jobs" configured={integrations.google.configured} hint="Add a Google service-account key (GOOGLE_INDEXING_SA_JSON) and verify your careers domain in Search Console." />
+                <IntegrationRow name="LinkedIn company page" configured={integrations.linkedin.configured} hint="Add LINKEDIN_ACCESS_TOKEN + LINKEDIN_ORG_URN (you must be a page admin)." />
+              </div>
+              {!anyAuto && <p className="mt-3 text-[11px] text-slate-400">Until connected, use the free feed boards below and the manual LinkedIn share button on each role.</p>}
+            </Card>
+          )}
 
           <Card className="p-5">
             <h3 className="text-sm font-semibold text-slate-800">Where your jobs get posted</h3>
@@ -95,7 +206,9 @@ export default function Distribution() {
               <h3 className="text-sm font-semibold text-slate-800">Published roles in the feed ({data.roles.length})</h3>
               <CopyBtn value={data.feeds.xml} label="Copy XML feed" />
             </div>
-            {data.roles.map((r) => <RoleRow key={r.id} role={r} />)}
+            {data.roles.map((r) => (
+              <RoleRow key={r.id} role={r} integrations={integrations} busyKey={busyKey} onGoogle={pushGoogle} onLinkedin={pushLinkedin} />
+            ))}
           </Card>
         </>
       )}

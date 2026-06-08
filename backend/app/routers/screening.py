@@ -56,3 +56,4 @@ def list_interviews(application_id: int | None = None, db: Session = Depends(get
     if application_id:
         stmt = stmt.where(models.ScreeningInterview.application_id == application_id)
     return [_out(i) for i in db.scalars(stmt).all()]
+

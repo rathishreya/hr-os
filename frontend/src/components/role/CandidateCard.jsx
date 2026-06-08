@@ -152,7 +152,7 @@ export default function CandidateCard({ app, onChange, compact = false }) {
               </select>
               <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
                 {PANELS.map((p) => (
-                  <button key={p.id} type="button" onClick={() => setPanel(panel === p.id ? null : p.id)} className={cx('rounded-md px-2.5 py-1 text-xs font-medium transition', panel === p.id ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500')}>
+                  <button key={p.id} type="button" onClick={() => setPanel(panel === p.id ? null : p.id)} className={cx('rounded-md px-2.5 py-1 text-xs font-medium transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50', panel === p.id ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800')}>
                     {p.label}
                   </button>
                 ))}
@@ -173,7 +173,7 @@ export default function CandidateCard({ app, onChange, compact = false }) {
             {app.score_rationale && <div className="rounded-xl bg-slate-50 p-3 text-xs leading-relaxed whitespace-pre-wrap text-slate-600">{app.score_rationale}</div>}
             {app.scored_at && <p className="text-xs text-slate-400">Scored {new Date(app.scored_at).toLocaleString()}</p>}
             {app.human_override?.note && (
-              <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-700">
+              <div className="rounded-xl border border-brand-200 bg-brand-50 p-3 text-xs text-brand-700">
                 <strong>Human note:</strong> {app.human_override.note}
               </div>
             )}

@@ -47,7 +47,7 @@ function ToastStack({ toasts, dismiss }) {
             <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
           )}
           <p className="flex-1 text-sm font-medium text-slate-800">{t.message}</p>
-          <button type="button" onClick={() => dismiss(t.id)} className="shrink-0 text-slate-400 hover:text-slate-600">
+          <button type="button" onClick={() => dismiss(t.id)} className="shrink-0 rounded text-slate-400 transition-[color,transform] duration-150 ease-snappy hover:text-slate-600 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
             <X className="h-4 w-4" />
           </button>
         </div>

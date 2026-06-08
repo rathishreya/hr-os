@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import { Badge, Button, Avatar, scoreTone, stageTone, cx } from '../../ui'
 import { useTalentPoolColumns } from '../../hooks/useTalentPoolColumns'
+import { useColumnFilters, ColumnFilter, distinctValues } from '../tableFilters'
 import TalentPoolColumnSettings from './TalentPoolColumnSettings'
 import { exportTalentPoolCsv } from '../../utils/exportCsv'
 
@@ -22,7 +23,7 @@ function ContactIcon({ href, title, icon: Icon, external }) {
       target={external ? '_blank' : undefined}
       rel={external ? 'noreferrer' : undefined}
       onClick={(e) => e.stopPropagation()}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition duration-150 ease-snappy hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-95"
     >
       <Icon className="h-3.5 w-3.5" />
     </a>
@@ -51,9 +52,25 @@ const COL_WIDTH = {
   source: 'w-28',
   sub_source: 'w-28',
   location: 'min-w-[130px]',
+  suggested_role: 'min-w-[160px]',
   pipeline: 'min-w-[140px]',
   added: 'w-32',
   applied_by: 'w-28',
+}
+
+// String accessors for per-column filtering (F9). Columns without an entry get no filter input.
+const FILTER_ACCESSORS = {
+  name: (r) => `${r.name || ''} ${r.email || ''}`,
+  contact: (r) => `${r.email || ''} ${r.phone || ''} ${r.linkedin || ''}`,
+  role: (r) => `${r.current_title || ''} ${r.current_company || ''}`,
+  education: (r) => `${r.education_degree || ''} ${r.education_institution || ''}`,
+  comp: (r) => `${r.current_ctc || ''} ${r.salary_expectation || ''}`,
+  exp: (r) => (r.total_yoe != null ? String(r.total_yoe) : ''),
+  source: (r) => r.source || '',
+  sub_source: (r) => r.sub_source || '',
+  location: (r) => r.location || '',
+  suggested_role: (r) => r.suggested_role || '',
+  pipeline: (r) => `${r.latest_stage || ''} ${r.top_score || ''}`,
 }
 
 const SCORE_PILL = {
@@ -63,11 +80,11 @@ const SCORE_PILL = {
   rose: 'bg-rose-100 text-rose-700',
 }
 const STAGE_DOT = {
-  gray: 'bg-slate-400', blue: 'bg-sky-500', violet: 'bg-violet-500',
+  gray: 'bg-slate-400', blue: 'bg-sky-500', violet: 'bg-brand-500',
   amber: 'bg-amber-500', green: 'bg-emerald-500', rose: 'bg-rose-500',
 }
 
-export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
+export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable = false, selectedIds, onToggleSelect, onToggleAll }) {
   const { visible, updateVisible, resetVisible, activeColumns } = useTalentPoolColumns()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [density, setDensity] = useState('comfortable')
@@ -78,6 +95,16 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
   const cellPad = density === 'compact' ? 'px-3 py-2' : 'px-4 py-3.5'
   const headPad = density === 'compact' ? 'px-3 py-2.5' : 'px-4 py-3'
 
+  const filterCtl = useColumnFilters()
+  const filtered = useMemo(
+    () => filterCtl.apply(rows, FILTER_ACCESSORS),
+    [rows, filterCtl.filters], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  const distinct = useMemo(
+    () => Object.fromEntries(Object.entries(FILTER_ACCESSORS).map(([k, acc]) => [k, distinctValues(rows, acc)])),
+    [rows],
+  )
+
   const sortFns = {
     name: (r) => (r.name || '').toLowerCase(),
     role: (r) => `${r.current_title || ''} ${r.current_company || ''}`.toLowerCase(),
@@ -86,14 +113,15 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
     source: (r) => (r.source || '').toLowerCase(),
     sub_source: (r) => (r.sub_source || '').toLowerCase(),
     location: (r) => (r.location || '').toLowerCase(),
+    suggested_role: (r) => (r.suggested_role || '').toLowerCase(),
     pipeline: (r) => r.top_score || 0,
     added: (r) => new Date(r.created_at).getTime(),
   }
 
   const sorted = useMemo(() => {
-    if (!sort.key || !sortFns[sort.key]) return rows
+    if (!sort.key || !sortFns[sort.key]) return filtered
     const fn = sortFns[sort.key]
-    return [...rows].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       const av = fn(a)
       const bv = fn(b)
       if (typeof av === 'number' && typeof bv === 'number') {
@@ -103,7 +131,7 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
         ? String(av).localeCompare(String(bv))
         : String(bv).localeCompare(String(av))
     })
-  }, [rows, sort])
+  }, [filtered, sort]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
   const safePage = Math.min(page, totalPages)
@@ -125,12 +153,24 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
       case 'idx':
         return <span className="tabular-nums text-xs font-medium text-slate-400">{start + index + 1}</span>
       case 'edit':
+        if (selectable) {
+          return (
+            <input
+              type="checkbox"
+              aria-label="Select candidate"
+              checked={!!selectedIds?.has(row.id)}
+              onChange={() => onToggleSelect?.(row.id)}
+              onClick={(e) => e.stopPropagation()}
+              className="h-4 w-4 cursor-pointer rounded border-slate-300 text-brand-600"
+            />
+          )
+        }
         return (
           <button
             type="button"
             title="Open profile"
             onClick={(e) => { e.stopPropagation(); onEdit(row) }}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-violet-100 hover:text-violet-700"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition duration-150 ease-snappy hover:bg-brand-100 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-95"
           >
             <Pencil className="h-3.5 w-3.5" />
           </button>
@@ -141,10 +181,10 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
             <Avatar name={row.name} className="h-9 w-9 shrink-0 text-xs ring-2 ring-white" />
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); onRowClick(row) }}
-              className="min-w-0 text-left"
+              onClick={(e) => { e.stopPropagation(); selectable ? onToggleSelect?.(row.id) : onRowClick?.(row) }}
+              className="min-w-0 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
             >
-              <div className="truncate font-semibold text-violet-700 hover:text-violet-900 hover:underline">
+              <div className="truncate font-semibold text-brand-700 transition-colors duration-150 ease-snappy hover:text-brand-900 hover:underline">
                 {row.name || 'Unnamed'}
               </div>
               <div className="truncate text-xs text-slate-500">{row.email || 'no email'}</div>
@@ -192,6 +232,17 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
         return row.location
           ? <span className="inline-flex max-w-[140px] items-center gap-1 truncate text-sm text-slate-700"><MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />{row.location}</span>
           : <span className="text-slate-300">—</span>
+      case 'suggested_role':
+        if (!row.suggested_role) return <span className="text-slate-300">—</span>
+        return (
+          <span
+            className="inline-flex max-w-[160px] items-center gap-1 truncate text-sm text-slate-700"
+            title={`Best-fit role: ${row.suggested_role}${row.suggested_role_score != null ? ` · ${row.suggested_role_score}% match` : ''}`}
+          >
+            {row.suggested_role}
+            {row.suggested_role_score != null && <span className="shrink-0 text-xs text-slate-400">{row.suggested_role_score}%</span>}
+          </span>
+        )
       case 'pipeline':
         if (!row.application_count) return <span className="text-xs text-slate-400">Not applied</span>
         return (
@@ -243,14 +294,14 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
           <button
             type="button"
             onClick={() => setDensity('comfortable')}
-            className={cx('inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium', density === 'comfortable' ? 'bg-violet-50 text-violet-800' : 'text-slate-500')}
+            className={cx('inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]', density === 'comfortable' ? 'bg-brand-50 text-brand-800' : 'text-slate-500')}
           >
             <LayoutGrid className="h-3.5 w-3.5" /> Comfortable
           </button>
           <button
             type="button"
             onClick={() => setDensity('compact')}
-            className={cx('inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium', density === 'compact' ? 'bg-violet-50 text-violet-800' : 'text-slate-500')}
+            className={cx('inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]', density === 'compact' ? 'bg-brand-50 text-brand-800' : 'text-slate-500')}
           >
             <LayoutList className="h-3.5 w-3.5" /> Compact
           </button>
@@ -280,15 +331,36 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
                         headPad,
                         COL_WIDTH[col.id],
                         'text-[11px] font-bold uppercase tracking-wider text-slate-500',
-                        sortable && 'cursor-pointer select-none hover:text-violet-700',
                         isSticky && 'sticky z-40 bg-slate-50 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.06)]',
                       )}
                       style={isSticky ? { left: stickyOffsets[col.id] } : undefined}
-                      onClick={sortable ? () => toggleSort(col.id) : undefined}
                     >
                       <span className="inline-flex items-center gap-1">
-                        {col.label}
-                        {sort.key === col.id && <span className="text-violet-600">{sort.dir === 'asc' ? '↑' : '↓'}</span>}
+                        {selectable && col.id === 'edit' ? (
+                          <input
+                            type="checkbox"
+                            aria-label="Select all on this page"
+                            checked={pageRows.length > 0 && pageRows.every((r) => selectedIds?.has(r.id))}
+                            onChange={() => onToggleAll?.(pageRows.map((r) => r.id))}
+                            className="h-4 w-4 cursor-pointer rounded border-slate-300 text-brand-600"
+                          />
+                        ) : (
+                          <span
+                            className={cx('inline-flex items-center gap-1', sortable && 'cursor-pointer select-none hover:text-brand-700')}
+                            onClick={sortable ? () => toggleSort(col.id) : undefined}
+                          >
+                            {col.label}
+                            {sort.key === col.id && <span className="text-brand-600">{sort.dir === 'asc' ? '↑' : '↓'}</span>}
+                          </span>
+                        )}
+                        {FILTER_ACCESSORS[col.id] && (
+                          <ColumnFilter
+                            label={col.label}
+                            values={distinct[col.id] || []}
+                            excluded={filterCtl.filters[col.id] || []}
+                            onChange={(arr) => { filterCtl.setFilter(col.id, arr); setPage(1) }}
+                          />
+                        )}
                       </span>
                     </th>
                   )
@@ -299,8 +371,11 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
               {pageRows.map((row, i) => (
                 <tr
                   key={row.id}
-                  onClick={() => onRowClick(row)}
-                  className="group cursor-pointer border-b border-slate-100 transition hover:bg-violet-50"
+                  onClick={() => (selectable ? onToggleSelect?.(row.id) : onRowClick?.(row))}
+                  className={cx(
+                    'group cursor-pointer border-b border-slate-100 transition-colors duration-150 ease-snappy hover:bg-brand-50',
+                    selectable && selectedIds?.has(row.id) && 'bg-brand-50/60',
+                  )}
                 >
                   {activeColumns.map((col) => {
                     const isSticky = stickyIds.has(col.id)
@@ -311,7 +386,7 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
                           cellPad,
                           COL_WIDTH[col.id],
                           'align-middle',
-                          isSticky && 'sticky z-20 bg-white group-hover:bg-violet-50 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.04)]',
+                          isSticky && 'sticky z-20 bg-white group-hover:bg-brand-50 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.04)]',
                         )}
                         style={isSticky ? { left: stickyOffsets[col.id] } : undefined}
                       >
@@ -321,14 +396,33 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
                   })}
                 </tr>
               ))}
+              {!sorted.length && (
+                <tr>
+                  <td colSpan={activeColumns.length} className="px-4 py-10 text-center text-sm text-slate-400">
+                    No candidates match your filters.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/90 px-4 py-3 text-xs text-slate-600">
-          <span>
-            Showing <strong className="text-slate-900">{start + 1}–{Math.min(start + pageSize, sorted.length)}</strong> of{' '}
-            <strong className="text-slate-900">{sorted.length}</strong> candidates
+          <span className="flex items-center gap-2">
+            <span>
+              Showing <strong className="text-slate-900">{sorted.length ? start + 1 : 0}–{Math.min(start + pageSize, sorted.length)}</strong> of{' '}
+              <strong className="text-slate-900">{sorted.length}</strong> candidates
+              {filterCtl.active > 0 && <span className="text-slate-400"> (filtered from {rows.length})</span>}
+            </span>
+            {filterCtl.active > 0 && (
+              <button
+                type="button"
+                onClick={() => { filterCtl.clear(); setPage(1) }}
+                className="rounded-md border border-slate-200 bg-white px-2 py-0.5 font-medium text-slate-600 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+              >
+                Clear filters
+              </button>
+            )}
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1.5">
@@ -341,9 +435,9 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit }) {
                 {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </label>
-            <button type="button" disabled={safePage <= 1} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 disabled:opacity-40" onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
+            <button type="button" disabled={safePage <= 1} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 transition duration-150 ease-snappy hover:border-brand-200 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100" onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
             <span className="tabular-nums px-1">Page {safePage} / {totalPages}</span>
-            <button type="button" disabled={safePage >= totalPages} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 disabled:opacity-40" onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
+            <button type="button" disabled={safePage >= totalPages} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 transition duration-150 ease-snappy hover:border-brand-200 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100" onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
           </div>
         </div>
       </div>

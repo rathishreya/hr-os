@@ -9,15 +9,41 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..database import get_db
-from ..services.recruitment import log
+from ..database import SessionLocal, get_db
+from ..services.ai import ai
+from ..services.recruitment import hr_to_dict, log, str_list, to_rating
 
 router = APIRouter(prefix="/api/video-interview", tags=["video-interview"])
+
+_MAX_VIDEO_BYTES = 200 * 1024 * 1024  # 200 MB per upload — guard the free-tier instance
+
+
+def _read_capped(file: UploadFile) -> bytes:
+    data = file.file.read(_MAX_VIDEO_BYTES + 1)
+    if len(data) > _MAX_VIDEO_BYTES:
+        raise HTTPException(413, "Recording is too large (max 200 MB). Try a shorter answer.")
+    return data
+
+
+def _finalize_recording(interview_id: int) -> None:
+    """Background job: transcribe (if the browser didn't) + run AI evaluation, then mark
+    completed. Runs after the response is sent so the candidate's upload returns instantly."""
+    with SessionLocal() as db:
+        vi = db.get(models.VideoInterview, interview_id)
+        if not vi:
+            return
+        if not (vi.transcript or "").strip() and vi.recording:
+            text, _ = _transcribe_gemini(vi.recording, vi.recording_mime)
+            vi.transcript = text or ""
+        _run_evaluation(db, vi)
+        vi.status = "completed"
+        vi.completed_at = datetime.now(timezone.utc)
+        db.commit()
 
 DEFAULT_QUESTIONS = [
     "Tell us about yourself and why this role interests you.",
@@ -65,34 +91,86 @@ def _transcribe_gemini(data: bytes, mime: str) -> tuple[str, str]:
         return "", f"Transcription failed: {e}"
 
 
-def _summarize(role: str, questions: list, transcript: str, proctoring: dict) -> str:
-    """AI summary of the interview transcript (Gemini etc. when configured), else a
-    factual heuristic summary. Never raises."""
-    transcript = (transcript or "").strip()
-    if not transcript:
-        return ""
-    from ..services.ai import ai
-    from ..services.ai.provider import MockProvider
+def _role_context(db: Session, vi: models.VideoInterview) -> dict:
+    """Role/JD context so the AI can judge technical depth and fit, not just communication."""
+    app = db.get(models.Application, vi.application_id)
+    hr = app.hiring_request if app else None
+    if not hr:
+        return {"position": vi.role_position}
+    role = hr_to_dict(hr)
+    job = hr.job
+    if job:
+        role["jd"] = {
+            "title": job.title,
+            "description": job.description,
+            "responsibilities": list(job.responsibilities or []),
+            "requirements": list(job.requirements or []),
+        }
+    return role
 
-    prov = ai.provider
-    if not isinstance(prov, MockProvider):
-        try:
-            system = ("You are an expert recruiter. Summarize a candidate's recorded video interview "
-                      "for the hiring team in 4-6 sentences: communication style, the key points they made, "
-                      "clear strengths, and any gaps or concerns. Be concise and factual — do not invent details.")
-            qs = "\n".join(f"- {q}" for q in (questions or []))
-            user = f"Role: {role}\n\nQuestions asked:\n{qs}\n\nContinuous interview transcript:\n{transcript[:6000]}"
-            txt = prov.generate(system, user, want_json=False)
-            if txt and txt.strip():
-                return txt.strip()
-        except Exception:
-            pass
-    words = len(transcript.split())
-    flags = (proctoring or {}).get("focus_lost", 0)
-    note = f" {flags} tab switch(es) were logged." if flags else ""
-    return (f"Candidate completed the video interview — {words} words across {len(questions or [])} questions.{note} "
-            "AI summary couldn't be generated right now (model busy or rate-limited) — review the recording and "
-            "transcript below, or click Generate again shortly for the AI write-up.")
+
+def _normalize_evaluation(result: dict, questions: list[str]) -> dict:
+    """Coerce the model's evaluation into a stable shape: exactly one per-question entry per
+    question (aligned by q_index, else positionally), a clamped verdict, and clean lists.
+    Crash-proof so a malformed model response can never strand a completed interview."""
+    n = len(questions)
+    raw_pq = result.get("per_question")
+    raw_pq = raw_pq if isinstance(raw_pq, list) else []
+    by_index: dict[int, dict] = {}
+    for pq in raw_pq:
+        if isinstance(pq, dict):
+            qi = pq.get("q_index")
+            # bool is an int subclass — exclude it so a stray true/false can't claim slot 0/1.
+            if isinstance(qi, int) and not isinstance(qi, bool) and 0 <= qi < n and qi not in by_index:
+                by_index[qi] = pq
+    # Trust q_index only when EVERY entry carried a clean, unique, in-range one. If the model
+    # tagged only some entries (a common partial-compliance failure), aligning by position keeps
+    # the un-tagged answers instead of dropping them into empty "No answer" slots.
+    use_positional = len(by_index) < len(raw_pq)
+    per_question = []
+    for i in range(n):
+        pq = (raw_pq[i] if i < len(raw_pq) else {}) if use_positional else by_index.get(i, {})
+        pq = pq if isinstance(pq, dict) else {}
+        per_question.append({
+            "q_index": i,
+            "question": questions[i],
+            "answer": str(pq.get("answer") or ""),
+            "rating": to_rating(pq.get("rating")),
+            "comment": str(pq.get("comment") or ""),
+        })
+    verdict = result.get("verdict")
+    raw_scores = result.get("scores")
+    raw_scores = raw_scores if isinstance(raw_scores, dict) else {}
+    # Coerce/clamp present score keys to 0-100 (like ratings); leave a genuinely-missing key out
+    # so the UI hides the badge rather than showing a fabricated 0.
+    scores = {k: to_rating(raw_scores[k]) for k in ("communication", "technical_depth", "confidence", "overall") if k in raw_scores}
+    return {
+        "verdict": verdict if verdict in ("fit", "maybe", "unfit") else "",
+        "reasoning": str(result.get("reasoning") or ""),
+        "strengths": str_list(result.get("strengths")),
+        "gaps": str_list(result.get("gaps")),
+        "summary": str(result.get("summary") or ""),
+        "scores": scores,
+        "per_question": per_question,
+    }
+
+
+def _run_evaluation(db: Session, vi: models.VideoInterview) -> None:
+    """Generate the structured AI evaluation (per-question Q/A/rating + overall fit verdict,
+    reasoning, strengths, gaps) from the transcript. Falls back to a heuristic via the AI layer
+    when no model is configured. Never raises; clears the evaluation when there's nothing to judge."""
+    transcript = (vi.transcript or "").strip()
+    questions = [str(q) for q in (vi.questions or [])]
+    if not transcript or not questions:
+        vi.evaluation = {}
+        return
+    role = _role_context(db, vi)
+    result, provider = ai.evaluate_video_interview(role, questions, transcript, vi.timeline or [])
+    ev = _normalize_evaluation(result if isinstance(result, dict) else {}, questions)
+    vi.evaluation = ev
+    vi.scores = ev["scores"]
+    vi.summary = ev["summary"] or ev["reasoning"]
+    vi.ai_provider = provider
 
 
 def _answer_out(a: models.VideoAnswer) -> dict:
@@ -107,7 +185,7 @@ def _out(vi: models.VideoInterview) -> dict:
     return {
         "id": vi.id, "application_id": vi.application_id, "candidate_id": vi.candidate_id,
         "role_position": vi.role_position, "questions": vi.questions or [], "status": vi.status,
-        "summary": vi.summary or "", "scores": vi.scores or {},
+        "summary": vi.summary or "", "scores": vi.scores or {}, "evaluation": vi.evaluation or {},
         "transcript": vi.transcript or "", "timeline": vi.timeline or [], "proctoring": vi.proctoring or {},
         "duration": vi.duration or 0, "has_recording": vi.recording is not None,
         "created_at": vi.created_at, "completed_at": vi.completed_at,
@@ -121,6 +199,30 @@ def _role_questions(db: Session, app: models.Application):
     qs = job.video_questions if (job and job.video_questions) else DEFAULT_QUESTIONS
     title = (job.title if job else (hr.position if hr else ""))
     return list(qs), title
+
+
+@router.post("/generate-questions")
+def generate_questions(application_id: int, db: Session = Depends(get_db)):
+    """AI-generate video interview questions tailored to the role/JD. Stateless — returns the
+    questions for the recruiter to review/edit and save; does not persist on its own."""
+    app = db.get(models.Application, application_id)
+    if not app:
+        raise HTTPException(404, "Application not found")
+    hr = app.hiring_request
+    role = hr_to_dict(hr) if hr else {"position": app.candidate.name if app.candidate else ""}
+    job = hr.job if hr else None
+    if job:
+        role["jd"] = {
+            "title": job.title,
+            "description": job.description,
+            "responsibilities": list(job.responsibilities or []),
+            "requirements": list(job.requirements or []),
+        }
+    result, provider = ai.generate_video_questions(role)
+    questions = [str(q).strip() for q in (result.get("questions") or []) if str(q).strip()][:8]
+    if not questions:
+        questions = list(DEFAULT_QUESTIONS)
+    return {"questions": questions, "provider": provider}
 
 
 @router.get("")
@@ -141,7 +243,10 @@ def get_or_create(application_id: int, db: Session = Depends(get_db)):
         vi.questions = questions
         db.commit()
         db.refresh(vi)
-    return _out(vi)
+    out = _out(vi)
+    cand = db.get(models.Candidate, vi.candidate_id)
+    out["candidate_name"] = cand.name if cand else ""
+    return out
 
 
 @router.post("/{interview_id}/answer")
@@ -170,7 +275,7 @@ def submit_answer(
     ans.transcript = transcript
     ans.duration = duration
     if file is not None and file.filename:
-        ans.video = file.file.read()
+        ans.video = _read_capped(file)
         ans.mime = file.content_type or "video/webm"
     db.commit()
     db.refresh(ans)
@@ -191,6 +296,7 @@ def serve_answer_video(answer_id: int, db: Session = Depends(get_db)):
 @router.post("/{interview_id}/recording")
 def submit_recording(
     interview_id: int,
+    background: BackgroundTasks,
     transcript: str = Form(""),
     timeline: str = Form("[]"),
     proctoring: str = Form("{}"),
@@ -198,8 +304,9 @@ def submit_recording(
     file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
-    """Store the single continuous (proctored) recording for the whole session + transcript,
-    question timeline, and proctoring events; mark the interview completed."""
+    """Store the single continuous (proctored) recording + transcript, timeline and proctoring
+    events, then transcribe/evaluate in the BACKGROUND so the candidate's upload returns fast
+    (server transcription/AI can take 10–60s and would otherwise hang the browser / time out)."""
     vi = db.get(models.VideoInterview, interview_id)
     if not vi:
         raise HTTPException(404, "Interview not found")
@@ -213,21 +320,18 @@ def submit_recording(
         vi.proctoring = {}
     vi.duration = duration or 0
     if file is not None and file.filename:
-        vi.recording = file.file.read()
+        vi.recording = _read_capped(file)
         vi.recording_mime = file.content_type or "video/webm"
 
-    # Transcript: prefer the on-device (browser) transcript; fall back to server-side Gemini.
-    final_transcript = (transcript or "").strip()
-    if not final_transcript and vi.recording:
-        final_transcript, _ = _transcribe_gemini(vi.recording, vi.recording_mime)
-    vi.transcript = final_transcript
-    vi.summary = _summarize(vi.role_position, vi.questions or [], vi.transcript, vi.proctoring)
-    vi.status = "completed"
-    vi.completed_at = datetime.now(timezone.utc)
+    # Keep the on-device (browser) transcript; transcription fallback + AI evaluation run
+    # in the background. Mark "processing" until that finishes.
+    vi.transcript = (transcript or "").strip()
+    vi.status = "processing"
     log(db, "video_interview.recording", "video_interview", vi.id,
         {"duration": vi.duration, "focus_lost": (vi.proctoring or {}).get("focus_lost", 0), "has_recording": vi.recording is not None})
     db.commit()
     db.refresh(vi)
+    background.add_task(_finalize_recording, vi.id)
     return _out(vi)
 
 
@@ -253,8 +357,25 @@ def retranscribe(interview_id: int, db: Session = Depends(get_db)):
     if not text:
         raise HTTPException(503, error or "Transcription failed — try again shortly.")
     vi.transcript = text
-    vi.summary = _summarize(vi.role_position, vi.questions or [], text, vi.proctoring)
+    _run_evaluation(db, vi)
     log(db, "video_interview.retranscribed", "video_interview", vi.id, {"chars": len(text)})
+    db.commit()
+    db.refresh(vi)
+    return _out(vi)
+
+
+@router.post("/{interview_id}/evaluate")
+def evaluate(interview_id: int, db: Session = Depends(get_db)):
+    """(Re)generate the structured AI evaluation (per-question Q/A/rating + overall fit verdict,
+    reasoning, strengths, gaps) from the stored transcript — without re-transcribing."""
+    vi = db.get(models.VideoInterview, interview_id)
+    if not vi:
+        raise HTTPException(404, "Interview not found")
+    if not (vi.transcript or "").strip():
+        raise HTTPException(400, "No transcript to evaluate — generate the transcript first.")
+    _run_evaluation(db, vi)
+    log(db, "video_interview.evaluated", "video_interview", vi.id,
+        {"verdict": (vi.evaluation or {}).get("verdict"), "provider": vi.ai_provider})
     db.commit()
     db.refresh(vi)
     return _out(vi)

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Mail, Users as UsersIcon, GraduationCap, Plus, Trash2, RefreshCw, Eye, EyeOff,
   ChevronDown, Check, Phone, Building2, MapPin, Globe, Pencil, Power,
+  Send, CheckCircle2, AlertTriangle, XCircle, Download,
 } from 'lucide-react'
 import { api } from '../api'
 import { Card, Button, Badge, Spinner, Modal, Field, inputClass, Tabs, PageHeader, EmptyState, IconButton, Avatar } from '../ui'
@@ -39,12 +40,12 @@ function RolesSelect({ value, onChange }) {
         <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+        <div className="absolute z-20 mt-1 w-full origin-top menu-in overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
           {ROLES.map((r) => {
             const on = value.includes(r.id)
             return (
-              <button key={r.id} type="button" onClick={() => toggle(r.id)} className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-slate-50 ${on ? 'bg-violet-50/60' : ''}`}>
-                <span className={`flex h-5 w-5 items-center justify-center rounded border ${on ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-300'}`}>{on && <Check className="h-3.5 w-3.5" />}</span>
+              <button key={r.id} type="button" onClick={() => toggle(r.id)} className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-sm transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-slate-50 ${on ? 'bg-brand-50/60' : ''}`}>
+                <span className={`flex h-5 w-5 items-center justify-center rounded border ${on ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300'}`}>{on && <Check className="h-3.5 w-3.5" />}</span>
                 <span className="text-slate-700">{r.label}</span>
               </button>
             )
@@ -61,8 +62,8 @@ function PasswordField({ value, onChange }) {
     <div className="relative">
       <input className={`${inputClass} pr-16`} type={show ? 'text' : 'password'} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Password" />
       <div className="absolute inset-y-0 right-2 flex items-center gap-0.5">
-        <button type="button" title="Generate new" onClick={() => onChange(genPassword())} className="rounded p-1 text-violet-600 hover:bg-violet-50"><RefreshCw className="h-4 w-4" /></button>
-        <button type="button" title={show ? 'Hide' : 'Show'} onClick={() => setShow((s) => !s)} className="rounded p-1 text-slate-500 hover:bg-slate-100">{show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+        <button type="button" title="Generate new" onClick={() => onChange(genPassword())} className="rounded p-1 text-brand-600 transition duration-150 ease-snappy hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-95"><RefreshCw className="h-4 w-4" /></button>
+        <button type="button" title={show ? 'Hide' : 'Show'} onClick={() => setShow((s) => !s)} className="rounded p-1 text-slate-500 transition duration-150 ease-snappy hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-95">{show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
       </div>
     </div>
   )
@@ -112,12 +113,12 @@ function UserModal({ open, onClose, onSaved, user }) {
         </Field>
         {editing ? (
           <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+            <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
             Active — can be used and assigned in the tool
           </label>
         ) : (
           <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500" checked={form.send} onChange={(e) => setForm({ ...form, send: e.target.checked })} />
+            <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" checked={form.send} onChange={(e) => setForm({ ...form, send: e.target.checked })} />
             Send email to new user with credentials
           </label>
         )}
@@ -206,7 +207,7 @@ function UsersTab() {
                   <div className="truncate text-xs text-slate-400">{u.email}{u.title ? ` · ${u.title}` : ''}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
-                  <IconButton onClick={() => setEditing(u)} title="Edit" aria-label="Edit" className="hover:text-violet-600"><Pencil className="h-4 w-4" /></IconButton>
+                  <IconButton onClick={() => setEditing(u)} title="Edit" aria-label="Edit" className="hover:text-brand-600"><Pencil className="h-4 w-4" /></IconButton>
                   <IconButton onClick={() => toggleActive(u)} title={u.active ? 'Disable' : 'Enable'} aria-label={u.active ? 'Disable' : 'Enable'} className={u.active ? 'hover:text-amber-600' : 'text-emerald-600 hover:text-emerald-700'}><Power className="h-4 w-4" /></IconButton>
                   <IconButton onClick={() => remove(u)} title="Remove" aria-label="Remove" className="hover:text-rose-600"><Trash2 className="h-4 w-4" /></IconButton>
                 </div>
@@ -245,14 +246,14 @@ function TposTab() {
           <Card className="divide-y divide-slate-100">
             {tpos.map((t) => (
               <div key={t.id} className="flex items-start gap-3 px-4 py-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700"><GraduationCap className="h-5 w-5" /></div>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700"><GraduationCap className="h-5 w-5" /></div>
                 <div className="min-w-0 flex-1">
                   <div className="font-medium text-slate-800">{t.name || '—'} {t.designation && <span className="text-xs font-normal text-slate-400">· {t.designation}</span>}</div>
                   <div className="flex items-center gap-1 text-sm text-slate-600"><Building2 className="h-3.5 w-3.5 text-slate-400" /> {t.college || '—'}</div>
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
                     {t.email && <span className="inline-flex items-center gap-1"><Mail className="h-3 w-3" /> {t.email}</span>}
                     {t.phone && <span className="inline-flex items-center gap-1"><Phone className="h-3 w-3" /> {t.phone}</span>}
-                    {t.linkedin && <a href={t.linkedin} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-violet-600"><Globe className="h-3 w-3" /> LinkedIn</a>}
+                    {t.linkedin && <a href={t.linkedin} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-brand-600"><Globe className="h-3 w-3" /> LinkedIn</a>}
                     {t.address && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> {t.address}</span>}
                   </div>
                 </div>
@@ -266,9 +267,152 @@ function TposTab() {
   )
 }
 
+function DataTab() {
+  const { toast } = useToast()
+  const [busy, setBusy] = useState(false)
+
+  async function exportData() {
+    setBusy(true)
+    try {
+      const data = await api.exportData()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `hr-os-export-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast('Export downloaded')
+    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <Card className="border-amber-200 bg-amber-50/60 p-5">
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-amber-800"><AlertTriangle className="h-4 w-4" /> Free-tier data is temporary</h3>
+        <p className="mt-1.5 text-pretty text-sm leading-relaxed text-amber-800/90">
+          On Render&apos;s free plan the database is removed after ~30 days and uploaded files don&apos;t survive a redeploy. For real hiring, upgrade to a paid Postgres and move files to object storage (see <code className="rounded bg-amber-100 px-1 text-xs">PROD-READINESS.md</code>). Until then, export your data regularly.
+        </p>
+      </Card>
+
+      <Card className="p-5">
+        <h3 className="text-sm font-semibold text-slate-800">Export all data</h3>
+        <p className="mt-1 text-sm text-slate-500">Download candidates, jobs, applications, interviews and the comms trail as a JSON backup. (Binary files like resumes and recordings are excluded.)</p>
+        <Button className="mt-3" onClick={exportData} disabled={busy}>{busy ? <><Spinner /> Exporting…</> : <><Download className="h-4 w-4" /> Download JSON backup</>}</Button>
+      </Card>
+    </div>
+  )
+}
+
+function EmailTab() {
+  const { toast } = useToast()
+  const [info, setInfo] = useState(null)        // { email_configured, from, templates }
+  const [to, setTo] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)    // last EmailOut record
+
+  const load = () => api.emailTemplates().then(setInfo).catch(() => setInfo({ email_configured: false, from: '' }))
+  useEffect(() => { load() }, [])
+
+  async function sendTest() {
+    const email = to.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('Enter a valid email address', 'error'); return }
+    setBusy(true); setResult(null)
+    try {
+      const rec = await api.sendEmail({
+        to_email: email,
+        to_name: 'Test recipient',
+        template: 'custom',
+        subject: 'Test email from your HR-OS workspace',
+        body: 'Hi,\n\nThis is a test message confirming that email sending from your HR-OS '
+          + 'workspace is configured correctly. If this landed in your inbox, you\'re all set '
+          + 'to send candidate communications.\n\n— Sent automatically from Settings → Email',
+      })
+      setResult(rec)
+      if (rec.status === 'sent') toast('Test email sent — check the inbox')
+      else if (rec.status === 'logged') toast('Logged only — SMTP is not configured yet', 'error')
+      else toast('Send failed', 'error')
+      load()  // refresh status (in case config changed server-side)
+    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
+  }
+
+  if (!info) return <div className="flex items-center gap-2 text-sm text-slate-400"><Spinner /> Loading…</div>
+
+  const configured = info.email_configured
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      {/* Status */}
+      <Card className="p-5">
+        <div className="flex items-start gap-3">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${configured ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+            <Mail className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold text-slate-800">Outbound email</h3>
+              <Badge tone={configured ? 'green' : 'amber'}>{configured ? 'Active — sending live' : 'Log mode — not sending'}</Badge>
+            </div>
+            {configured ? (
+              <p className="mt-1 text-sm text-slate-500">Emails are sent for real from <span className="font-medium text-slate-700">{info.from}</span>.</p>
+            ) : (
+              <p className="mt-1 text-pretty text-sm text-slate-500">
+                Emails are saved and logged but <strong>not delivered</strong>. To send for real, set the SMTP
+                variables in <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">backend/.env</code> (Brevo, SendGrid, Gmail, …) and restart the backend.
+              </p>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {/* Send test */}
+      <Card className="p-5">
+        <h3 className="text-sm font-semibold text-slate-800">Send a test email</h3>
+        <p className="mt-1 text-sm text-slate-500">Verify your setup end-to-end. The result below shows exactly what the server did.</p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex-1">
+            <Field label="Recipient">
+              <input
+                className={inputClass}
+                type="email"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !busy) sendTest() }}
+                placeholder="you@company.com"
+              />
+            </Field>
+          </div>
+          <Button onClick={sendTest} disabled={busy} className="shrink-0">
+            {busy ? <><Spinner /> Sending…</> : <><Send className="h-4 w-4" /> Send test</>}
+          </Button>
+        </div>
+
+        {result && (
+          <div className={`mt-4 flex items-start gap-2.5 rounded-xl border p-3 text-sm ${
+            result.status === 'sent' ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : result.status === 'logged' ? 'border-amber-200 bg-amber-50 text-amber-800'
+                : 'border-rose-200 bg-rose-50 text-rose-700'
+          }`}>
+            {result.status === 'sent' ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+              : result.status === 'logged' ? <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                : <XCircle className="mt-0.5 h-5 w-5 shrink-0" />}
+            <div>
+              {result.status === 'sent' && <><strong>Delivered.</strong> Sent to {result.to_email}. Check the inbox (and spam folder).</>}
+              {result.status === 'logged' && <><strong>Logged only.</strong> SMTP isn&apos;t configured, so nothing was delivered. Add SMTP settings in <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">backend/.env</code> and restart.</>}
+              {result.status === 'failed' && <><strong>Send failed.</strong> {result.error || 'The mail server rejected the message.'} <span className="block text-rose-600/80">Check your SMTP credentials and verified sender, then try again.</span></>}
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
+  )
+}
+
 const TABS = [
   { id: 'users', label: 'Users & roles' },
   { id: 'tpos', label: 'Placement officers' },
+  { id: 'email', label: 'Email' },
+  { id: 'data', label: 'Data' },
 ]
 
 export default function Settings() {
@@ -280,6 +424,8 @@ export default function Settings() {
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'users' && <UsersTab />}
       {tab === 'tpos' && <TposTab />}
+      {tab === 'email' && <EmailTab />}
+      {tab === 'data' && <DataTab />}
     </div>
   )
 }

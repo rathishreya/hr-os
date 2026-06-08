@@ -26,6 +26,23 @@ router = APIRouter(tags=["careers"])
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# Where a public applicant came from. The apply link carries a ?src= tag (e.g. the
+# "Apply on LinkedIn" link is /careers/{id}/apply?src=linkedin) so an applicant lands
+# in the pipeline already attributed to the channel that referred them. Whitelisted so
+# a crafted query param can't inject an arbitrary source string into the data.
+_KNOWN_SOURCES = {
+    "careers", "linkedin", "indeed", "naukri", "referral",
+    "google", "adzuna", "twitter", "facebook", "instagram",
+}
+
+
+def _norm_source(src: str) -> str:
+    s = (src or "").strip().lower()
+    return s if s in _KNOWN_SOURCES else "careers"
+
+
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB cap on public résumé uploads
+
 
 def _e(text) -> str:
     return _html.escape(str(text or ""))
@@ -76,7 +93,8 @@ def _description_html(job: models.Job) -> str:
     section("Benefits", job.benefits)
     about = settings.COMPANY_ABOUT or job.company_description
     if about:
-        parts.append(f"<h3>About {_e(settings.COMPANY_NAME)}</h3><p>{_e(about)}</p>")
+        # Preserve paragraph/line breaks (the About block carries multi-line links).
+        parts.append(f"<h3>About {_e(settings.COMPANY_NAME)}</h3><p>{_e(about).replace(chr(10), '<br>')}</p>")
     if job.culture:
         parts.append(f"<h3>Culture</h3><p>{_e(job.culture)}</p>")
     return "".join(parts)
@@ -155,13 +173,21 @@ a.jobcard{display:block;text-decoration:none;color:inherit;margin-bottom:12px}
 a.jobcard .card{transition:border-color .15s,box-shadow .15s}
 a.jobcard:hover .card{border-color:#c4b5fd;box-shadow:0 4px 14px rgba(124,58,237,.08)}
 .muted{color:var(--muted);font-size:13px}
+.jobrow{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px;
+transition:border-color .15s,box-shadow .15s}
+.jobrow:hover{border-color:#c4b5fd;box-shadow:0 4px 14px rgba(124,58,237,.08)}
+.rowtitle{font-size:18px;font-weight:600;color:var(--ink);text-decoration:none}
+.rowtitle:hover{color:var(--brand)}
+.applysm{flex-shrink:0;background:var(--brand);color:#fff;text-decoration:none;font-weight:600;
+font-size:13px;padding:9px 18px;border-radius:10px;white-space:nowrap}
+.applysm:hover{background:#6d28d9}
 .field{margin:16px 0}
 label.lbl{display:block;font-size:13px;font-weight:600;color:#334155;margin:0 0 6px}
 label.lbl .req{color:#e11d48}
 .hint{font-size:12px;color:var(--muted);margin:4px 0 0}
-input.inp,textarea.inp{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+input.inp,textarea.inp,select.inp{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
 font-size:14px;font-family:inherit;color:var(--ink);background:#fff;outline:none}
-input.inp:focus,textarea.inp:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(124,58,237,.12)}
+input.inp:focus,textarea.inp:focus,select.inp:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(124,58,237,.12)}
 input[type=file].inp{padding:8px}
 textarea.inp{resize:vertical}
 .err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:10px 12px;font-size:13px;margin:0 0 16px}
@@ -196,9 +222,13 @@ def careers_index(request: Request, db: Session = Depends(get_db)):
         hr = j.hiring_request
         meta = " · ".join(filter(None, [hr.location if hr else "", (hr.work_mode if hr else ""), hr.department if hr else ""]))
         cards.append(
-            f'<a class="jobcard" href="/careers/{j.id}"><div class="card">'
-            f'<h3 style="margin:0 0 4px;font-size:18px">{_e(j.title or (hr.position if hr else "Role"))}</h3>'
-            f'<div class="muted">{_e(meta)}</div></div></a>'
+            f'<div class="card jobrow">'
+            f'<div style="min-width:0">'
+            f'<a class="rowtitle" href="/careers/{j.id}">{_e(j.title or (hr.position if hr else "Role"))}</a>'
+            f'<div class="muted" style="margin-top:4px">{_e(meta)}</div>'
+            f'</div>'
+            f'<a class="applysm" href="/careers/{j.id}/apply">Apply →</a>'
+            f'</div>'
         )
     body = f'<h1 style="margin-bottom:18px">Open roles ({len(jobs)})</h1>{"".join(cards)}'
     return HTMLResponse(_page(f"Careers — {settings.COMPANY_NAME}", body))
@@ -415,6 +445,7 @@ def distribution_channels(request: Request, db: Session = Depends(get_db)):
             "url": f"{base}/careers/{j.id}",
             "json_url": f"{base}/careers/{j.id}.json",
             "date_posted": _date_posted(j),
+            "distribution": j.distribution or {},
         })
     return {
         "base_url": base,
@@ -442,27 +473,75 @@ _NOT_OPEN = ('<div class="card"><h1>Role not found</h1>'
              '<a class="apply" href="/careers">View open roles</a></div>')
 
 
-def _apply_form(job: models.Job, *, values: dict | None = None, error: str = "") -> str:
+def _question_fields(hr: models.HiringRequest | None, v: dict) -> str:
+    """Render the role's extra application questions as form fields, prefilled on re-render."""
+    questions = (hr.application_questions if hr else None) or []
+    if not questions:
+        return ""
+    parts = ['<div style="border-top:1px solid var(--line);margin:24px 0 4px;padding-top:8px"></div>']
+    for q in questions:
+        qid = str(q.get("id") or "")
+        if not qid:
+            continue
+        label = _e(q.get("label"))
+        req = ' <span class="req">*</span>' if q.get("required") else ""
+        name = f"aq_{_e(qid)}"
+        prev = _e(v.get(f"aq_{qid}"))
+        if q.get("type") == "text":
+            ctrl = f'<input class="inp" name="{name}" value="{prev}"{" required" if q.get("required") else ""}>'
+        else:
+            ctrl = f'<textarea class="inp" name="{name}" rows="4"{" required" if q.get("required") else ""}>{prev}</textarea>'
+        parts.append(f'<div class="field"><label class="lbl">{label}{req}</label>{ctrl}</div>')
+    return "".join(parts)
+
+
+APPLICANT_SOURCES = ["direct", "referral", "internal"]
+
+
+def _source_options(selected: str) -> str:
+    sel = selected if selected in APPLICANT_SOURCES else "direct"
+    labels = {"direct": "Direct", "referral": "Referral", "internal": "Internal"}
+    return "".join(
+        f'<option value="{k}"{" selected" if k == sel else ""}>{labels[k]}</option>' for k in APPLICANT_SOURCES
+    )
+
+
+def _apply_form(job: models.Job, *, values: dict | None = None, error: str = "", src: str = "") -> str:
     hr = job.hiring_request
     title = job.title or (hr.position if hr else "Role")
     v = values or {}
     err_html = f'<div class="err">{_e(error)}</div>' if error else ""
+    norm_src = _norm_source(src)
+    src_field = f'<input type="hidden" name="src" value="{_e(norm_src)}">' if norm_src != "careers" else ""
     body = (
         f'<a class="back" href="/careers/{job.id}">&larr; Back to role</a>'
         f'<div class="card"><h1>Apply: {_e(title)}</h1>'
         f'<p class="sub">{_e(settings.COMPANY_NAME)}</p>{err_html}'
-        f'<form method="post" action="/careers/{job.id}/apply" enctype="multipart/form-data">'
+        f'<form method="post" action="/careers/{job.id}/apply" enctype="multipart/form-data">{src_field}'
         f'<div class="field"><label class="lbl">Full name <span class="req">*</span></label>'
         f'<input class="inp" name="name" value="{_e(v.get("name"))}" required></div>'
         f'<div class="field"><label class="lbl">Email <span class="req">*</span></label>'
         f'<input class="inp" type="email" name="email" value="{_e(v.get("email"))}" required></div>'
         f'<div class="field"><label class="lbl">Phone</label>'
         f'<input class="inp" name="phone" value="{_e(v.get("phone"))}"></div>'
+        f'<div class="field"><label class="lbl">Current Annual Total Compensation <span class="req">*</span></label>'
+        f'<input class="inp" name="current_ctc" value="{_e(v.get("current_ctc"))}" placeholder="e.g. 12 LPA" required></div>'
+        f'<div class="field"><label class="lbl">Expected Annual Total Compensation <span class="req">*</span></label>'
+        f'<input class="inp" name="expected_ctc" value="{_e(v.get("expected_ctc"))}" placeholder="e.g. 18 LPA" required></div>'
+        f'<div class="field"><label class="lbl">Notice Period (Days) <span class="req">*</span></label>'
+        f'<input class="inp" type="number" min="0" name="notice_period" value="{_e(v.get("notice_period"))}" placeholder="e.g. 30" required></div>'
+        f'<div class="field"><label class="lbl">Source <span class="req">*</span></label>'
+        f'<select class="inp" name="source_choice">{_source_options(v.get("source_choice") or "direct")}</select></div>'
         f'<div class="field"><label class="lbl">Resume</label>'
         f'<input class="inp" type="file" name="file" accept=".pdf,.docx,.doc,.txt">'
         f'<p class="hint">PDF, DOCX or TXT — we parse it automatically to match you to the role.</p></div>'
         f'<div class="field"><label class="lbl">Or paste your resume / a short note</label>'
         f'<textarea class="inp" name="resume_text" rows="6">{_e(v.get("resume_text"))}</textarea></div>'
+        f'{_question_fields(hr, v)}'
+        f'<div class="field" style="flex-direction:row;align-items:flex-start;gap:8px">'
+        f'<input type="checkbox" name="consent" id="consent" required style="margin-top:4px">'
+        f'<label for="consent" class="hint" style="margin:0">I consent to {_e(settings.COMPANY_NAME)} storing and reviewing my application '
+        f'and resume, and to my data being processed by AI tools for screening. *</label></div>'
         f'<button class="apply" type="submit">Submit application</button>'
         f'</form></div>'
     )
@@ -470,20 +549,26 @@ def _apply_form(job: models.Job, *, values: dict | None = None, error: str = "")
 
 
 @router.get("/careers/{job_id}/apply", response_class=HTMLResponse)
-def apply_form(job_id: int, db: Session = Depends(get_db)):
+def apply_form(job_id: int, src: str = "", db: Session = Depends(get_db)):
     job = db.get(models.Job, job_id)
     if not job or job.status != "published":
         return HTMLResponse(_page("Not found", _NOT_OPEN), status_code=404)
-    return HTMLResponse(_apply_form(job))
+    return HTMLResponse(_apply_form(job, src=src))
 
 
 @router.post("/careers/{job_id}/apply", response_class=HTMLResponse)
-def submit_application(
+async def submit_application(
     job_id: int,
+    request: Request,
     name: str = Form(""),
     email: str = Form(""),
     phone: str = Form(""),
     resume_text: str = Form(""),
+    current_ctc: str = Form(""),
+    expected_ctc: str = Form(""),
+    notice_period: str = Form(""),
+    source_choice: str = Form("direct"),
+    src: str = Form(""),
     file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
@@ -491,29 +576,81 @@ def submit_application(
     if not job or job.status != "published":
         return HTMLResponse(_page("Not found", _NOT_OPEN), status_code=404)
     hr = job.hiring_request
-    values = {"name": name, "email": email, "phone": phone, "resume_text": resume_text}
+    values = {
+        "name": name, "email": email, "phone": phone, "resume_text": resume_text,
+        "current_ctc": current_ctc, "expected_ctc": expected_ctc,
+        "notice_period": notice_period, "source_choice": source_choice,
+    }
+
+    # Collect answers to the role's extra application questions from the multipart form.
+    form = await request.form()
+    answers: list[dict] = []
+    missing_required = False
+    for q in (hr.application_questions if hr else None) or []:
+        qid = str(q.get("id") or "")
+        if not qid:
+            continue
+        raw = form.get(f"aq_{qid}")
+        ans = (raw if isinstance(raw, str) else "").strip()
+        values[f"aq_{qid}"] = ans
+        if q.get("required") and not ans:
+            missing_required = True
+        answers.append({"id": qid, "label": q.get("label") or "", "answer": ans})
 
     if not name.strip() or not email.strip():
-        return HTMLResponse(_apply_form(job, values=values, error="Please enter your name and email."), status_code=400)
+        return HTMLResponse(_apply_form(job, values=values, error="Please enter your name and email.", src=src), status_code=400)
+    if not current_ctc.strip() or not expected_ctc.strip() or not notice_period.strip():
+        return HTMLResponse(_apply_form(job, values=values, error="Please fill current & expected compensation and notice period.", src=src), status_code=400)
+    if missing_required:
+        return HTMLResponse(_apply_form(job, values=values, error="Please answer all required questions.", src=src), status_code=400)
+
+    # The applicant-declared source (direct / referral / internal); falls back to the channel tag.
+    chosen_source = source_choice if source_choice in APPLICANT_SOURCES else _norm_source(src)
 
     file_bytes = None
     filename = mime = ""
     text = resume_text or ""
     if file is not None and file.filename:
-        file_bytes = file.file.read()
+        # Public, unauthenticated endpoint — bound the read so an oversized upload can't
+        # exhaust memory. Read one byte past the cap to detect (without loading) overflow.
+        file_bytes = file.file.read(_MAX_UPLOAD_BYTES + 1)
+        if len(file_bytes) > _MAX_UPLOAD_BYTES:
+            return HTMLResponse(
+                _apply_form(job, values=values, error="Resume file is too large (max 10 MB).", src=src),
+                status_code=400,
+            )
         filename = file.filename
         mime = file.content_type or ""
         extracted = resume_parser.extract_text(filename, file_bytes)
         if extracted.strip():
             text = extracted
 
-    cand = recruitment.ingest_candidate(
-        db, name=name.strip(), email=email.strip(), phone=phone.strip(),
-        source="careers", resume_text=text,
-        file_bytes=file_bytes, filename=filename, mime=mime,
-    )
-    recruitment.apply_candidate(db, cand, hr, auto_score=True)
-    db.commit()
+    # Public, unauthenticated endpoint — never surface a raw 500 to an applicant if parsing
+    # or scoring chokes on an odd résumé; roll back and show a friendly retry instead.
+    try:
+        cand = recruitment.ingest_candidate(
+            db, name=name.strip(), email=email.strip(), phone=phone.strip(),
+            source=chosen_source, resume_text=text,
+            file_bytes=file_bytes, filename=filename, mime=mime,
+        )
+        # Persist the applicant-entered compensation & notice into the parsed fields the talent
+        # pool / pipeline read (reassign so SQLAlchemy detects the JSON change).
+        cand.parsed = {
+            **(cand.parsed or {}),
+            "current_ctc": current_ctc.strip(),
+            "salary_expectation": expected_ctc.strip(),
+            "notice_period": notice_period.strip(),
+        }
+        app = recruitment.apply_candidate(db, cand, hr, auto_score=True)
+        if answers:
+            app.application_answers = answers
+        db.commit()
+    except Exception:
+        db.rollback()
+        return HTMLResponse(
+            _apply_form(job, values=values, error="Something went wrong submitting your application — please try again.", src=src),
+            status_code=500,
+        )
 
     title = job.title or (hr.position if hr else "the role")
     thanks = (
@@ -530,13 +667,19 @@ def submit_application(
 # Declared LAST: this int catch-all must come after the literal /careers/* routes
 # (feed.xml, rss.xml, sitemap.xml, {job_id}.json) so they aren't parsed as a job id.
 @router.get("/careers/{job_id}", response_class=HTMLResponse)
-def career_page(job_id: int, db: Session = Depends(get_db)):
+def career_page(job_id: int, src: str = "", db: Session = Depends(get_db)):
     job = db.get(models.Job, job_id)
     if not job or job.status != "published":
         return HTMLResponse(_page("Not found", '<div class="card"><h1>Role not found</h1>'
                                    '<p class="muted">This role isn\'t published.</p>'
                                    '<a class="apply" href="/careers">View open roles</a></div>'), status_code=404)
     hr = job.hiring_request
+    # Carry a referral tag (e.g. ?src=linkedin from a shared post) onto the Apply link
+    # so the applicant is attributed to that channel when they submit.
+    apply_href = f"/careers/{job.id}/apply"
+    norm_src = _norm_source(src)
+    if src and norm_src != "careers":
+        apply_href += f"?src={norm_src}"
     ld = _job_posting_ld(job)
     chips = []
     if hr:
@@ -555,7 +698,7 @@ def career_page(job_id: int, db: Session = Depends(get_db)):
         f'<p class="sub">{_e(settings.COMPANY_NAME)}</p>'
         f'<div class="chips">{"".join(chips)}</div>'
         f'<div>{_description_html(job)}</div>'
-        f'<a class="apply" href="/careers/{job.id}/apply">Apply now</a>'
+        f'<a class="apply" href="{_e(apply_href)}">Apply now</a>'
         f'</div>'
     )
     head = f'<script type="application/ld+json">{_ld_script(ld)}</script>'

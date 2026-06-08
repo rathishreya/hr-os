@@ -19,7 +19,7 @@ export default function TalentPoolColumnSettings({ open, onClose, visible, onTog
         {TALENT_POOL_COLUMNS.filter((c) => !c.locked).map((col) => (
           <label
             key={col.id}
-            className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-100 px-3 py-2.5 hover:bg-slate-50"
+            className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-100 px-3 py-2.5 transition-colors duration-150 ease-snappy hover:bg-slate-50"
           >
             <input
               type="checkbox"

@@ -95,10 +95,11 @@ export default function OfferPanel({ app }) {
           {docs.map((d) => (
             <button
               key={d.id}
+              type="button"
               onClick={() => setSelected(d)}
               className={cx(
-                'rounded-lg border px-2.5 py-1 text-xs transition',
-                selected?.id === d.id ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
+                'rounded-lg border px-2.5 py-1 text-xs transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                selected?.id === d.id ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
               )}
             >
               {d.doc_type.replace(/_/g, ' ')} <Badge tone={d.status === 'approved' ? 'green' : 'amber'} className="ml-1">{d.status}</Badge>

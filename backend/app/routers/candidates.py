@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
+from ..deps import require_roles
 from ..services import recruitment, resume_extract, resume_parser
 from ..services.ai import ai
 
 router = APIRouter(prefix="/api/candidates", tags=["candidates"])
+
+_MAX_RESUME_BYTES = 25 * 1024 * 1024  # 25 MB — guard the free-tier instance from OOM
 
 
 def _maybe_apply(db: Session, cand: models.Candidate, hiring_request_id: int | None) -> None:
@@ -47,7 +50,9 @@ def upload_candidate(
     hiring_request_id: int | None = Form(None),
     db: Session = Depends(get_db),
 ):
-    content = file.file.read()
+    content = file.file.read(_MAX_RESUME_BYTES + 1)
+    if len(content) > _MAX_RESUME_BYTES:
+        raise HTTPException(413, "Resume file is too large (max 25 MB).")
     text = resume_parser.extract_text(file.filename or "", content)
     if not text.strip():
         raise HTTPException(422, "Could not extract text from the uploaded file.")
@@ -106,8 +111,13 @@ def resume_file(cand_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("")
-def list_candidates(q: str = "", table: bool = False, db: Session = Depends(get_db)):
-    rows = db.scalars(select(models.Candidate).order_by(models.Candidate.created_at.desc())).all()
+def list_candidates(q: str = "", table: bool = False, limit: int = 500, db: Session = Depends(get_db)):
+    # Hard-cap the rows pulled into memory so a large talent pool can't OOM the instance.
+    # (A true full-text search belongs in SQL for very large pools — see PROD-READINESS.md.)
+    limit = max(1, min(limit, 1000))
+    rows = db.scalars(
+        select(models.Candidate).order_by(models.Candidate.created_at.desc()).limit(2000)
+    ).all()
     if q.strip():
         needle = q.strip().lower()
         rows = [
@@ -125,8 +135,11 @@ def list_candidates(q: str = "", table: bool = False, db: Session = Depends(get_
                 ),
             ]).lower()
         ]
+    rows = rows[:limit]
     if not table:
         return [schemas.CandidateOut.model_validate(c) for c in rows]
+    # Embed every role once so the "suggested role" column is one batch, not N×roles calls.
+    role_vecs = recruitment.build_role_vectors(db)
     out = []
     for c in rows:
         apps = db.scalars(
@@ -139,12 +152,17 @@ def list_candidates(q: str = "", table: bool = False, db: Session = Depends(get_
         parsed = resume_extract.enrich_from_resume(
             c.parsed, c.resume_text, name=c.name, email=c.email, phone=c.phone, source=c.source,
         )
+        best = recruitment.suggest_roles_for(c, role_vecs, limit=1)
+        suggestion = best[0] if best else None
         out.append({
             **schemas.CandidateOut.model_validate(c).model_dump(),
             "application_count": len(apps),
             "active_applications": len(active),
             "latest_stage": apps[0].stage if apps else "",
             "top_score": max((a.score_overall for a in apps), default=0),
+            "suggested_role": suggestion["position"] if suggestion else "",
+            "suggested_role_id": suggestion["hiring_request_id"] if suggestion else None,
+            "suggested_role_score": suggestion["score"] if suggestion else None,
             **resume_extract.table_fields(parsed, c),
         })
     return out
@@ -200,3 +218,29 @@ def apply_to_role(cand_id: int, body: schemas.ApplyToRoleRequest, db: Session = 
     db.commit()
     db.refresh(app)
     return app
+
+
+@router.delete("/{cand_id}", status_code=204)
+def delete_candidate(cand_id: int, db: Session = Depends(get_db), _user: models.User = Depends(require_roles("admin", "manager"))):
+    """Erase a candidate and ALL their data (GDPR/CCPA 'right to be forgotten').
+    Removes applications, interviews, recordings, documents and the comms trail."""
+    cand = db.get(models.Candidate, cand_id)
+    if not cand:
+        raise HTTPException(404, "Candidate not found")
+
+    app_ids = list(db.scalars(select(models.Application.id).where(models.Application.candidate_id == cand_id)).all())
+    vi_ids = list(db.scalars(select(models.VideoInterview.id).where(models.VideoInterview.candidate_id == cand_id)).all())
+
+    if vi_ids:
+        db.execute(delete(models.VideoAnswer).where(models.VideoAnswer.interview_id.in_(vi_ids)))
+    db.execute(delete(models.VideoInterview).where(models.VideoInterview.candidate_id == cand_id))
+    db.execute(delete(models.ScreeningInterview).where(models.ScreeningInterview.candidate_id == cand_id))
+    db.execute(delete(models.OnboardingPlan).where(models.OnboardingPlan.candidate_id == cand_id))
+    db.execute(delete(models.Document).where(models.Document.candidate_id == cand_id))
+    db.execute(delete(models.EmailMessage).where(models.EmailMessage.candidate_id == cand_id))
+    if app_ids:
+        db.execute(delete(models.InterviewRound).where(models.InterviewRound.application_id.in_(app_ids)))
+    db.execute(delete(models.Application).where(models.Application.candidate_id == cand_id))
+    db.delete(cand)
+    recruitment.log(db, "candidate.deleted", "candidate", cand_id, {"applications": len(app_ids)})
+    db.commit()

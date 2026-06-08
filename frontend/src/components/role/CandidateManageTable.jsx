@@ -1,16 +1,90 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Search, Download, UserPlus, ChevronDown, ChevronUp } from 'lucide-react'
-import { Badge, Button, inputClass, stageTone, scoreTone } from '../../ui'
+import { Search, Download, UserPlus, ChevronDown, ChevronUp, CalendarPlus, Check } from 'lucide-react'
+import { Badge, Button, Modal, Spinner, inputClass, scoreTone, cx } from '../../ui'
 import { DataTable, LiveDot } from '../DataTable'
 import { exportPipelineCsv } from '../../utils/exportCsv'
 import { useToast } from '../Toast'
 import { api } from '../../api'
+import { INTERVIEW_TYPES } from '../../constants'
 import AddCandidate from './AddCandidate'
 import AddFromPool from './AddFromPool'
 import CandidateManageDrawer from './CandidateManageDrawer'
 import PipelineStats from './PipelineStats'
 
 const STAGES = ['applied', 'screening', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
+
+// Bulk-apply a set of interview rounds to many selected candidates at once (F8).
+// Mounted only while open (see call site), so state initializes from props without an effect.
+function BulkRoundsModal({ onClose, applicationIds, defaultTypes, onDone }) {
+  const { toast } = useToast()
+  const [types, setTypes] = useState(defaultTypes || [])
+  const [duration, setDuration] = useState(60)
+  const [busy, setBusy] = useState(false)
+
+  const toggle = (v) => setTypes((t) => (t.includes(v) ? t.filter((x) => x !== v) : [...t, v]))
+
+  async function apply() {
+    if (!types.length) { toast('Pick at least one round', 'error'); return }
+    setBusy(true)
+    try {
+      const r = await api.bulkInterviewRounds({
+        application_ids: applicationIds,
+        interview_types: types,
+        duration_minutes: Number(duration),
+      })
+      toast(`Added ${r.created} round${r.created !== 1 ? 's' : ''} across ${r.applications} candidate${r.applications !== 1 ? 's' : ''}${r.skipped ? ` · ${r.skipped} skipped (already present)` : ''}`)
+      onDone()
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Add interview rounds to ${applicationIds.length} candidate${applicationIds.length !== 1 ? 's' : ''}`}
+      footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button><Button onClick={apply} disabled={busy}>{busy ? <Spinner /> : 'Add rounds'}</Button></>}
+    >
+      <div className="space-y-4">
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Rounds to add</p>
+          <div className="flex flex-wrap gap-1.5">
+            {INTERVIEW_TYPES.map((t) => {
+              const on = types.includes(t.value)
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => toggle(t.value)}
+                  aria-pressed={on}
+                  className={cx(
+                    'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                    on ? 'border-brand-300 bg-brand-100 text-brand-800' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300',
+                  )}
+                >
+                  <span className={cx('flex h-3.5 w-3.5 items-center justify-center rounded-[4px] border', on ? 'border-current' : 'border-slate-300')}>
+                    {on && <Check className="h-2.5 w-2.5" />}
+                  </span>
+                  {t.label}
+                </button>
+              )
+            })}
+          </div>
+          <p className="mt-2 text-xs text-slate-400">A round a candidate already has is skipped, so this is safe to re-run.</p>
+        </div>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">Default duration</span>
+          <select className={`${inputClass} w-40`} value={duration} onChange={(e) => setDuration(e.target.value)}>
+            {[30, 45, 60, 90, 120].map((d) => <option key={d} value={d}>{d} min</option>)}
+          </select>
+        </label>
+      </div>
+    </Modal>
+  )
+}
 const STAGE_GROUPS = {
   application: ['applied', 'screening'],
 }
@@ -29,12 +103,21 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
   const [showPool, setShowPool] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [movingId, setMovingId] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [roleTypes, setRoleTypes] = useState([])
 
   const largeList = (board?.length || 0) >= 20
 
   useEffect(() => {
     if (initialStageFilter) setStageFilter(initialStageFilter)
   }, [initialStageFilter])
+
+  // The role's planned interview types (set at job creation) seed the bulk dialog.
+  useEffect(() => {
+    if (!roleId) return
+    api.getRole(roleId).then((r) => setRoleTypes(r.interview_types || [])).catch(() => {})
+  }, [roleId])
 
   useEffect(() => {
     if (selected && board) {
@@ -62,6 +145,19 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
     return list
   }, [board, search, stageFilter, minScore])
 
+  const toggleRow = (id) => setSelectedIds((s) => {
+    const n = new Set(s)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    return n
+  })
+  const allFilteredSelected = filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id))
+  const toggleAll = () => setSelectedIds((s) => {
+    const n = new Set(s)
+    if (filtered.every((r) => n.has(r.id))) filtered.forEach((r) => n.delete(r.id))
+    else filtered.forEach((r) => n.add(r.id))
+    return n
+  })
+
   async function changeStage(row, stage, e) {
     e?.stopPropagation()
     if (stage === row.stage) return
@@ -79,10 +175,37 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
 
   const columns = [
     {
+      key: 'select',
+      label: (
+        <input
+          type="checkbox"
+          aria-label="Select all"
+          checked={allFilteredSelected}
+          onChange={toggleAll}
+          onClick={(e) => e.stopPropagation()}
+          className="cursor-pointer"
+        />
+      ),
+      className: 'w-8',
+      sortable: false,
+      filter: false,
+      render: (row) => (
+        <input
+          type="checkbox"
+          aria-label="Select candidate"
+          checked={selectedIds.has(row.id)}
+          onChange={() => toggleRow(row.id)}
+          onClick={(e) => e.stopPropagation()}
+          className="cursor-pointer"
+        />
+      ),
+    },
+    {
       key: '_num',
       label: '#',
       className: 'w-10 text-slate-400',
       sortable: false,
+      filter: false,
       render: (_row, index) => <span className="tabular-nums text-slate-400">{index + 1}</span>,
     },
     {
@@ -90,6 +213,7 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
       label: '',
       className: 'w-6',
       sortable: false,
+      filter: false,
       render: (row) => {
         const m = row.meta || {}
         const tone = m.is_live ? 'violet' : row.stage === 'hired' ? 'green' : row.stage === 'rejected' ? 'rose' : 'amber'
@@ -141,7 +265,7 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
       render: (row) => {
         const m = row.meta || {}
         return (
-          <span className={`block max-w-[160px] truncate text-xs ${m.is_live ? 'font-medium text-violet-700' : 'text-slate-600'}`} title={m.activity}>
+          <span className={`block max-w-[160px] truncate text-xs ${m.is_live ? 'font-medium text-brand-700' : 'text-slate-600'}`} title={m.activity}>
             {m.activity || '—'}
           </span>
         )
@@ -192,10 +316,26 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
       ),
     },
     {
+      key: 'suggested',
+      label: 'Suggested role',
+      sortable: false,
+      filterValue: (row) => row.suggested_role?.position || '',
+      render: (row) => {
+        const s = row.suggested_role
+        if (!s) return <span className="text-xs text-slate-400">—</span>
+        return (
+          <span className="block max-w-[170px] truncate text-xs text-slate-600" title={`Better fit: ${s.position}${s.score != null ? ` · ${s.score}% match` : ''}`}>
+            ↪ {s.position}{s.score != null ? <span className="text-slate-400"> · {s.score}%</span> : null}
+          </span>
+        )
+      },
+    },
+    {
       key: 'actions',
       label: '',
       className: 'text-right',
       sortable: false,
+      filter: false,
       render: (row) => (
         <Button
           variant="ghost"
@@ -211,7 +351,7 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
   return (
     <div className="space-y-3">
       {board?.some((r) => r.meta?.is_live) && (
-        <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm text-violet-800">
+        <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-4 py-2 text-sm text-brand-800">
           <LiveDot live tone="violet" />
           Live interviews running — auto-refresh every 15s
         </div>
@@ -242,6 +382,14 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
 
       {showAdd && <AddCandidate roleId={roleId} onAdded={() => { onRefresh(); setShowAdd(false) }} />}
       {showPool && <AddFromPool roleId={roleId} onAdded={() => { setShowPool(false); onRefresh() }} onCancel={() => setShowPool(false)} />}
+
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm">
+          <span className="font-medium text-brand-800">{selectedIds.size} selected</span>
+          <Button className="text-xs" onClick={() => setBulkOpen(true)}><CalendarPlus className="h-4 w-4" /> Add interview rounds</Button>
+          <button type="button" onClick={() => setSelectedIds(new Set())} className="text-xs text-slate-500 transition-colors hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">Clear selection</button>
+        </div>
+      )}
 
       {!largeList && board?.length > 0 && <PipelineStats apps={board} />}
 
@@ -277,12 +425,22 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
           getRowKey={(r) => r.id}
           compact
           stickyHeader
+          filterable
           maxHeight="calc(100vh - 280px)"
           defaultPageSize={50}
           pageSizes={[25, 50, 100, 200]}
           defaultSort={{ key: 'score_overall', dir: 'desc' }}
           emptyMessage="No candidates match your filters."
           onRowClick={(row) => { setSelected(row); setDrawerOpen(true) }}
+        />
+      )}
+
+      {bulkOpen && (
+        <BulkRoundsModal
+          onClose={() => setBulkOpen(false)}
+          applicationIds={[...selectedIds]}
+          defaultTypes={roleTypes}
+          onDone={() => { setBulkOpen(false); setSelectedIds(new Set()); onRefresh() }}
         />
       )}
 

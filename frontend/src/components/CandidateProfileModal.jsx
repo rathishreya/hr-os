@@ -36,7 +36,7 @@ function ContactBox({ href, label, icon: Icon, external }) {
       <span className="text-[10px] font-medium uppercase tracking-wide">{label}</span>
     </>
   )
-  const cls = 'flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition'
+  const cls = 'flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors duration-150 ease-snappy'
   if (!href) {
     return <span className={cx(cls, 'cursor-default opacity-40')} title="Not available">{inner}</span>
   }
@@ -47,7 +47,7 @@ function ContactBox({ href, label, icon: Icon, external }) {
       target={external ? '_blank' : undefined}
       rel={external ? 'noreferrer' : undefined}
       onClick={(e) => e.stopPropagation()}
-      className={cx(cls, 'hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700')}
+      className={cx(cls, 'hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50')}
     >
       {inner}
     </a>
@@ -195,7 +195,7 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
       key: 'job_id',
       label: 'Job ID',
       render: (row) => (
-        <Link to={`/roles/${row.hiring_request_id}`} onClick={onClose} className="font-medium text-violet-600 hover:underline">
+        <Link to={`/roles/${row.hiring_request_id}`} onClick={onClose} className="font-medium text-brand-600 hover:underline">
           {row.hiring_request_id}
         </Link>
       ),
@@ -245,7 +245,7 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
                 <div className="flex items-start gap-4">
                   <Avatar name={c.name} className="h-16 w-16 shrink-0 rounded-full text-xl ring-4 ring-slate-100" />
                   <div>
-                    <h2 className="text-2xl font-bold tracking-tight text-slate-900">{c.name || 'Unnamed'}</h2>
+                    <h2 className="text-2xl font-bold tracking-tight text-slate-900 text-balance">{c.name || 'Unnamed'}</h2>
                     <p className="mt-0.5 text-sm font-medium text-slate-600">{roleTitle}</p>
                     <p className="mt-1 text-xs text-slate-500">
                       Source Details: <span className="capitalize">{c.source || 'direct'}</span>
@@ -269,7 +269,7 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
                   type="button"
                   onClick={onClose}
                   aria-label="Close"
-                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  className="rounded-lg p-2 text-slate-400 transition-[color,background-color,transform] duration-150 ease-snappy hover:bg-slate-100 hover:text-slate-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -289,7 +289,7 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
                         href={fileUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:border-violet-300 hover:text-violet-700"
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-[color,border-color,transform] duration-150 ease-snappy hover:border-brand-300 hover:text-brand-700 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
                       >
                         <Send className="h-4 w-4" /> Share Resume
                       </a>
@@ -300,7 +300,7 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
                         download={c.resume_filename || 'resume'}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 transition-[background-color,transform] duration-150 ease-snappy hover:bg-slate-50 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
                       >
                         <Download className="h-4 w-4" />
                       </a>
@@ -320,7 +320,7 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
                     <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white py-16">
                       <FileText className="mb-3 h-10 w-10 text-slate-300" />
                       <p className="text-sm text-slate-600">Preview not available for this file type.</p>
-                      <a href={fileUrl} target="_blank" rel="noreferrer" className="mt-4 text-sm font-medium text-violet-600 hover:underline">
+                      <a href={fileUrl} target="_blank" rel="noreferrer" className="mt-4 text-sm font-medium text-brand-600 hover:underline">
                         <ExternalLink className="mr-1 inline h-4 w-4" /> Download {c.resume_filename}
                       </a>
                     </div>
@@ -425,7 +425,7 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
                       <ul className="space-y-2">
                         {hist.convos.map((m) => (
                           <li key={m.id} className="flex gap-3 rounded-lg border border-slate-200 bg-white p-3">
-                            <div className={cx('flex h-8 w-8 shrink-0 items-center justify-center rounded-full', m.kind === 'email' ? 'bg-sky-50 text-sky-600' : 'bg-violet-50 text-violet-600')}>
+                            <div className={cx('flex h-8 w-8 shrink-0 items-center justify-center rounded-full', m.kind === 'email' ? 'bg-sky-50 text-sky-600' : 'bg-brand-50 text-brand-600')}>
                               {m.kind === 'email' ? <Mail className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                             </div>
                             <div className="min-w-0 flex-1">
@@ -471,7 +471,7 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
                     <ul className="space-y-3">
                       {apps.filter((a) => a.notes).map((a) => (
                         <li key={a.application_id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                          <div className="mb-1 text-xs font-semibold text-violet-700">{a.position}</div>
+                          <div className="mb-1 text-xs font-semibold text-brand-700">{a.position}</div>
                           <p className="whitespace-pre-wrap text-sm text-slate-700">{a.notes}</p>
                         </li>
                       ))}

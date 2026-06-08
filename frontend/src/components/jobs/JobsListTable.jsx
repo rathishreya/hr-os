@@ -6,6 +6,25 @@ import {
 import { Badge, cx } from '../../ui'
 import { api } from '../../api'
 import { useToast } from '../Toast'
+import { useColumnFilters, ColumnFilter, distinctValues } from '../tableFilters'
+
+const JOBS_ACCESSORS = {
+  id: (r) => String(r.id),
+  status: (r) => r.status || '',
+  position: (r) => r.position || '',
+  department: (r) => r.department || '',
+  level_label: (r) => r.level_label || '',
+  location: (r) => r.location || '',
+  yoe: (r) => [r.yoe_min, r.yoe_max].filter((v) => v != null && v !== '').join('-'),
+  salary_min: (r) => (r.salary_min != null ? String(r.salary_min) : ''),
+  salary_max: (r) => (r.salary_max != null ? String(r.salary_max) : ''),
+  ageing: (r) => (r.ageing_days != null ? String(r.ageing_days) : ''),
+  hiring_manager: (r) => r.hiring_manager || '',
+  recruiter: (r) => r.recruiter || '',
+  employment_type: (r) => r.employment_type || '',
+  hire_type: (r) => r.hire_type || '',
+  created: (r) => new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+}
 
 function formatSalary(n) {
   if (n == null || n === '') return '—'
@@ -22,7 +41,7 @@ function PipelinePill({ count, roleId, stage, onNavigate }) {
       className={cx(
         'inline-flex min-w-[2.5rem] items-center justify-center gap-1 rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition',
         count > 0
-          ? 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100'
+          ? 'border-brand-200 bg-brand-50 text-brand-800 hover:bg-brand-100'
           : 'border-slate-200 bg-slate-50 text-slate-400 hover:border-slate-300',
       )}
       title="View candidates in this stage"
@@ -40,9 +59,27 @@ export default function JobsListTable({ rows, onStatusChange }) {
   const { toast } = useToast()
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' })
   const [updatingId, setUpdatingId] = useState(null)
+  const filterCtl = useColumnFilters()
+
+  const filtered = useMemo(
+    () => filterCtl.apply(rows, JOBS_ACCESSORS),
+    [rows, filterCtl.filters], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  const distinct = useMemo(
+    () => Object.fromEntries(Object.entries(JOBS_ACCESSORS).map(([k, acc]) => [k, distinctValues(rows, acc)])),
+    [rows],
+  )
+  const colFilter = (fkey) => (
+    <ColumnFilter
+      label={fkey}
+      values={distinct[fkey] || []}
+      excluded={filterCtl.filters[fkey] || []}
+      onChange={(arr) => filterCtl.setFilter(fkey, arr)}
+    />
+  )
 
   const sorted = useMemo(() => {
-    const list = [...rows]
+    const list = [...filtered]
     const { key, dir } = sort
     list.sort((a, b) => {
       let av = a[key]
@@ -61,7 +98,7 @@ export default function JobsListTable({ rows, onStatusChange }) {
       return dir === 'asc' ? (av || 0) - (bv || 0) : (bv || 0) - (av || 0)
     })
     return list
-  }, [rows, sort])
+  }, [filtered, sort])
 
   function toggleSort(key) {
     setSort((s) => {
@@ -86,16 +123,16 @@ export default function JobsListTable({ rows, onStatusChange }) {
     }
   }
 
-  function SortHead({ label, col }) {
+  function SortHead({ label, col, filterKey }) {
     const active = sort.key === col
     return (
-      <th
-        className="cursor-pointer whitespace-nowrap px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-violet-700"
-        onClick={() => toggleSort(col)}
-      >
+      <th className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
         <span className="inline-flex items-center gap-1">
-          {label}
-          {active && (sort.dir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+          <span className="inline-flex cursor-pointer items-center gap-1 hover:text-brand-700" onClick={() => toggleSort(col)}>
+            {label}
+            {active && (sort.dir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+          </span>
+          {filterKey && colFilter(filterKey)}
         </span>
       </th>
     )
@@ -109,27 +146,27 @@ export default function JobsListTable({ rows, onStatusChange }) {
         <table className="w-full min-w-[1400px] border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-sm">
             <tr className="border-b border-slate-200">
-              <SortHead label="Job ID" col="id" />
+              <SortHead label="Job ID" col="id" filterKey="id" />
               <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500">JD</th>
-              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500">Status</th>
+              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Status {colFilter('status')}</span></th>
               <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500">OK</th>
-              <SortHead label="Job Title" col="position" />
-              <SortHead label="Department" col="department" />
-              <SortHead label="Level" col="level_label" />
-              <SortHead label="Location" col="location" />
+              <SortHead label="Job Title" col="position" filterKey="position" />
+              <SortHead label="Department" col="department" filterKey="department" />
+              <SortHead label="Level" col="level_label" filterKey="level_label" />
+              <SortHead label="Location" col="location" filterKey="location" />
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Application</th>
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Shortlisted</th>
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Interview</th>
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Pre-Offer</th>
-              <SortHead label="Exp (yrs)" col="yoe_max" />
-              <SortHead label="Min Salary" col="salary_min" />
-              <SortHead label="Max Salary" col="salary_max" />
-              <SortHead label="Ageing" col="ageing_days" />
-              <th className="px-3 py-3 text-[11px] font-bold uppercase text-slate-500">Hiring Mgr</th>
-              <th className="px-3 py-3 text-[11px] font-bold uppercase text-slate-500">Recruiter</th>
-              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500">Type</th>
-              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500">New/Repl</th>
-              <SortHead label="Created" col="created_at" />
+              <SortHead label="Exp (yrs)" col="yoe_max" filterKey="yoe" />
+              <SortHead label="Min Salary" col="salary_min" filterKey="salary_min" />
+              <SortHead label="Max Salary" col="salary_max" filterKey="salary_max" />
+              <SortHead label="Ageing" col="ageing_days" filterKey="ageing" />
+              <th className="px-3 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Hiring Mgr {colFilter('hiring_manager')}</span></th>
+              <th className="px-3 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Recruiter {colFilter('recruiter')}</span></th>
+              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Type {colFilter('employment_type')}</span></th>
+              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">New/Repl {colFilter('hire_type')}</span></th>
+              <SortHead label="Created" col="created_at" filterKey="created" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -139,15 +176,15 @@ export default function JobsListTable({ rows, onStatusChange }) {
                 <tr
                   key={row.id}
                   onClick={() => navigate(`/roles/${row.id}`)}
-                  className="cursor-pointer transition hover:bg-violet-50/50"
+                  className="cursor-pointer transition hover:bg-brand-50/50"
                 >
-                  <td className="whitespace-nowrap px-3 py-2.5 font-medium text-violet-600">{row.id}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 font-medium text-brand-600">{row.id}</td>
                   <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                     <Link
                       to={`/roles/${row.id}`}
                       className={cx(
                         'inline-flex rounded-lg p-1.5 transition',
-                        row.has_jd ? 'text-violet-600 hover:bg-violet-50' : 'text-slate-300',
+                        row.has_jd ? 'text-brand-600 hover:bg-brand-50' : 'text-slate-300',
                       )}
                       title={row.has_jd ? 'View job description' : 'No JD yet'}
                     >
@@ -205,6 +242,9 @@ export default function JobsListTable({ rows, onStatusChange }) {
                 </tr>
               )
             })}
+            {!sorted.length && (
+              <tr><td colSpan={21} className="px-4 py-10 text-center text-sm text-slate-400">No jobs match your filters.</td></tr>
+            )}
           </tbody>
         </table>
       </div>

@@ -192,7 +192,14 @@ class AIService:
         if not isinstance(provider, MockProvider):
             try:
                 raw = provider.generate(system, user, want_json=want_json)
-                return (_extract_json(raw) if want_json else raw, provider.name)
+                if not want_json:
+                    return raw, provider.name
+                parsed = _extract_json(raw)
+                # Every JSON task expects an object; a bare array/scalar is malformed —
+                # degrade to the mock (which always returns the right shape) instead of
+                # handing a non-dict to callers that do result.get(...).
+                if isinstance(parsed, dict):
+                    return parsed, provider.name
             except Exception:
                 pass  # graceful degradation -> mock
         return mock.run(task, context), "mock"
@@ -205,6 +212,14 @@ class AIService:
     def generate_jd(self, hr: dict[str, Any]) -> tuple[dict, str]:
         system, user = prompts.job_description(hr)
         return self._run("generate_jd", system, user, context={"hr": hr})
+
+    def suggest_skills(self, payload: dict[str, Any]) -> tuple[dict, str]:
+        system, user = prompts.suggest_skills(payload)
+        return self._run("suggest_skills", system, user, context={"payload": payload})
+
+    def generate_video_questions(self, role: dict[str, Any]) -> tuple[dict, str]:
+        system, user = prompts.video_interview_questions(role)
+        return self._run("generate_video_questions", system, user, context={"role": role})
 
     def parse_resume(self, resume_text: str) -> tuple[dict, str]:
         system, user = prompts.parse_resume(resume_text)
@@ -222,6 +237,10 @@ class AIService:
         system, user = prompts.compose_email(template, ctx)
         return self._run("compose_email", system, user, context={"ctx": ctx})
 
+    def assessment_email(self, ctx: dict[str, Any]) -> tuple[dict, str]:
+        system, user = prompts.assessment_email(ctx)
+        return self._run("assessment_email", system, user, context={"ctx": ctx})
+
     def screening_questions(self, hr: dict[str, Any], parsed: dict[str, Any]) -> tuple[dict, str]:
         system, user = prompts.screening_questions(hr, parsed)
         return self._run("screening_questions", system, user, context={"hr": hr, "parsed": parsed})
@@ -229,6 +248,15 @@ class AIService:
     def evaluate_screening(self, hr: dict[str, Any], transcript: list[dict[str, Any]]) -> tuple[dict, str]:
         system, user = prompts.evaluate_screening(hr, transcript)
         return self._run("evaluate_screening", system, user, context={"hr": hr, "transcript": transcript})
+
+    def evaluate_video_interview(
+        self, role: dict[str, Any], questions: list[str], transcript: str, timeline: list[dict[str, Any]]
+    ) -> tuple[dict, str]:
+        system, user = prompts.evaluate_video(role, questions, transcript, timeline)
+        return self._run(
+            "evaluate_video", system, user,
+            context={"role": role, "questions": questions, "transcript": transcript, "timeline": timeline},
+        )
 
     def generate_document(self, doc_type: str, ctx: dict[str, Any]) -> tuple[dict, str]:
         system, user = prompts.generate_document(doc_type, ctx)

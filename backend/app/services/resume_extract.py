@@ -313,6 +313,7 @@ def parse_resume_text(text: str, *, fallback_name: str = "", fallback_source: st
     email_m = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", text)
     phone_m = re.search(r"(\+?\d[\d\s-]{8,}\d)", text)
     linkedin_m = re.search(r"(https?://)?(www\.)?linkedin\.com/[^\s)|]+", text, re.I)
+    github_m = re.search(r"(https?://)?(www\.)?github\.com/[^\s)|]+", text, re.I)
 
     current_ctc, salary_expectation = _extract_compensation(text)
     companies = _extract_companies(exp_lines, text)
@@ -325,6 +326,7 @@ def parse_resume_text(text: str, *, fallback_name: str = "", fallback_source: st
         "phone": phone_m.group(0).strip() if phone_m else "",
         "location": _extract_location(text, header),
         "linkedin": linkedin_m.group(0) if linkedin_m else "",
+        "github": github_m.group(0) if github_m else "",
         "skills": _detect_skills(text),
         "total_yoe": _years_from_text(text),
         "current_company": co0.get("name") or "",
@@ -410,7 +412,9 @@ def table_fields(parsed: dict[str, Any], candidate: Any) -> dict[str, Any]:
     companies = parsed.get("companies") or []
     co0 = companies[0] if companies else {}
     return {
+        "phone": parsed.get("phone") or getattr(candidate, "phone", "") or "",
         "linkedin": parsed.get("linkedin") or "",
+        "github": parsed.get("github") or "",
         "location": parsed.get("location") or "",
         "current_company": parsed.get("current_company") or co0.get("name") or "",
         "current_title": parsed.get("current_title") or co0.get("title") or "",

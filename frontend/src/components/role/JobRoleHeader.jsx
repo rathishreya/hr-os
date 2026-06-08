@@ -23,11 +23,11 @@ export default function JobRoleHeader({ role, summary, onCopyApplyLink }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 px-5 py-4">
-        <Link to="/roles" className="text-xs font-medium text-slate-400 hover:text-violet-600">← All jobs</Link>
+        <Link to="/roles" className="rounded text-xs font-medium text-slate-400 transition-colors duration-150 ease-snappy hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">← All jobs</Link>
         <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+              <h1 className="text-balance text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
                 {role.position}
                 <span className="ml-2 font-semibold text-slate-400">#{role.id}</span>
               </h1>
@@ -37,7 +37,7 @@ export default function JobRoleHeader({ role, summary, onCopyApplyLink }) {
               <Button variant="ghost" className="h-8 px-2.5 text-xs" title="Edit job">
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
-              <Button variant="ghost" className="h-8 gap-1.5 px-3 text-xs text-violet-700" onClick={copyLink}>
+              <Button variant="ghost" className="h-8 gap-1.5 px-3 text-xs text-brand-700" onClick={copyLink}>
                 <Link2 className="h-3.5 w-3.5" /> Copy apply link
               </Button>
             </div>

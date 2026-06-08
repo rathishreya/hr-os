@@ -13,10 +13,10 @@ export default function RoleHeader({ role, jd, apps, screeningDone }) {
 
   return (
     <div className="space-y-4">
-      <Link to="/roles" className="text-xs text-slate-400 hover:text-slate-700">← All jobs</Link>
+      <Link to="/roles" className="rounded text-xs text-slate-400 transition-colors duration-150 ease-snappy hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">← All jobs</Link>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{role.position}</h1>
+          <h1 className="text-balance text-2xl font-bold tracking-tight text-slate-900">{role.position}</h1>
           <p className="mt-1 text-sm text-slate-500">{role.department} · {role.location} · {role.work_mode} · {role.num_openings} opening(s)</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -26,7 +26,7 @@ export default function RoleHeader({ role, jd, apps, screeningDone }) {
       <div className="flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs">
         {steps.map((s, i, arr) => (
           <div key={s.n} className="flex items-center gap-1">
-            <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${s.done ? 'bg-violet-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
+            <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${s.done ? 'bg-brand-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
               {s.done ? '✓' : s.n}
             </span>
             <span className={s.done ? 'text-slate-700' : 'text-slate-400'}>{s.label}</span>

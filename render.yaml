@@ -1,24 +1,28 @@
-# Render Blueprint — one-click free deploy of HR-OS.
+# Render Blueprint — one-click free deploy of HR-OS (single service).
 #
-# Spins up THREE free resources:
+# Spins up TWO free resources:
 #   • hr-os-db        — managed PostgreSQL (free)
-#   • hr-os-backend   — FastAPI API + public careers pages + job feeds (Docker, free)
-#   • hr-os-frontend  — the React admin UI (static site, free)
+#   • hr-os-backend   — FastAPI backend that ALSO serves the React admin UI + public
+#                       careers pages + job feeds (Docker, free). One service, one URL,
+#                       same origin — no separate static host, no VITE_API_BASE to wire.
 #
-# How to deploy:
-#   1. Push this repo to GitHub (done).
-#   2. On https://render.com → New → Blueprint → connect this repo. Render reads this file.
-#   3. It prompts for the "sync: false" secrets below — paste your Gemini key etc.
-#   4. After the backend goes live, copy its URL (https://hr-os-backend-XXXX.onrender.com)
-#      and set the frontend's VITE_API_BASE to "<that URL>/api", then redeploy the frontend.
+# NOTE: this used to be a split deploy (separate hr-os-backend + hr-os-frontend). It's
+# now combined into hr-os-backend. The service NAME/URL is preserved, so existing careers
+# /feed links keep working — after re-syncing the Blueprint you can DELETE the now-unused
+# hr-os-frontend static service in the Render dashboard.
 #
-# Notes:
-#   • PUBLIC_BASE_URL auto-resolves from Render's RENDER_EXTERNAL_URL — the careers pages
-#     and job feeds are served by the backend and are immediately crawlable. Submit the
-#     backend's /careers/sitemap.xml + /careers/feed.xml to the free aggregators.
-#   • Free web services sleep after ~15 min idle (first request cold-starts in ~50s) and
-#     the free Postgres is removed after ~30 days — fine for launch/testing; upgrade to a
-#     paid instance ($7/mo each) for always-on production.
+# Deploy:
+#   1. Push this repo to GitHub.
+#   2. render.com → New → Blueprint → connect this repo (or re-sync the existing one).
+#   3. Paste the "sync: false" values it prompts for (AI key + company name are the only
+#      ones you need to start; email + direct-posting creds are optional, add later).
+#   4. Open the service URL: the admin UI is at /, the API at /api, careers at /careers.
+#      PUBLIC_BASE_URL auto-resolves to this URL, so job feeds and the Google Indexing
+#      push work immediately. Submit /careers/sitemap.xml + /careers/feed.xml to the free
+#      aggregators (see the Distribution page).
+#
+# Free tier: services sleep after ~15 min idle (≈50s cold start) and free Postgres is
+# removed after ~30 days — fine for testing. Upgrade to paid ($7/mo) for always-on.
 
 databases:
   - name: hr-os-db
@@ -27,13 +31,12 @@ databases:
     user: hros
 
 services:
-  # ── Backend: API + careers pages + job feeds ────────────────────────────────
   - type: web
-    name: hr-os-backend
+    name: hr-os-backend     # reuse the existing service name → same URL, feeds stay valid
     runtime: docker
     plan: free
     dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerContext: .            # repo root so the image can build the frontend too
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
@@ -41,9 +44,17 @@ services:
         fromDatabase:
           name: hr-os-db
           property: connectionString
+      # ── Auth ── Render generates a strong secret for signing session tokens.
+      - key: SECRET_KEY
+        generateValue: true
+      # First-run bootstrap admin (you log in with these, then add users in Settings).
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: AI_PROVIDER
         value: auto
-      # Free Google Gemini (set OPENAI_API_KEY to your key from https://aistudio.google.com/apikey)
+      # ── FREE AI: Google Gemini (key from https://aistudio.google.com/apikey) ──
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_BASE_URL
@@ -54,38 +65,29 @@ services:
         value: "false"
       - key: EMBEDDINGS_PROVIDER
         value: hash
+      # ── Company identity (careers pages + emails) ──
       - key: COMPANY_NAME
+        sync: false
+      - key: COMPANY_WEBSITE
         sync: false
       - key: COMPANY_COUNTRY
         value: India
       - key: EMAIL_FROM
         sync: false
-      # PUBLIC_BASE_URL is left unset → auto-uses RENDER_EXTERNAL_URL (this service's URL).
-      # Optional real email — paste if you have SMTP creds (e.g. Gmail app password):
+      - key: EMAIL_FROM_NAME
+        sync: false
+      # PUBLIC_BASE_URL auto-resolves from Render's RENDER_EXTERNAL_URL — leave unset.
+      # ── Optional: real email (Gmail/Workspace SMTP or any provider) ──
       - key: SMTP_HOST
         sync: false
       - key: SMTP_USER
         sync: false
       - key: SMTP_PASSWORD
         sync: false
-
-  # ── Frontend: React admin UI (static) ───────────────────────────────────────
-  - type: web
-    name: hr-os-frontend
-    runtime: static
-    buildCommand: cd frontend && npm ci && npm run build
-    staticPublishPath: frontend/dist
-    pullRequestPreviewsEnabled: false
-    autoDeploy: true
-    envVars:
-      - key: NODE_VERSION
-        value: 22.12.0
-      # Set this to the backend URL + /api after the backend's first deploy, then redeploy:
-      #   https://hr-os-backend-XXXX.onrender.com/api
-      - key: VITE_API_BASE
+      # ── Optional: automated direct posting ──
+      - key: GOOGLE_INDEXING_SA_JSON   # Google for Jobs — service-account JSON (inline)
         sync: false
-    routes:
-      # SPA fallback so client-side routes (/distribution, /roles/…) resolve.
-      - type: rewrite
-        source: /*
-        destination: /index.html
+      - key: LINKEDIN_ACCESS_TOKEN     # LinkedIn company-page auto-share
+        sync: false
+      - key: LINKEDIN_ORG_URN
+        sync: false

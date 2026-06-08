@@ -8,8 +8,6 @@ export const DRAWER_TAB_OPTIONS = [
   { id: 'score', label: 'AI report' },
   { id: 'screen', label: 'Interview' },
   { id: 'email', label: 'Comms' },
-  { id: 'offer', label: 'Offer & Docs' },
-  { id: 'onboard', label: 'Onboarding' },
   { id: 'notes', label: 'Notes' },
 ]
 

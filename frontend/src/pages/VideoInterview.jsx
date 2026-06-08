@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Video, CheckCircle2, AlertTriangle, Loader, ShieldAlert, Mic, Volume2 } from 'lucide-react'
+import { Video, CheckCircle2, AlertTriangle, Loader, ShieldAlert, Mic, Volume2, Sun, Monitor } from 'lucide-react'
 import { api } from '../api'
-import { Button, Spinner } from '../ui'
+import { Button, Spinner, cx } from '../ui'
 import { useWhisper } from '../hooks/useWhisper'
 import { blobToPCM16k } from '../utils/audio'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -22,13 +22,17 @@ const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math
 // Module-level so it keeps a stable identity across re-renders (a component defined
 // inside the render gets a new identity each render, remounting the <video> and dropping
 // the camera stream — which is exactly the "can't see themselves" bug).
-function Shell({ children }) {
+function Shell({ children, company }) {
+  const name = company?.name || ''
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100/60">
       <div className="mx-auto flex min-h-screen max-w-3xl flex-col px-4 py-8">
         <div className="mb-6 flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 text-lg font-black text-white">H</div>
-          <div className="text-sm font-semibold text-slate-800">Video interview</div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-fuchsia-600 text-sm font-black text-white">{(name || 'H')[0].toUpperCase()}</div>
+          <div className="leading-tight">
+            <div className="text-sm font-bold tracking-tight text-slate-900">{name || 'Video interview'}</div>
+            <div className="text-[11px] text-slate-400">Video interview</div>
+          </div>
         </div>
         {children}
       </div>
@@ -42,6 +46,7 @@ export default function VideoInterview() {
   const { transcribe, status: whisperStatus, progress } = useWhisper()
 
   const [interview, setInterview] = useState(null)
+  const [company, setCompany] = useState(null)
   const [err, setErr] = useState('')
   const [phase, setPhase] = useState('intro')   // intro|live|processing|done
   const [idx, setIdx] = useState(0)
@@ -49,6 +54,7 @@ export default function VideoInterview() {
   const [focusLost, setFocusLost] = useState(0)
   const [speaking, setSpeaking] = useState(false)
   const [listening, setListening] = useState(false)
+  const [consent, setConsent] = useState(false)
 
   const streamRef = useRef(null)
   const liveRef = useRef(null)
@@ -71,6 +77,7 @@ export default function VideoInterview() {
 
   useEffect(() => {
     api.getVideoInterview(appId).then(setInterview).catch((e) => setErr(e.message))
+    api.company().then(setCompany).catch(() => {})
     return () => cleanup()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appId])
@@ -217,50 +224,138 @@ export default function VideoInterview() {
   }
 
   // ---- render ----
-  if (err) return <Shell><div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700"><AlertTriangle className="mb-2 h-5 w-5" />{err}</div></Shell>
-  if (!interview) return <Shell><div className="flex items-center gap-2 text-sm text-slate-400"><Spinner /> Loading…</div></Shell>
+  if (err) return <Shell company={company}><div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700"><AlertTriangle className="mb-2 h-5 w-5" />{err}</div></Shell>
+  if (!interview) return <Shell company={company}><div className="flex items-center gap-2 text-sm text-slate-400"><Spinner /> Loading…</div></Shell>
+
+  const companyName = company?.name || ''
+  // Show just the opening paragraph of the company bio — the full field can carry
+  // several paragraphs and trailing social URLs that read as clutter on a welcome screen.
+  const companyAbout = (company?.about || '').split(/\n\s*\n/)[0].trim()
+  const firstName = (interview.candidate_name || '').trim().split(/\s+/)[0] || ''
 
   if (phase === 'done') {
     return (
-      <Shell>
+      <Shell company={company}>
         <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><CheckCircle2 className="h-7 w-7" /></div>
-          <h1 className="text-xl font-bold text-slate-900">Interview submitted</h1>
-          <p className="mt-2 text-sm text-slate-500">Your recorded interview for <strong>{interview.role_position}</strong> has been received. You can close this tab.</p>
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><CheckCircle2 className="h-8 w-8" /></div>
+          <h1 className="text-2xl font-bold text-balance text-slate-900">Thank you{firstName ? `, ${firstName}` : ''}!</h1>
+          <p className="mx-auto mt-2 max-w-md text-pretty text-sm leading-relaxed text-slate-600">
+            Your interview for <strong>{interview.role_position}</strong>{companyName ? <> at <strong>{companyName}</strong></> : ''} has been submitted. Our team will review your responses and get back to you with next steps.
+          </p>
+          <p className="mt-5 text-xs text-slate-400">You can safely close this tab.</p>
         </div>
       </Shell>
     )
   }
 
   if (phase === 'intro') {
+    const qCount = questions.length
+    const estMins = Math.max(2, Math.ceil(qCount * 1.5))
+    const steps = [
+      { icon: Volume2, title: 'Listen', text: `The AI interviewer reads each question aloud — ${qCount} in total, one at a time.` },
+      { icon: Mic, title: 'Answer out loud', text: 'Speak naturally. When you pause, the next question begins on its own.' },
+      { icon: Video, title: 'One continuous take', text: 'Everything records in a single take. No pausing or re-recording — just be yourself.' },
+    ]
+    const tips = [
+      { icon: Sun, text: 'Sit facing a light source so your face is clearly visible.' },
+      { icon: Mic, text: 'Find a quiet room and speak clearly into your microphone.' },
+      { icon: Monitor, text: 'Use Chrome or Edge on a laptop or desktop for the best experience.' },
+    ]
     return (
-      <Shell>
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h1 className="text-xl font-bold text-slate-900">{interview.role_position} — video interview</h1>
-          <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
-            <div><strong>This is a proctored interview.</strong> It records <strong>continuously</strong> in one take — no pausing, re-recording, or editing. Stay in fullscreen; switching tabs is logged.</div>
+      <Shell company={company}>
+        <div className="space-y-4">
+          {/* Welcome */}
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="bg-gradient-to-br from-brand-600 to-fuchsia-600 px-8 py-10 text-white">
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur-sm">
+                <Video className="h-3.5 w-3.5" /> Video interview
+              </div>
+              <h1 className="mt-4 text-3xl font-bold tracking-tight text-balance">Welcome{firstName ? `, ${firstName}` : ''} 👋</h1>
+              <p className="mt-2 max-w-xl text-pretty text-sm leading-relaxed text-white/85">
+                Thanks for applying for <strong className="font-semibold text-white">{interview.role_position}</strong>{companyName ? <> at <strong className="font-semibold text-white">{companyName}</strong></> : ''}. We're excited to learn more about you. This short interview takes about {estMins} minutes — take it whenever you're ready.
+              </p>
+            </div>
+            {companyAbout && (
+              <div className="px-8 py-5">
+                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">About {companyName || 'us'}</div>
+                <p className="max-w-2xl text-pretty text-sm leading-relaxed text-slate-600">{companyAbout}</p>
+              </div>
+            )}
           </div>
-          <p className="mt-4 text-sm text-slate-600">The AI interviewer asks <strong>{questions.length} question{questions.length !== 1 ? 's' : ''}</strong>, read aloud one by one. Just answer out loud — when you stop talking, the <strong>next question starts automatically</strong>.</p>
-          <Button className="mt-6" onClick={startInterview}><Video className="h-4 w-4" /> Allow camera &amp; start interview</Button>
-          <p className="mt-3 text-xs text-slate-400">Works best in Chrome or Edge. Answers are transcribed privately on your device.</p>
+
+          {/* How it works */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-900">How it works</h2>
+            <ol className="mt-4 grid gap-4 sm:grid-cols-3">
+              {steps.map((s, i) => (
+                <li key={i} className="flex flex-col gap-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600"><s.icon className="h-5 w-5" /></div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">{i + 1}. {s.title}</div>
+                    <p className="mt-0.5 text-sm leading-snug text-slate-500">{s.text}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          {/* Tips + proctoring */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Before you begin</h3>
+              <ul className="mt-3 space-y-2.5">
+                {tips.map((t, i) => (
+                  <li key={i} className="flex items-start gap-2.5 text-sm text-slate-600">
+                    <t.icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="leading-snug">{t.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+              <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-700"><ShieldAlert className="h-4 w-4" /> Proctored interview</h3>
+              <p className="mt-3 text-sm leading-relaxed text-amber-800">
+                This runs in fullscreen and records continuously in one take. There's no pausing, re-recording, or editing, and switching tabs is logged. Settle in somewhere you won't be interrupted.
+              </p>
+            </div>
+          </div>
+
+          {/* Consent + start */}
+          <div className="flex flex-col items-center gap-3 pt-2 text-center">
+            <label className="flex max-w-xl items-start gap-2.5 rounded-xl border border-slate-200 bg-white p-3 text-left text-sm text-slate-600">
+              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+              <span>
+                I consent to this interview being <strong>recorded</strong> and reviewed by {companyName || 'the hiring team'}, and to my responses being processed by AI services (transcription runs on my device when possible, and the recording may be sent to a third-party AI provider if that fails) for evaluation.
+              </span>
+            </label>
+            <Button className="px-6 py-3 text-base" onClick={startInterview} disabled={!consent}><Video className="h-5 w-5" /> Allow camera &amp; start interview</Button>
+            <p className="text-xs text-slate-400">You'll be asked to allow camera &amp; microphone to begin.</p>
+          </div>
         </div>
       </Shell>
     )
   }
 
   return (
-    <Shell>
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-3 flex items-center justify-between text-xs">
-          <span className="font-medium uppercase tracking-wide text-slate-400">Question {idx + 1} of {questions.length}</span>
-          <div className="flex items-center gap-3">
+    <Shell company={company}>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        {/* Header: progress + status */}
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Question {Math.min(idx + 1, questions.length)} of {questions.length}</div>
+            <div className="mt-1.5 flex items-center gap-1.5">
+              {questions.map((_, i) => (
+                <span key={i} className={cx('h-1.5 rounded-full transition-all duration-300 ease-snappy', i < idx ? 'w-5 bg-brand-500' : i === idx ? 'w-8 bg-brand-600' : 'w-5 bg-slate-200')} />
+              ))}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-3 text-xs">
             {focusLost > 0 && <span className="inline-flex items-center gap-1 font-medium text-rose-600"><ShieldAlert className="h-3.5 w-3.5" /> {focusLost} tab switch{focusLost !== 1 ? 'es' : ''}</span>}
-            <span className="inline-flex items-center gap-1.5 font-medium text-rose-600"><span className="h-2 w-2 animate-pulse rounded-full bg-rose-600" /> REC {fmt(elapsed)}</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 font-semibold text-rose-600"><span className="h-2 w-2 animate-pulse rounded-full bg-rose-600" /> REC {fmt(elapsed)}</span>
           </div>
         </div>
 
-        <div className="relative overflow-hidden rounded-xl bg-slate-900">
+        <div className="relative overflow-hidden rounded-xl bg-slate-900 ring-1 ring-slate-900/5">
           <video
             ref={(el) => {
               liveRef.current = el
@@ -271,31 +366,33 @@ export default function VideoInterview() {
             }}
             autoPlay muted playsInline className="aspect-video w-full object-cover"
           />
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4">
-            <p className="text-base font-semibold text-white">{questions[idx]}</p>
-          </div>
-          <div className="absolute right-3 top-3">
+          {/* Status pill */}
+          <div className="absolute left-3 top-3">
             {phase === 'live' && (speaking
-              ? <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-600/90 px-2.5 py-1 text-xs font-medium text-white"><Volume2 className="h-3.5 w-3.5" /> AI asking…</span>
+              ? <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-600/90 px-3 py-1.5 text-xs font-medium text-white shadow-lg backdrop-blur-sm"><Volume2 className="h-3.5 w-3.5" /> Interviewer is asking…</span>
               : listening
-                ? <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600/90 px-2.5 py-1 text-xs font-medium text-white"><Mic className="h-3.5 w-3.5 animate-pulse" /> Listening — answer now</span>
+                ? <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600/90 px-3 py-1.5 text-xs font-medium text-white shadow-lg backdrop-blur-sm"><Mic className="h-3.5 w-3.5 animate-pulse" /> Listening — answer now</span>
                 : null)}
+          </div>
+          {/* Question caption */}
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-5 pt-10">
+            <p className="text-pretty text-lg font-semibold leading-snug text-white">{questions[idx]}</p>
           </div>
         </div>
 
         {phase === 'processing' ? (
-          <div className="mt-4 flex items-center gap-2 text-sm text-slate-500">
-            <Loader className="h-4 w-4 animate-spin" />
-            {whisperStatus === 'loading' && progress ? `Transcribing… loading model ${progress}%` : 'Uploading & transcribing on your device…'}
+          <div className="mt-5 flex items-center justify-center gap-2.5 rounded-xl bg-slate-50 py-4 text-sm font-medium text-slate-600">
+            <Loader className="h-4 w-4 animate-spin text-brand-600" />
+            {whisperStatus === 'loading' && progress ? `Transcribing on your device… loading model ${progress}%` : 'Uploading & transcribing your interview…'}
           </div>
         ) : (
-          <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
-            <span>{speaking ? 'Listen to the question…' : 'The next question starts automatically when you finish answering.'}</span>
-            <button type="button" onClick={advance} className="font-medium text-slate-400 hover:text-violet-600">{idx + 1 >= questions.length ? 'Finish now' : 'Done — next'} →</button>
+          <div className="mt-4 flex items-center justify-between gap-3 text-xs">
+            <span className="text-slate-400">{speaking ? 'Listen to the question…' : 'The next question starts automatically when you finish speaking.'}</span>
+            <button type="button" onClick={advance} className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 font-semibold text-brand-600 transition-colors duration-150 ease-snappy hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]">{idx + 1 >= questions.length ? 'Finish now' : 'Done — next'} →</button>
           </div>
         )}
       </div>
-      <p className="mt-3 text-center text-xs text-slate-400">Recording continuously · do not refresh or close this tab</p>
+      <p className="mt-3 text-center text-xs text-slate-400">Recording continuously · please don't refresh or close this tab</p>
     </Shell>
   )
 }

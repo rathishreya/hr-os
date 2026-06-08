@@ -37,7 +37,7 @@ export default function CompareModal({ apps, open, onClose }) {
           })}
         </div>
         <div className="mt-4 flex justify-end">
-          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">Close</button>
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 transition-colors duration-150 ease-snappy hover:bg-slate-50 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">Close</button>
         </div>
       </div>
     </div>

@@ -1,24 +1,29 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { Home, Briefcase, Menu, X, Settings, Users, Megaphone, BarChart3 } from 'lucide-react'
-import { IconButton } from '../../ui'
+import { Home, Briefcase, Menu, X, Settings, Users, Megaphone, BarChart3, FileText, Rocket, ClipboardList, LogOut } from 'lucide-react'
+import { IconButton, Avatar } from '../../ui'
+import { useAuth } from '../../contexts/auth'
 
 export const NAV = [
   { to: '/', label: 'Home', end: true, icon: Home },
   { to: '/roles', label: 'Jobs', icon: Briefcase },
   { to: '/distribution', label: 'Distribution', icon: Megaphone },
   { to: '/candidates', label: 'Talent Pool', icon: Users },
+  { to: '/assessments', label: 'Assessments', icon: ClipboardList },
+  { to: '/offer-docs', label: 'Offer & Docs', icon: FileText },
+  { to: '/onboarding', label: 'Onboarding', icon: Rocket },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
 ]
 
 function SidebarContent({ onNavigate }) {
+  const { user, logout } = useAuth()
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-8 flex items-center gap-2.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 text-lg font-black text-white">H</div>
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-fuchsia-600 text-lg font-black text-white">H</div>
         <div>
           <div className="text-sm font-bold tracking-tight text-slate-900">HR-OS</div>
-          <div className="text-[10px] text-slate-400">AI Hiring Operating System</div>
+          <div className="text-[10px] font-medium text-slate-500">by EZ Works</div>
         </div>
       </div>
 
@@ -32,8 +37,8 @@ function SidebarContent({ onNavigate }) {
               end={n.end}
               onClick={onNavigate}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                  isActive ? 'bg-violet-50 text-violet-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${
+                  isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
                 }`
               }
             >
@@ -49,14 +54,24 @@ function SidebarContent({ onNavigate }) {
           to="/settings"
           onClick={onNavigate}
           className={({ isActive }) =>
-            `flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition ${
-              isActive ? 'bg-violet-50 text-violet-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+            `flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${
+              isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
             }`
           }
         >
           <Settings className="h-3.5 w-3.5" />
           Settings
         </NavLink>
+        {user && (
+          <div className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/60 px-2.5 py-2">
+            <Avatar name={user.name || user.email} />
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="truncate text-xs font-semibold text-slate-700">{user.name || user.email}</div>
+              <div className="truncate text-[10px] text-slate-400">{(user.roles || []).join(', ') || 'member'}</div>
+            </div>
+            <IconButton onClick={logout} title="Sign out" aria-label="Sign out" className="hover:text-rose-600"><LogOut className="h-4 w-4" /></IconButton>
+          </div>
+        )}
         <p className="px-1 text-[10px] leading-relaxed text-slate-400">
           AI scores are suggestions — always human-reviewable. No candidate is auto-rejected.
         </p>
@@ -94,7 +109,7 @@ export default function AppShell({ children }) {
       <div className="flex h-screen flex-1 flex-col overflow-hidden lg:ml-64">
         <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
           <IconButton onClick={() => setMobileOpen(true)} aria-label="Open menu"><Menu className="h-5 w-5" /></IconButton>
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-600 text-sm font-black text-white">H</div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-fuchsia-600 text-sm font-black text-white">H</div>
           <span className="text-sm font-semibold text-slate-800">{pageLabel}</span>
         </header>
 

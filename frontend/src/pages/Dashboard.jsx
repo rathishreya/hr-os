@@ -54,7 +54,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-8">
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-700 via-violet-600 to-fuchsia-600 p-8 text-white shadow-xl shadow-violet-600/25">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-fuchsia-600 p-8 text-white shadow-xl shadow-brand-600/25">
         <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 right-28 h-60 w-60 rounded-full bg-fuchsia-300/20 blur-3xl" />
         <div className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, #fff 1px, transparent 0)', backgroundSize: '22px 22px' }} />
@@ -62,13 +62,13 @@ export default function Dashboard() {
           <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium ring-1 ring-white/20 backdrop-blur">
             <Sparkles className="h-3.5 w-3.5" /> {companyName} · AI Hiring OS
           </div>
-          <h1 className="text-3xl font-bold tracking-tight sm:text-[2rem]">{greeting} 👋</h1>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-violet-50/90">
+          <h1 className="text-3xl font-bold tracking-tight text-balance sm:text-[2rem]">{greeting} 👋</h1>
+          <p className="mt-2 max-w-xl text-pretty text-sm leading-relaxed text-brand-50/90">
             Post a role and AI writes the description, screens &amp; ranks candidates, runs interviews, and drafts emails —
             you stay in control of every decision.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button className="!bg-white !text-violet-700 shadow-lg shadow-violet-900/20 hover:!bg-violet-50" onClick={() => navigate('/roles')}>
+            <Button className="!bg-white !text-brand-700 shadow-lg shadow-brand-900/20 hover:!bg-brand-50" onClick={() => navigate('/roles')}>
               <Plus className="h-4 w-4" /> Post a job
             </Button>
             {roles.length > 0 && (
@@ -102,7 +102,7 @@ export default function Dashboard() {
         <Card className="p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-800">Candidate sources</h2>
-            <Link to="/analytics" className="inline-flex items-center gap-0.5 text-xs font-medium text-violet-600 hover:text-violet-700">Full analytics <ArrowRight className="h-3 w-3" /></Link>
+            <Link to="/analytics" className="inline-flex items-center gap-0.5 text-xs font-medium text-brand-600 hover:text-brand-700">Full analytics <ArrowRight className="h-3 w-3" /></Link>
           </div>
           {loading ? <Skeleton className="h-32" /> : <BarList data={data?.sources} colorFor={() => 'blue'} emptyText="No candidates yet." />}
         </Card>
@@ -112,13 +112,13 @@ export default function Dashboard() {
       <div>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-800">Your jobs</h2>
-          <Link to="/roles" className="inline-flex items-center gap-0.5 text-xs font-medium text-violet-600 hover:text-violet-700">See all <ArrowRight className="h-3 w-3" /></Link>
+          <Link to="/roles" className="inline-flex items-center gap-0.5 text-xs font-medium text-brand-600 hover:text-brand-700">See all <ArrowRight className="h-3 w-3" /></Link>
         </div>
         {loading ? (
           <div className="grid gap-3 md:grid-cols-2"><Skeleton className="h-28" /><Skeleton className="h-28" /></div>
         ) : roles.length === 0 ? (
           <Card className="p-10 text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-50 text-violet-600"><Briefcase className="h-6 w-6" /></div>
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600"><Briefcase className="h-6 w-6" /></div>
             <p className="text-sm text-slate-500">No jobs yet — post your first role to get started.</p>
             <Button className="mt-4" onClick={() => navigate('/roles')}><Plus className="h-4 w-4" /> Post your first job</Button>
           </Card>
@@ -126,10 +126,10 @@ export default function Dashboard() {
           <div className="grid gap-3 md:grid-cols-2">
             {roles.slice(0, 4).map((r) => (
               <Link key={r.id} to={`/roles/${r.id}`} className="group">
-                <Card className="h-full p-4 transition hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-lg hover:shadow-violet-600/5">
+                <Card className="h-full p-4 transition duration-200 ease-snappy hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-lg hover:shadow-brand-600/5 active:scale-[0.99]">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate font-semibold text-slate-900 group-hover:text-violet-700">{r.position}</div>
+                      <div className="truncate font-semibold text-slate-900 group-hover:text-brand-700">{r.position}</div>
                       <div className="mt-0.5 truncate text-xs text-slate-400">{[r.department, r.location, r.work_mode].filter(Boolean).join(' · ')}</div>
                     </div>
                     <Badge tone={DIFF_TONE[r.difficulty_label] || 'gray'} className="shrink-0 capitalize">{r.difficulty_label || 'n/a'}</Badge>
@@ -155,8 +155,8 @@ export default function Dashboard() {
             return (
               <div key={i} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-xs font-bold text-white">{i + 1}</span>
-                  <Icon className="h-4 w-4 text-violet-500" />
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-fuchsia-500 text-xs font-bold text-white">{i + 1}</span>
+                  <Icon className="h-4 w-4 text-brand-500" />
                 </div>
                 <div className="mt-2 text-sm font-semibold text-slate-800">{s.title}</div>
                 <div className="mt-1 text-xs leading-relaxed text-slate-500">{s.desc}</div>

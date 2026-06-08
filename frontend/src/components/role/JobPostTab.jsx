@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Copy, Check, Globe, ExternalLink, Megaphone, GraduationCap, Video, Trash2, Plus } from 'lucide-react'
+import { Copy, Check, Globe, ExternalLink, Megaphone, GraduationCap, Video, Trash2, Plus, Pencil } from 'lucide-react'
 import { api } from '../../api'
-import { Card, Button, Spinner, Modal, inputClass } from '../../ui'
+import { Card, Button, Field, Spinner, Modal, inputClass } from '../../ui'
 import { useToast } from '../Toast'
-import { CopyBtn, DistributionDetails } from '../distribution/DistributionPanel'
+import { CopyBtn, DistributionDetails, LinkedinIcon } from '../distribution/DistributionPanel'
 import { POST_PLATFORMS } from '../../constants'
 
 function CheckRow({ on, onClick, children }) {
   return (
-    <button type="button" onClick={onClick} className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition ${on ? 'border-violet-300 bg-violet-50 text-violet-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${on ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-300'}`}>{on && <Check className="h-3 w-3" />}</span>
+    <button type="button" onClick={onClick} className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition duration-150 ease-snappy active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${on ? 'border-brand-300 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${on ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300'}`}>{on && <Check className="h-3 w-3" />}</span>
       {children}
     </button>
   )
@@ -69,7 +69,7 @@ function PostJobModal({ open, onClose, jd, roleId, onPublished }) {
         <div>
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><GraduationCap className="h-3.5 w-3.5" /> Send to college placement officers</p>
           {tpos.length === 0 ? (
-            <p className="mt-1 text-xs text-slate-400">No TPOs yet — add them in <Link to="/settings" className="text-violet-600 hover:underline">Settings → Placement officers</Link>.</p>
+            <p className="mt-1 text-xs text-slate-400">No TPOs yet — add them in <Link to="/settings" className="text-brand-600 hover:underline">Settings → Placement officers</Link>.</p>
           ) : (
             <>
               <div className="mt-2 max-h-40 space-y-1 overflow-y-auto pr-1">
@@ -106,16 +106,21 @@ function DistributeCard({ jd }) {
 
   if (!published) {
     return (
-      <Card className="border-violet-200 bg-violet-50/50 p-4">
+      <Card className="border-brand-200 bg-brand-50/50 p-4">
         <div className="flex items-start gap-2 text-sm text-slate-700">
-          <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
+          <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
           <span><strong>Publish</strong> to put this on your public careers page and distribute it to <strong>free</strong> job boards — Google for Jobs, Indeed, Adzuna, Jooble &amp; more.</span>
         </div>
       </Card>
     )
   }
 
-  const pageUrl = `${data?.base_url || window.location.origin}/careers/${jd.id}`
+  const base = data?.base_url || window.location.origin
+  const pageUrl = `${base}/careers/${jd.id}`
+  // LinkedIn has no free auto-posting, so the recruiter posts manually. Both links carry
+  // ?src=linkedin so whoever applies is captured in this role's pipeline, tagged "linkedin".
+  const liApplyUrl = `${base}/careers/${jd.id}/apply?src=linkedin`
+  const liShareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(`${pageUrl}?src=linkedin`)}`
 
   return (
     <Card className="border-emerald-200 bg-emerald-50/40 p-4">
@@ -123,16 +128,35 @@ function DistributeCard({ jd }) {
         <Globe className="h-4 w-4 text-emerald-600" />
         <h3 className="text-sm font-semibold text-slate-800">Distribute for free</h3>
         <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">{data ? `${data.channels.length} free channels` : 'Loading…'}</span>
-        <Link to="/distribution" className="ml-auto text-xs font-medium text-violet-600 hover:underline">All roles &amp; feeds →</Link>
+        <Link to="/distribution" className="ml-auto text-xs font-medium text-brand-600 hover:underline">All roles &amp; feeds →</Link>
       </div>
       <p className="mt-1 text-xs text-slate-500">This role is live with schema.org JobPosting data. Below are the standard feeds every free aggregator ingests — register them once and roles sync automatically.</p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <a href={pageUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:border-violet-300 hover:text-violet-700">
+        <a href={pageUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:border-brand-300 hover:text-brand-700">
           <ExternalLink className="h-3.5 w-3.5" /> View this role
         </a>
         <CopyBtn value={pageUrl} label="Copy role link" />
-        <a href={`${data?.base_url || window.location.origin}/careers/${jd.id}.json`} target="_blank" rel="noreferrer" className="text-xs text-violet-600 hover:underline">Structured data</a>
+        <a href={`${data?.base_url || window.location.origin}/careers/${jd.id}.json`} target="_blank" rel="noreferrer" className="text-xs text-brand-600 hover:underline">Structured data</a>
+      </div>
+
+      {/* LinkedIn — manual post, but applicants flow back in automatically via the tagged link. */}
+      <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <LinkedinIcon className="h-4 w-4 text-sky-600" />
+          <h4 className="text-sm font-semibold text-slate-800">Post on LinkedIn</h4>
+          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-medium text-sky-700">applicants auto-captured</span>
+        </div>
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          LinkedIn has no free auto-posting, so post it yourself: hit <strong>Share on LinkedIn</strong> for a feed post, or paste the <strong>apply link</strong> into a LinkedIn job&apos;s “Apply” field. Either way, anyone who applies lands in <strong>this role&apos;s pipeline</strong> — resume parsed &amp; auto-scored — tagged <code className="rounded bg-sky-100 px-1 text-[11px] text-sky-800">linkedin</code>.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <a href={liShareUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-sky-700">
+            <LinkedinIcon className="h-3.5 w-3.5" /> Share on LinkedIn
+          </a>
+          <CopyBtn value={liApplyUrl} label="Copy apply link" />
+        </div>
+        <code className="mt-2 block truncate rounded-lg border border-sky-200 bg-white px-2 py-1.5 text-xs text-slate-500" title={liApplyUrl}>{liApplyUrl}</code>
       </div>
 
       {err && <p className="mt-3 text-xs text-rose-600">Couldn&apos;t load distribution info: {err}</p>}
@@ -162,14 +186,14 @@ function VideoQuestionsCard({ jd }) {
 
   return (
     <Card className="p-5">
-      <div className="mb-1 flex items-center gap-2"><Video className="h-4 w-4 text-violet-600" /><h3 className="text-sm font-semibold text-slate-800">Video interview questions</h3></div>
+      <div className="mb-1 flex items-center gap-2"><Video className="h-4 w-4 text-brand-600" /><h3 className="text-sm font-semibold text-slate-800">Video interview questions</h3></div>
       <p className="mb-3 text-xs text-slate-500">Pre-defined questions every candidate answers on camera (async, transcribed on-device — free). Share the per-candidate link from a candidate&apos;s <strong>Interview</strong> tab.</p>
       <div className="space-y-2">
         {qs.map((q, i) => (
           <div key={i} className="flex items-center gap-2">
             <span className="w-4 text-xs tabular-nums text-slate-400">{i + 1}</span>
             <input className={inputClass} value={q} onChange={(e) => update(i, e.target.value)} placeholder="e.g. Tell us about a project you're proud of" />
-            <button type="button" onClick={() => setQs(qs.filter((_, j) => j !== i))} className="shrink-0 text-slate-300 hover:text-rose-500" aria-label="Remove"><Trash2 className="h-4 w-4" /></button>
+            <button type="button" onClick={() => setQs(qs.filter((_, j) => j !== i))} className="shrink-0 text-slate-300 transition-transform duration-150 ease-snappy hover:text-rose-500 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50" aria-label="Remove"><Trash2 className="h-4 w-4" /></button>
           </div>
         ))}
       </div>
@@ -201,12 +225,124 @@ function CopyBlock({ title, text }) {
     <Card className="p-4">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">{title}</h3>
-        <button type="button" onClick={copy} className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700">
+        <button type="button" onClick={copy} className="flex items-center gap-1 text-xs text-brand-600 transition-colors duration-150 ease-snappy hover:text-brand-700 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
       <p className="text-xs leading-relaxed text-slate-600">{text}</p>
+    </Card>
+  )
+}
+
+// The JD card with an inline Edit mode (F6): turn the AI draft into editable fields, save via PATCH.
+function EditableJDCard({ jd, company, onSaved }) {
+  const { toast } = useToast()
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [form, setForm] = useState(null)
+
+  function start() {
+    setForm({
+      title: jd.title || '',
+      seo_title: jd.seo_title || '',
+      description: jd.description || '',
+      responsibilities: (jd.responsibilities || []).join('\n'),
+      requirements: (jd.requirements || []).join('\n'),
+      benefits: (jd.benefits || []).join('\n'),
+      company_description: jd.company_description || '',
+      culture: jd.culture || '',
+    })
+    setEditing(true)
+  }
+  const upd = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }))
+  const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean)
+
+  async function save() {
+    setBusy(true)
+    try {
+      const updated = await api.updateJob(jd.id, {
+        title: form.title,
+        seo_title: form.seo_title,
+        description: form.description,
+        responsibilities: lines(form.responsibilities),
+        requirements: lines(form.requirements),
+        benefits: lines(form.benefits),
+        company_description: form.company_description,
+        culture: form.culture,
+      })
+      onSaved(updated)
+      setEditing(false)
+      toast('Job description updated')
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (editing && form) {
+    return (
+      <Card className="space-y-4 p-6">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-800">Edit job description</h3>
+          <div className="flex gap-2">
+            <Button variant="ghost" className="text-xs" onClick={() => setEditing(false)} disabled={busy}>Cancel</Button>
+            <Button className="text-xs" onClick={save} disabled={busy}>{busy ? <Spinner /> : <><Check className="h-3.5 w-3.5" /> Save changes</>}</Button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Title"><input className={inputClass} value={form.title} onChange={upd('title')} /></Field>
+          <Field label="SEO title"><input className={inputClass} value={form.seo_title} onChange={upd('seo_title')} /></Field>
+        </div>
+        <Field label="Description"><textarea className={`${inputClass} h-40 resize-y`} value={form.description} onChange={upd('description')} /></Field>
+        <Field label="Responsibilities" hint="One per line"><textarea className={`${inputClass} h-28 resize-y`} value={form.responsibilities} onChange={upd('responsibilities')} /></Field>
+        <Field label="Requirements" hint="One per line"><textarea className={`${inputClass} h-28 resize-y`} value={form.requirements} onChange={upd('requirements')} /></Field>
+        <Field label="Benefits" hint="One per line"><textarea className={`${inputClass} h-24 resize-y`} value={form.benefits} onChange={upd('benefits')} /></Field>
+        <Field label="About the company"><textarea className={`${inputClass} h-24 resize-y`} value={form.company_description} onChange={upd('company_description')} /></Field>
+        <Field label="Culture"><textarea className={`${inputClass} h-20 resize-y`} value={form.culture} onChange={upd('culture')} /></Field>
+      </Card>
+    )
+  }
+
+  return (
+    <Card className="space-y-5 p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-balance text-xl font-bold text-slate-900">{jd.title}</div>
+          <div className="text-xs text-slate-400">{jd.seo_title}</div>
+        </div>
+        <Button variant="ghost" className="shrink-0 text-xs" onClick={start}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
+      </div>
+      <p className="whitespace-pre-wrap text-pretty text-sm leading-relaxed text-slate-700">{jd.description}</p>
+      {jd.responsibilities?.length > 0 && (
+        <Section title="Responsibilities">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">{jd.responsibilities.map((x, i) => <li key={i}>{x}</li>)}</ul>
+        </Section>
+      )}
+      {jd.requirements?.length > 0 && (
+        <Section title="Requirements">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">{jd.requirements.map((x, i) => <li key={i}>{x}</li>)}</ul>
+        </Section>
+      )}
+      {jd.benefits?.length > 0 && (
+        <Section title="Benefits">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">{jd.benefits.map((x, i) => <li key={i}>{x}</li>)}</ul>
+        </Section>
+      )}
+      {(company?.about || jd.company_description) && (
+        <Section title={`About ${company?.name || 'the company'}`}>
+          <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">{company?.about || jd.company_description}</p>
+          {company?.website && (
+            <a href={company.website} target="_blank" rel="noreferrer" className="mt-1.5 inline-block text-xs font-medium text-brand-600 hover:underline">{company.website.replace(/^https?:\/\//, '')}</a>
+          )}
+        </Section>
+      )}
+      {jd.culture && (
+        <Section title="Culture">
+          <p className="text-sm text-slate-700">{jd.culture}</p>
+        </Section>
+      )}
     </Card>
   )
 }
@@ -255,41 +391,7 @@ export default function JobPostTab({ roleId, jd, onGenerated }) {
       </div>
       <PostJobModal open={postOpen} roleId={roleId} jd={jd} onClose={() => setPostOpen(false)} onPublished={(u) => { onGenerated(u); setPostOpen(false) }} />
       <DistributeCard jd={jd} />
-      <Card className="space-y-5 p-6">
-        <div>
-          <div className="text-xl font-bold text-slate-900">{jd.title}</div>
-          <div className="text-xs text-slate-400">{jd.seo_title}</div>
-        </div>
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{jd.description}</p>
-        {jd.responsibilities?.length > 0 && (
-          <Section title="Responsibilities">
-            <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">{jd.responsibilities.map((x, i) => <li key={i}>{x}</li>)}</ul>
-          </Section>
-        )}
-        {jd.requirements?.length > 0 && (
-          <Section title="Requirements">
-            <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">{jd.requirements.map((x, i) => <li key={i}>{x}</li>)}</ul>
-          </Section>
-        )}
-        {jd.benefits?.length > 0 && (
-          <Section title="Benefits">
-            <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">{jd.benefits.map((x, i) => <li key={i}>{x}</li>)}</ul>
-          </Section>
-        )}
-        {(company?.about || jd.company_description) && (
-          <Section title={`About ${company?.name || 'the company'}`}>
-            <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">{company?.about || jd.company_description}</p>
-            {company?.website && (
-              <a href={company.website} target="_blank" rel="noreferrer" className="mt-1.5 inline-block text-xs font-medium text-violet-600 hover:underline">{company.website.replace(/^https?:\/\//, '')}</a>
-            )}
-          </Section>
-        )}
-        {jd.culture && (
-          <Section title="Culture">
-            <p className="text-sm text-slate-700">{jd.culture}</p>
-          </Section>
-        )}
-      </Card>
+      <EditableJDCard jd={jd} company={company} onSaved={onGenerated} />
       <VideoQuestionsCard jd={jd} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <CopyBlock title="LinkedIn" text={jd.linkedin_copy} />

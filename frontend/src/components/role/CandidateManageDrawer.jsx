@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { X, Download, FileText, SlidersHorizontal } from 'lucide-react'
-import { Badge, IconButton, Tabs, ScoreBar, Button, Spinner, Field, inputClass, scoreTone, stageTone } from '../../ui'
+import { Badge, IconButton, Tabs, Button, Spinner, Field, inputClass, scoreTone, stageTone } from '../../ui'
 import { api } from '../../api'
 import { useToast } from '../Toast'
+import AiReportTab, { verdictFor } from './AiReportTab'
 import InterviewPlanningPanel from './InterviewPlanningPanel'
 import EmailPanel from './EmailPanel'
-import OfferPanel from './OfferPanel'
-import OnboardingPanel from './OnboardingPanel'
 import FormattedResume from './FormattedResume'
 import DrawerCustomizeModal from './DrawerCustomizeModal'
 import {
@@ -85,6 +84,11 @@ export default function CandidateManageDrawer({ app, open, onClose, onRefresh })
             <div className="mt-2 flex flex-wrap gap-2">
               <Badge tone={stageTone[app.stage] || 'gray'}>{app.stage}</Badge>
               <Badge tone={scoreTone(app.score_overall)}>{Math.round(app.score_overall)}/100</Badge>
+              {app.scored_at && (
+                <Badge tone={verdictFor(app.recommendation, app.score_overall).tone}>
+                  {verdictFor(app.recommendation, app.score_overall).label}
+                </Badge>
+              )}
               {meta.is_live && <Badge tone="violet">Live — AI interview</Badge>}
             </div>
           </div>
@@ -141,13 +145,26 @@ export default function CandidateManageDrawer({ app, open, onClose, onRefresh })
               {ov.interviewReport && meta.screening_summary && (
                 <div>
                   <h4 className="mb-1 text-xs font-semibold uppercase text-slate-400">Interview report</h4>
-                  <p className="rounded-lg bg-violet-50 p-3 text-slate-700">{meta.screening_summary}</p>
+                  <p className="rounded-lg bg-brand-50 p-3 text-slate-700">{meta.screening_summary}</p>
                 </div>
               )}
               {ov.comments && app.notes && (
                 <div>
                   <h4 className="mb-1 text-xs font-semibold uppercase text-slate-400">Comments</h4>
                   <p className="whitespace-pre-wrap text-slate-600">{app.notes}</p>
+                </div>
+              )}
+              {(app.application_answers?.length > 0) && (
+                <div>
+                  <h4 className="mb-1 text-xs font-semibold uppercase text-slate-400">Application answers</h4>
+                  <dl className="space-y-2">
+                    {app.application_answers.map((a, i) => (
+                      <div key={a.id || i} className="rounded-lg border border-slate-100 p-3">
+                        <dt className="text-xs font-medium text-slate-500">{a.label}</dt>
+                        <dd className="mt-0.5 whitespace-pre-wrap text-slate-700">{a.answer || <span className="text-slate-300">No answer</span>}</dd>
+                      </div>
+                    ))}
+                  </dl>
                 </div>
               )}
             </div>
@@ -157,22 +174,10 @@ export default function CandidateManageDrawer({ app, open, onClose, onRefresh })
             <ResumePreview candidate={c} defaultView={prefs.resumeDefaultView} />
           )}
 
-          {activeTab === 'score' && (
-            <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                {Object.entries(app.score_dimensions || {}).map(([k, v]) => <ScoreBar key={k} label={k} value={v} />)}
-              </div>
-              {app.score_rationale && <p className="rounded-xl bg-slate-50 p-3 text-xs leading-relaxed whitespace-pre-wrap text-slate-600">{app.score_rationale}</p>}
-              <Button variant="ghost" className="text-xs" disabled={busy} onClick={async () => { setBusy(true); try { await api.rescore(app.id); await onRefresh(); toast('Re-scored') } finally { setBusy(false) } }}>
-                {busy ? <Spinner /> : 'Re-run AI score'}
-              </Button>
-            </div>
-          )}
+          {activeTab === 'score' && <AiReportTab app={app} onRefresh={onRefresh} />}
 
           {activeTab === 'screen' && <InterviewPlanningPanel app={app} onChange={onRefresh} />}
           {activeTab === 'email' && <EmailPanel app={app} />}
-          {activeTab === 'offer' && <OfferPanel app={app} />}
-          {activeTab === 'onboard' && <OnboardingPanel app={app} />}
           {activeTab === 'notes' && (
             <div className="space-y-3">
               <Field label="Recruiter comments">
@@ -226,7 +231,7 @@ function ResumePreview({ candidate, defaultView = 'formatted' }) {
             <button
               type="button"
               onClick={() => setView('formatted')}
-              className={`rounded-md px-3 py-1 font-medium ${view === 'formatted' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500'}`}
+              className={`rounded-md px-3 py-1 font-medium transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${view === 'formatted' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
             >
               Formatted
             </button>
@@ -234,13 +239,13 @@ function ResumePreview({ candidate, defaultView = 'formatted' }) {
               <button
                 type="button"
                 onClick={() => setView('document')}
-                className={`rounded-md px-3 py-1 font-medium ${view === 'document' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500'}`}
+                className={`rounded-md px-3 py-1 font-medium transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${view === 'document' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 Original PDF
               </button>
             )}
           </div>
-          <a href={fileUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-700">
+          <a href={fileUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700">
             <Download className="h-3.5 w-3.5" /> Download
           </a>
         </div>
@@ -254,7 +259,7 @@ function ResumePreview({ candidate, defaultView = 'formatted' }) {
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
           <FileText className="mx-auto mb-3 h-8 w-8 text-slate-400" />
           <p className="text-sm text-slate-600">Preview not available for this file type.</p>
-          <a href={fileUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700">
+          <a href={fileUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
             <Download className="h-4 w-4" /> Download {fname || 'resume'}
           </a>
         </div>

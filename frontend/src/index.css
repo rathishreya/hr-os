@@ -1,10 +1,29 @@
 @import "tailwindcss";
 
+/* Strong custom easing — the built-in CSS easings are too weak (Emil Kowalski's
+   design-engineering skill). Exposed as the `ease-snappy` Tailwind utility + a CSS var. */
+@theme {
+  --ease-snappy: cubic-bezier(0.23, 1, 0.32, 1);
+
+  /* Brand accent — the single source of truth. Generates the `*-brand-50…950`
+     utilities used app-wide (bg-brand-600, text-brand-700, ring-brand-500/50, …).
+     Currently violet (Tailwind's exact OKLCH values). To rebrand the entire app,
+     edit only these eleven lines; nothing else changes. */
+  --color-brand-50: oklch(96.9% 0.016 293.756);
+  --color-brand-100: oklch(94.3% 0.029 294.588);
+  --color-brand-200: oklch(89.4% 0.057 293.283);
+  --color-brand-300: oklch(81.1% 0.111 293.571);
+  --color-brand-400: oklch(70.2% 0.183 293.541);
+  --color-brand-500: oklch(60.6% 0.25 292.717);
+  --color-brand-600: oklch(54.1% 0.281 293.009);
+  --color-brand-700: oklch(49.1% 0.27 292.581);
+  --color-brand-800: oklch(43.2% 0.232 292.759);
+  --color-brand-900: oklch(38% 0.189 293.745);
+  --color-brand-950: oklch(28.3% 0.141 291.089);
+}
+
 :root {
   color-scheme: light;
-  --color-brand: #7c3aed;
-  --color-brand-hover: #6d28d9;
-  --color-brand-light: #ede9fe;
   --color-surface: #ffffff;
   --color-bg: #f6f7fb;
   --color-muted: #64748b;
@@ -39,5 +58,24 @@ body {
   to { opacity: 0; transform: translateY(0.5rem); }
 }
 
-.toast-enter { animation: toast-in 0.2s ease-out forwards; }
-.toast-exit { animation: toast-out 0.15s ease-in forwards; }
+/* Enter with the snappy curve; exit fast. Never `ease-in` on UI — it feels sluggish (Emil). */
+.toast-enter { animation: toast-in 0.2s var(--ease-snappy) forwards; }
+.toast-exit { animation: toast-out 0.15s ease-out forwards; }
+
+/* Origin-aware menu/popover entrance — scales in from its trigger (set transform-origin on the
+   element, e.g. origin-top-right). Enter-only; safe on conditionally-rendered menus (Emil). */
+@keyframes menu-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.menu-in { animation: menu-in 0.14s var(--ease-snappy); }
+
+/* Accessibility: respect reduced-motion — gentler, near-instant transitions, no motion sickness. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

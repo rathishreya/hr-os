@@ -64,11 +64,11 @@ export default function CandidateProfileDrawer({ candidateId, open, onClose, rol
         ) : (
           <>
             {/* Header */}
-            <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-violet-50 to-fuchsia-50 px-6 py-5">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-brand-50 to-fuchsia-50 px-6 py-5">
               <div className="flex items-start gap-4">
                 <Avatar name={c.name} className="h-14 w-14 text-lg ring-2 ring-white" />
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">{c.name || 'Unnamed'}</h2>
+                  <h2 className="text-xl font-bold text-slate-900 text-balance">{c.name || 'Unnamed'}</h2>
                   <p className="text-sm text-slate-600">{[title, company].filter(Boolean).join(' · ') || 'Candidate'}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     {p.total_yoe != null && <Badge tone="blue">{p.total_yoe} yrs exp</Badge>}
@@ -81,7 +81,7 @@ export default function CandidateProfileDrawer({ candidateId, open, onClose, rol
                 <ContactIcon href={c.email && `mailto:${c.email}`} title={c.email} icon={Mail} />
                 <ContactIcon href={c.phone && `tel:${c.phone}`} title={c.phone} icon={Phone} />
                 <ContactIcon href={p.linkedin} title="LinkedIn" icon={Globe} external />
-                <button type="button" onClick={onClose} aria-label="Close" className="ml-1 rounded-lg p-2 text-slate-500 hover:bg-white/60"><X className="h-5 w-5" /></button>
+                <button type="button" onClick={onClose} aria-label="Close" className="ml-1 rounded-lg p-2 text-slate-500 transition-[background-color,transform] duration-150 ease-snappy hover:bg-white/60 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><X className="h-5 w-5" /></button>
               </div>
             </div>
 
@@ -104,7 +104,7 @@ export default function CandidateProfileDrawer({ candidateId, open, onClose, rol
                 <div>
                   <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Skills</h4>
                   <div className="flex flex-wrap gap-1.5">
-                    {p.skills.map((s) => <span key={s} className="rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">{s}</span>)}
+                    {p.skills.map((s) => <span key={s} className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">{s}</span>)}
                   </div>
                 </div>
               )}
@@ -133,7 +133,7 @@ export default function CandidateProfileDrawer({ candidateId, open, onClose, rol
                   <div className="space-y-2">
                     {apps.map((a) => (
                       <Link key={a.application_id} to={`/roles/${a.hiring_request_id}`} onClick={onClose}
-                        className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm hover:border-violet-300 hover:bg-violet-50/40">
+                        className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm transition-[color,background-color,border-color,transform] duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
                         <span className="font-medium text-slate-800">{a.position || 'Role'}</span>
                         <span className="flex items-center gap-2">
                           {a.score_overall ? <Badge tone={scoreTone(a.score_overall)}>{Math.round(a.score_overall)}</Badge> : null}
@@ -150,7 +150,7 @@ export default function CandidateProfileDrawer({ candidateId, open, onClose, rol
                 <div className="mb-2 flex items-center justify-between">
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Resume</h4>
                   {c.resume_filename && (
-                    <a href={fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-700">
+                    <a href={fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded text-xs font-medium text-brand-600 transition-colors duration-150 ease-snappy hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
                       <ExternalLink className="h-3.5 w-3.5" /> Open
                     </a>
                   )}
@@ -183,11 +183,11 @@ export default function CandidateProfileDrawer({ candidateId, open, onClose, rol
 }
 
 function ContactIcon({ href, title, icon: Icon, external }) {
-  const cls = 'rounded-lg p-2 transition'
+  const cls = 'rounded-lg p-2 transition-[color,background-color,transform] duration-150 ease-snappy'
   if (!href) return <span className={cx(cls, 'cursor-default text-slate-300')} title="Not available"><Icon className="h-4 w-4" /></span>
   return (
     <a href={href} title={title} target={external ? '_blank' : undefined} rel={external ? 'noreferrer' : undefined}
-      onClick={(e) => e.stopPropagation()} className={cx(cls, 'text-slate-500 hover:bg-white/70 hover:text-violet-700')}>
+      onClick={(e) => e.stopPropagation()} className={cx(cls, 'text-slate-500 hover:bg-white/70 hover:text-brand-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50')}>
       <Icon className="h-4 w-4" />
     </a>
   )

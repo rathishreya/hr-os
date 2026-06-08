@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import smtplib
 import ssl
+import sys
 from email.message import EmailMessage as MimeEmail
 from typing import Any
 
@@ -64,6 +65,14 @@ TEMPLATE_LABELS = {
 }
 
 
+def _safe_print(text: str) -> None:
+    """Print to the console without ever raising. Windows consoles default to
+    cp1252, which can't encode characters like → or emoji that show up in email
+    bodies — a raw print() would crash the request, so we replace those chars."""
+    enc = sys.stdout.encoding or "utf-8"
+    print(text.encode(enc, "replace").decode(enc))
+
+
 def render_template(template: str, ctx: dict[str, Any]) -> tuple[str, str]:
     t = TEMPLATES.get(template, TEMPLATES["acknowledgment"])
     safe = {
@@ -73,6 +82,41 @@ def render_template(template: str, ctx: dict[str, Any]) -> tuple[str, str]:
         "sender": ctx.get("sender") or settings.EMAIL_FROM_NAME,
     }
     return t["subject"].format(**safe), t["body"].format(**safe)
+
+
+def personalize(text: str, ctx: dict[str, Any]) -> str:
+    """Substitute {name}/{role}/{company}/{sender} tokens in a (possibly user-edited)
+    template string. Uses plain replace (not str.format) so stray braces never blow up."""
+    safe = {
+        "name": ctx.get("name") or "there",
+        "role": ctx.get("role") or "the role",
+        "company": ctx.get("company") or settings.COMPANY_NAME,
+        "sender": ctx.get("sender") or settings.EMAIL_FROM_NAME,
+    }
+    for key, val in safe.items():
+        text = text.replace("{" + key + "}", str(val))
+    return text
+
+
+def render_draft(
+    template: str,
+    ctx: dict[str, Any],
+    *,
+    use_ai: bool = False,
+    subject: str | None = None,
+    body: str | None = None,
+) -> tuple[str, str, bool]:
+    """Produce the (subject, body, ai_generated) draft WITHOUT sending. Shared by
+    compose() and the /comms/preview endpoint so the preview is exactly what's sent."""
+    if subject and body:
+        return subject, body, False
+    if use_ai and template != "custom":
+        composed, _provider = ai.compose_email(template, ctx)
+        s = composed.get("subject") or render_template(template, ctx)[0]
+        b = composed.get("body") or render_template(template, ctx)[1]
+        return s, b, True
+    s, b = render_template(template, ctx)
+    return s, b, False
 
 
 def _smtp_send(to_email: str, to_name: str, subject: str, body: str) -> None:
@@ -105,17 +149,7 @@ def compose(
 ) -> models.EmailMessage:
     """Build (optionally with AI), send-or-log, and persist an email."""
     ctx = {"name": to_name, "role": role, "company": settings.COMPANY_NAME, "sender": settings.EMAIL_FROM_NAME}
-    ai_generated = False
-
-    if subject and body:
-        pass  # caller supplied a fully custom message
-    elif use_ai and template != "custom":
-        composed, _provider = ai.compose_email(template, ctx)
-        subject = composed.get("subject") or render_template(template, ctx)[0]
-        body = composed.get("body") or render_template(template, ctx)[1]
-        ai_generated = True
-    else:
-        subject, body = render_template(template, ctx)
+    subject, body, ai_generated = render_draft(template, ctx, use_ai=use_ai, subject=subject, body=body)
 
     rec = models.EmailMessage(
         candidate_id=candidate_id,
@@ -140,7 +174,7 @@ def compose(
             rec.error = str(exc)
     else:
         rec.status = "logged"
-        print(f"\n[EMAIL · logged — SMTP not configured]\nTo: {to_email}\nSubject: {subject}\n{body}\n")
+        _safe_print(f"\n[EMAIL · logged — SMTP not configured]\nTo: {to_email}\nSubject: {subject}\n{body}\n")
 
     db.add(rec)
     db.flush()

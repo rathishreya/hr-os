@@ -1,6 +1,6 @@
 export function exportTalentPoolCsv(rows) {
   const headers = [
-    'Name', 'Email', 'Phone', 'LinkedIn', 'Current Title', 'Current Company',
+    'Name', 'Email', 'Phone', 'LinkedIn', 'GitHub', 'Current Title', 'Current Company',
     'Education', 'Institution', 'Current CTC', 'Expected CTC', 'Experience (Yrs)',
     'Source', 'Sub-source', 'Location', 'Top Score', 'Latest Stage', 'Date Added',
   ]
@@ -9,6 +9,7 @@ export function exportTalentPoolCsv(rows) {
     r.email || '',
     r.phone || '',
     r.linkedin || '',
+    r.github || '',
     r.current_title || '',
     r.current_company || '',
     r.education_degree || '',
@@ -37,7 +38,7 @@ export function exportTalentPoolCsv(rows) {
 
 export function exportPipelineCsv(apps, roleTitle = 'pipeline') {
   const headers = [
-    'Name', 'Email', 'Source', 'Stage', 'Score', 'Rating/5', 'Recommendation',
+    'Name', 'Email', 'Phone', 'LinkedIn', 'GitHub', 'Source', 'Stage', 'Score', 'Rating/5', 'Recommendation',
     'Current Title', 'Current Company', 'Education', 'Institution',
     'Current CTC', 'Expected CTC', 'YOE', 'Location', 'Notice', 'Applied', 'Status Changed', 'Notes',
   ]
@@ -47,6 +48,9 @@ export function exportPipelineCsv(apps, roleTitle = 'pipeline') {
     return [
       c.name || '',
       c.email || '',
+      c.phone || p.phone || '',
+      p.linkedin || '',
+      p.github || '',
       c.source || '',
       app.stage || '',
       Math.round(app.score_overall || 0),

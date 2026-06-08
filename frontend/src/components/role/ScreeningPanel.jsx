@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, User, Mic, Square, Volume2, VolumeX } from 'lucide-react'
+import { Bot, User, Mic, Square, Volume2, VolumeX, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { api } from '../../api'
 import { Badge, Button, Spinner, ScoreBar, cx, inputClass } from '../../ui'
 import { useToast } from '../Toast'
 import { useSpeech } from '../../hooks/useSpeech'
+
+const ratingTone = (v) =>
+  v >= 75 ? 'bg-emerald-100 text-emerald-700' : v >= 50 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-700'
 
 export default function ScreeningPanel({ app, onChange }) {
   const { toast } = useToast()
@@ -86,8 +89,8 @@ export default function ScreeningPanel({ app, onChange }) {
       type="button"
       onClick={toggleVoice}
       className={cx(
-        'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition',
-        voice ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
+        'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+        voice ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
       )}
       title="Read questions aloud and answer by speaking"
     >
@@ -123,8 +126,8 @@ export default function ScreeningPanel({ app, onChange }) {
         {(iv.transcript || []).map((t, i) => (
           <div key={i} className="space-y-1.5">
             <div className="flex gap-2">
-              <Bot className="mt-1 h-4 w-4 shrink-0 text-violet-500" />
-              <div className="rounded-2xl rounded-tl-sm bg-violet-50 px-3 py-2 text-sm text-slate-700">{t.q}</div>
+              <Bot className="mt-1 h-4 w-4 shrink-0 text-brand-500" />
+              <div className="rounded-2xl rounded-tl-sm bg-brand-50 px-3 py-2 text-sm text-slate-700">{t.q}</div>
             </div>
             <div className="flex justify-end gap-2">
               <div className="rounded-2xl rounded-tr-sm bg-slate-100 px-3 py-2 text-sm text-slate-700">{t.a}</div>
@@ -138,11 +141,11 @@ export default function ScreeningPanel({ app, onChange }) {
       {iv.status === 'in_progress' ? (
         <div className="space-y-2">
           <div className="flex gap-2">
-            <Bot className="mt-1 h-4 w-4 shrink-0 text-violet-500" />
-            <div className="flex items-center gap-2 rounded-2xl rounded-tl-sm bg-violet-50 px-3 py-2 text-sm font-medium text-slate-800">
+            <Bot className="mt-1 h-4 w-4 shrink-0 text-brand-500" />
+            <div className="flex items-center gap-2 rounded-2xl rounded-tl-sm bg-brand-50 px-3 py-2 text-sm font-medium text-slate-800">
               {iv.current_question}
               {voice && speech.ttsSupported && (
-                <button type="button" onClick={() => speech.speak(iv.current_question)} title="Replay question" className="text-violet-500 hover:text-violet-700">
+                <button type="button" onClick={() => speech.speak(iv.current_question)} title="Replay question" className="text-brand-500 transition-transform duration-150 ease-snappy hover:text-brand-700 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
                   <Volume2 className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -189,6 +192,47 @@ export default function ScreeningPanel({ app, onChange }) {
             {Object.entries(iv.scores || {}).filter(([k]) => k !== 'overall').map(([k, v]) => <ScoreBar key={k} label={k} value={v} />)}
           </div>
           {iv.summary && <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">{iv.summary}</p>}
+
+          {Array.isArray(iv.per_question) && iv.per_question.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Answer ratings</h4>
+              {(iv.transcript || []).map((t, i) => {
+                const pq = iv.per_question[i]
+                if (!pq) return null
+                return (
+                  <div key={i} className="rounded-xl border border-slate-100 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-medium text-slate-700">Q{i + 1}. {t.q}</p>
+                      {typeof pq.rating === 'number' && (
+                        <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums', ratingTone(pq.rating))}>
+                          {pq.rating}/100
+                        </span>
+                      )}
+                    </div>
+                    {pq.strengths?.length > 0 && (
+                      <ul className="mt-2 space-y-1">
+                        {pq.strengths.map((s, j) => (
+                          <li key={j} className="flex gap-1.5 text-xs text-emerald-700">
+                            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{s}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {pq.gaps?.length > 0 && (
+                      <ul className="mt-1 space-y-1">
+                        {pq.gaps.map((g, j) => (
+                          <li key={j} className="flex gap-1.5 text-xs text-amber-700">
+                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{g}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           <Button variant="ghost" className="px-3 py-1 text-xs" onClick={start} disabled={busy}>Re-run screening</Button>
         </div>
       )}

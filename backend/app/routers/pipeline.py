@@ -6,14 +6,51 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..config import settings
 from ..database import get_db
 from ..services import recruitment
 from ..services import resume_extract
+from ..services.ai import ai
+from ..services.documents import render_document
 from ..services.jobs_table import _panel_email
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
 
 STAGES = ["applied", "screening", "shortlisted", "interview", "offer", "hired", "rejected"]
+
+
+def _ensure_hire_artifacts(db: Session, app: models.Application) -> None:
+    """When a candidate is marked Hired, auto-create their offer letter (once) so they appear
+    on the Offer & Docs page, ready to manage. The onboarding plan is intentionally NOT created
+    here — a candidate only enters Onboarding once HR marks "move to onboarding" in Offer & Docs.
+    Idempotent — never duplicates if an offer already exists."""
+    hr = app.hiring_request
+    cand = app.candidate
+
+    has_offer = db.scalar(
+        select(models.Document.id).where(
+            models.Document.application_id == app.id,
+            models.Document.doc_type.in_(("offer_letter", "traineeship_offer")),
+        ).limit(1)
+    )
+    if not has_offer:
+        # Draft the EZ Lab letter from a template (trainee roles get the traineeship offer),
+        # grounded in the role's title, JD responsibilities and CTC. HR edits terms + approves.
+        pos = (hr.position if hr else "").lower()
+        template_key = "traineeship_offer" if any(w in pos for w in ("trainee", "intern")) else "offer_letter"
+        job = hr.job if hr else None
+        rendered = render_document(template_key, {
+            "name": (cand.name if cand else "") or "",
+            "designation": hr.position if hr else "",
+            "responsibilities": (list(job.responsibilities) if job and job.responsibilities else None),
+            "budget_ctc": hr.budget_ctc if hr else "",
+            "company": settings.COMPANY_NAME,
+        })
+        db.add(models.Document(
+            application_id=app.id, candidate_id=app.candidate_id, doc_type=rendered["doc_type"],
+            template_key=template_key, title=rendered["title"], content=rendered["content"],
+            blocks=rendered["blocks"], terms={}, status="draft", ai_provider="template",
+        ))
 
 
 @router.get("/pipeline/{hr_id}", response_model=list[schemas.ApplicationWithCandidate])
@@ -70,6 +107,8 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
         .where(models.Application.hiring_request_id == hr_id)
         .order_by(models.Application.score_overall.desc())
     ).all()
+    # Embed roles once; used to suggest a better-fit role for candidates the AI rejects here.
+    role_vecs = recruitment.build_role_vectors(db)
     rows = []
     for app in apps:
         interviews = db.scalars(
@@ -109,9 +148,16 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
             source=cand.source or "direct",
         )
         profile = resume_extract.table_fields(parsed, cand)
+        # When the AI recommends against this role, suggest a better-fit open role instead.
+        suggested_role = None
+        if (app.recommendation or "").lower() in ("no", "weak", "reject"):
+            alt = recruitment.suggest_roles_for(cand, role_vecs, limit=1, exclude_hr_id=hr_id)
+            if alt:
+                suggested_role = alt[0]
         rows.append({
             **schemas.ApplicationWithCandidate.model_validate(app).model_dump(),
             "profile": profile,
+            "suggested_role": suggested_role,
             "stage_changed_at": app.scored_at or app.created_at,
             "meta": {
                 "screening_status": screening_status,
@@ -154,8 +200,8 @@ def pipeline_summary(hr_id: int, db: Session = Depends(get_db)):
         "work_mode": hr.work_mode,
         "status": hr.status,
         "num_openings": hr.num_openings,
-        "hiring_manager": _panel_email(hr.interview_panel or [], 1),
-        "recruiter": _panel_email(hr.interview_panel or [], 0),
+        "hiring_manager": hr.hiring_manager or _panel_email(hr.interview_panel or [], 1),
+        "recruiter": hr.recruiter or _panel_email(hr.interview_panel or [], 0),
         "counts": {
             "applications": len(apps),
             "shortlisted": sum(1 for s in stages if s == "shortlisted"),
@@ -186,8 +232,16 @@ def move_stage(app_id: int, body: schemas.StageUpdate, db: Session = Depends(get
     if body.note:
         app.notes = (app.notes + "\n" + body.note).strip() if app.notes else body.note
     recruitment.log(db, "application.stage_changed", "application", app.id, {"from": old, "to": body.stage}, actor="recruiter")
-    db.commit()
+    db.commit()  # persist the stage change + audit FIRST so artifact generation can never undo it
     db.refresh(app)
+    # On entering "hired", auto-create the offer letter + onboarding plan (once), in their own
+    # transaction — a generation/DB error rolls back only the artifacts, not the stage change.
+    if body.stage == "hired" and old != "hired":
+        try:
+            _ensure_hire_artifacts(db, app)
+            db.commit()
+        except Exception:
+            db.rollback()
     return app
 
 

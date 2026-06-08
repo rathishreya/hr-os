@@ -33,9 +33,19 @@ class HiringRequest(Base):
     hiring_deadline: Mapped[str] = mapped_column(String(40), default="")
     location: Mapped[str] = mapped_column(String(160), default="")
     work_mode: Mapped[str] = mapped_column(String(20), default="onsite")  # onsite|remote|hybrid
-    interview_panel: Mapped[list] = mapped_column(JSON, default=list)
+    interview_panel: Mapped[list] = mapped_column(JSON, default=list)  # panelists (multiselect)
+    hiring_manager: Mapped[str] = mapped_column(String(160), default="")
+    recruiter: Mapped[str] = mapped_column(String(160), default="")
     num_openings: Mapped[int] = mapped_column(Integer, default=1)
     status: Mapped[str] = mapped_column(String(30), default="draft")
+
+    # Date the team intends to start actively hiring for this role (free-form ISO date string).
+    start_hiring_date: Mapped[str] = mapped_column(String(40), default="")
+    # Extra screening/technical questions shown on the public application form. List of
+    # {"id": str, "label": str, "type": "text"|"textarea", "required": bool}.
+    application_questions: Mapped[list] = mapped_column(JSON, default=list)
+    # Job-level interview plan: the interview types this role runs, bulk-appliable to candidates.
+    interview_types: Mapped[list] = mapped_column(JSON, default=list)
 
     # --- AI-generated intelligence ---
     ai_summary: Mapped[str] = mapped_column(Text, default="")
@@ -81,6 +91,8 @@ class Job(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|published
     target_platforms: Mapped[list] = mapped_column(JSON, default=list)  # free boards chosen at posting time
     video_questions: Mapped[list] = mapped_column(JSON, default=list)  # pre-defined async video-interview Qs
+    # Direct-posting status: {"google": {ok, at, error}, "linkedin": {ok, urn, at, error}}
+    distribution: Mapped[dict] = mapped_column(JSON, default=dict)
     ai_provider: Mapped[str] = mapped_column(String(20), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
@@ -124,11 +136,17 @@ class Application(Base):
     stage: Mapped[str] = mapped_column(String(30), default="applied")
     # applied|screening|shortlisted|interview|offer|hired|rejected
     notes: Mapped[str] = mapped_column(Text, default="")
+    # Answers to the role's extra application questions, captured on the public apply form.
+    # List of {"id": str, "label": str, "answer": str}.
+    application_answers: Mapped[list] = mapped_column(JSON, default=list)
 
     # --- explainable AI score (suggestion only; human can override) ---
     score_overall: Mapped[float] = mapped_column(Float, default=0)  # 0-100
     score_dimensions: Mapped[dict] = mapped_column(JSON, default=dict)
     score_rationale: Mapped[str] = mapped_column(Text, default="")
+    # Rich, self-describing report: strengths, gaps, per-dimension contributions,
+    # skill blend, weights, thresholds. Powers the explainable "AI report" tab.
+    score_breakdown: Mapped[dict] = mapped_column(JSON, default=dict)
     recommendation: Mapped[str] = mapped_column(String(40), default="")
     fit_label: Mapped[str] = mapped_column(String(30), default="")
     human_override: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -177,6 +195,9 @@ class InterviewRound(Base):
     location_or_link: Mapped[str] = mapped_column(String(500), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     feedback: Mapped[str] = mapped_column(Text, default="")
+    # Per-panelist structured feedback: [{panelist, rating, recommendation, feedback, at}]
+    panel_feedback: Mapped[list] = mapped_column(JSON, default=list)
+    assessment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # set for "assessment" rounds
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
@@ -204,6 +225,9 @@ class ScreeningInterview(Base):
     summary: Mapped[str] = mapped_column(Text, default="")
     strengths: Mapped[list] = mapped_column(JSON, default=list)
     concerns: Mapped[list] = mapped_column(JSON, default=list)
+    # Per-answer rating + feedback, aligned by index to `transcript`:
+    # [{"rating": 0-100, "strengths": [...], "gaps": [...]}, ...]
+    per_question: Mapped[list] = mapped_column(JSON, default=list)
     recommendation: Mapped[str] = mapped_column(String(40), default="")
     ai_provider: Mapped[str] = mapped_column(String(20), default="")
 
@@ -224,14 +248,23 @@ class Document(Base):
     application_id: Mapped[int | None] = mapped_column(ForeignKey("applications.id"), nullable=True)
     candidate_id: Mapped[int] = mapped_column(ForeignKey("candidates.id"))
 
-    doc_type: Mapped[str] = mapped_column(String(40))  # offer_letter|employment_agreement|nda|contractor_agreement
+    doc_type: Mapped[str] = mapped_column(String(40))  # offer_letter|employment_contract|traineeship_offer|nda|...
+    template_key: Mapped[str] = mapped_column(String(60), default="")  # which EZ Lab template drafted it
     title: Mapped[str] = mapped_column(String(200), default="")
-    content: Mapped[str] = mapped_column(Text, default="")  # markdown
-    terms: Mapped[dict] = mapped_column(JSON, default=dict)  # ctc, joining_date, manager, ...
+    content: Mapped[str] = mapped_column(Text, default="")  # plain-text rendering (copy/email)
+    blocks: Mapped[list] = mapped_column(JSON, default=list)  # structured doc: headings, paras, tables, signatures
+    terms: Mapped[dict] = mapped_column(JSON, default=dict)  # annual_ctc, manager, start_date, responsibilities, ...
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|approved
     ai_provider: Mapped[str] = mapped_column(String(20), default="")
     approved_by: Mapped[str] = mapped_column(String(120), default="")
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Recruiter-uploaded final/signed PDF (or other file) for this entry.
+    upload_filename: Mapped[str] = mapped_column(String(255), default="")
+    upload_mime: Mapped[str] = mapped_column(String(120), default="")
+    upload_size: Mapped[int] = mapped_column(Integer, default=0)
+    upload_file: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # Gate for onboarding: the candidate only appears on the Onboarding page once this is set.
+    move_to_onboarding: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
@@ -245,10 +278,13 @@ class OnboardingPlan(Base):
     candidate_id: Mapped[int] = mapped_column(ForeignKey("candidates.id"))
     role_position: Mapped[str] = mapped_column(String(200), default="")
 
-    tasks: Mapped[list] = mapped_column(JSON, default=list)  # [{id, title, category, owner, done}]
+    tasks: Mapped[list] = mapped_column(JSON, default=list)  # [{id, phase, title, category, owner, done}]
     induction: Mapped[list] = mapped_column(JSON, default=list)  # [{day, items:[...]}]
     tools: Mapped[list] = mapped_column(JSON, default=list)
     buddy: Mapped[str] = mapped_column(String(160), default="")
+    # HR-filled hire details mirrored on the tracker: entity, compensation, location, joining_date,
+    # department, reporting_manager, approving_manager, email, contact, status.
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(20), default="active")
     ai_provider: Mapped[str] = mapped_column(String(20), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
@@ -270,6 +306,9 @@ class VideoInterview(Base):
     status: Mapped[str] = mapped_column(String(20), default="in_progress")  # in_progress|completed
     summary: Mapped[str] = mapped_column(Text, default="")
     scores: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Structured AI assessment: {verdict: fit|maybe|unfit, reasoning, strengths:[], gaps:[],
+    # per_question:[{q_index, question, answer, rating, comment}]}
+    evaluation: Mapped[dict] = mapped_column(JSON, default=dict)
     ai_provider: Mapped[str] = mapped_column(String(20), default="")
 
     # Single continuous (proctored) recording of the whole session — anti-cheat.
@@ -302,6 +341,45 @@ class VideoAnswer(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     interview: Mapped["VideoInterview"] = relationship(back_populates="answers")
+
+
+class Assessment(Base):
+    """A reusable assessment (one or more uploaded files) recruiters send to candidates.
+
+    The legacy `filename`/`mime`/`size`/`file` columns mirror the FIRST file for backward
+    compatibility (older callers + the /file preview link); the full set lives in `files`.
+    """
+
+    __tablename__ = "assessments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    mime: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    file: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    files: Mapped[list["AssessmentFile"]] = relationship(
+        back_populates="assessment", cascade="all, delete-orphan", order_by="AssessmentFile.id",
+    )
+
+
+class AssessmentFile(Base):
+    """One file belonging to an assessment (an assessment can bundle several)."""
+
+    __tablename__ = "assessment_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    assessment_id: Mapped[int] = mapped_column(ForeignKey("assessments.id"))
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    mime: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    file: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    assessment: Mapped["Assessment"] = relationship(back_populates="files")
 
 
 class User(Base):

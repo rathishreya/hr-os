@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import skill_normalize
+
 DEFAULT_WEIGHTS: dict[str, float] = {
     "skill_match": 0.30,
     "experience_match": 0.20,
@@ -30,18 +32,76 @@ def _clamp(v: float, lo: float = 0, hi: float = 100) -> float:
     return max(lo, min(hi, v))
 
 
+def _num(x: Any, default: float = 60.0) -> float:
+    """Coerce a model-supplied value to a float, falling back to `default` — so a malformed
+    AI dimension (e.g. the string "high") degrades to neutral instead of crashing scoring."""
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return default
+
+
+def _method_counts(reasons: dict[str, dict]) -> dict[str, int]:
+    counts = {"exact": 0, "synonym": 0, "related": 0, "subset": 0, "title": 0, "semantic": 0}
+    for r in reasons.values():
+        if r.get("reason") in counts:
+            counts[r["reason"]] += 1
+    return counts
+
+
+# How each non-exact match reads in the audit trail, e.g. 'javascript (implied by "React")'.
+_REASON_PHRASE = {
+    "synonym": "synonym of",
+    "related": "implied by",
+    "subset": "matches",
+    "title": "role-title match",
+    "semantic": "similar to",
+}
+
+
+def keyword_skill_match_detailed(
+    parsed: dict[str, Any], hr: dict[str, Any]
+) -> tuple[float, list[str], list[str], dict[str, dict]]:
+    """Intelligent skill overlap: maps synonyms/abbreviations/related terms (via
+    skill_normalize) so e.g. JD "hiring" is satisfied by a resume's "recruiting".
+
+    Returns (score, matched_canonical, missing_canonical, reasons) where `reasons`
+    maps each matched canonical skill to how it matched (exact/synonym/subset/semantic)
+    and the candidate's own wording — for an explainable, bias-defensible report.
+
+    The mandatory-skill component is floored at the old exact-overlap result (so smarter
+    matching never lowers it). The preferred bonus counts a shared skill once, whereas the
+    old formula double-counted a skill listed in BOTH mandatory and preferred — so for that
+    (unusual) JD shape the new total can be marginally lower, which is the more correct read.
+    """
+    cand = list(parsed.get("skills", []) or [])
+    mand = list(hr.get("mandatory_skills", []) or [])
+    pref = list(hr.get("preferred_skills", []) or [])
+    rep = skill_normalize.match_report(cand, mand, pref)
+
+    n_mand = len(rep["mandatory_canon"])
+    n_pref = len(rep["preferred_canon"])
+    matched = sorted(set(rep["matched_canon"]) | set(rep["matched_pref_canon"]))
+    if not n_mand:
+        # No mandatory skills declared — neutral 60, credit any preferred overlap.
+        return 60.0, matched, [], rep["reasons"]
+
+    # Floor at the old exact-overlap score so smarter matching can only ever ADD credit
+    # — canonical de-duplication (a JD listing both 'js' and 'javascript') can't drop a
+    # candidate below what plain string matching would have given.
+    cand_l = {str(s).lower().strip() for s in cand if s and str(s).strip()}
+    mand_l = {str(s).lower().strip() for s in mand if s and str(s).strip()}
+    old_exact = 100 * len(cand_l & mand_l) / len(mand_l) if mand_l else 0.0
+    score = max(old_exact, 100 * len(rep["matched_canon"]) / n_mand)
+    if n_pref:
+        score = _clamp(score + 10 * len(rep["matched_pref_canon"]) / n_pref)
+    return score, matched, sorted(rep["missing_canon"]), rep["reasons"]
+
+
 def keyword_skill_match(parsed: dict[str, Any], hr: dict[str, Any]) -> tuple[float, list[str], list[str]]:
-    cand = {s.lower().strip() for s in parsed.get("skills", []) if s}
-    mand = {s.lower().strip() for s in hr.get("mandatory_skills", []) if s}
-    pref = {s.lower().strip() for s in hr.get("preferred_skills", []) if s}
-    if not mand:
-        return 60.0, sorted(cand & pref), []
-    matched = cand & mand
-    score = 100 * len(matched) / len(mand)
-    if pref:
-        score = _clamp(score + 10 * len(cand & pref) / len(pref))
-    missing = sorted(mand - cand)
-    return score, sorted(matched | (cand & pref)), missing
+    """Back-compatible 3-tuple wrapper around keyword_skill_match_detailed."""
+    score, matched, missing, _ = keyword_skill_match_detailed(parsed, hr)
+    return score, matched, missing
 
 
 def experience_match(parsed: dict[str, Any], hr: dict[str, Any]) -> float:
@@ -69,12 +129,14 @@ def finalize(
 ) -> dict[str, Any]:
     weights = normalize_weights(weights or DEFAULT_WEIGHTS)
 
-    kw_skill, matched, missing = keyword_skill_match(parsed, hr)
+    kw_skill, matched, missing, match_reasons = keyword_skill_match_detailed(parsed, hr)
     # Blend keyword overlap with semantic similarity for the skill dimension.
     skill = _clamp(0.65 * kw_skill + 0.35 * similarity * 100)
     exp = experience_match(parsed, hr)
 
-    ai_dims = ai_result.get("dimensions", {}) or {}
+    ai_dims = ai_result.get("dimensions", {})
+    if not isinstance(ai_dims, dict):  # a malformed provider may send a list/scalar here
+        ai_dims = {}
     dims: dict[str, float] = {}
     for key in DEFAULT_WEIGHTS:
         if key == "skill_match":
@@ -82,7 +144,7 @@ def finalize(
         elif key == "experience_match":
             dims[key] = round(exp)
         else:
-            dims[key] = round(_clamp(float(ai_dims.get(key, 60))))
+            dims[key] = round(_clamp(_num(ai_dims.get(key, 60))))
 
     overall = round(sum(dims[k] * weights[k] for k in dims), 1)
 
@@ -98,12 +160,65 @@ def finalize(
     )
 
     rationale = ai_result.get("rationale", "")
+
+    def _matched_frag(skill: str) -> str:
+        r = match_reasons.get(skill)
+        if r and r["reason"] != "exact" and r.get("matched_with"):
+            phrase = _REASON_PHRASE.get(r["reason"], r["reason"])
+            return f"{skill} ({phrase} \"{r['matched_with']}\")"
+        return skill
+
+    matched_str = ", ".join(_matched_frag(m) for m in matched) or "none"
     audit = (
         f"[scoring] skill={dims['skill_match']} (keyword {round(kw_skill)} + semantic "
         f"{round(similarity * 100)}), experience={dims['experience_match']}. "
-        f"Matched skills: {', '.join(matched) or 'none'}. "
+        f"Matched skills: {matched_str}. "
         f"Missing mandatory: {', '.join(missing) or 'none'}."
     )
+
+    strengths = ai_result.get("strengths") or matched[:5]
+    concerns = ai_result.get("concerns") or [f"Missing: {m}" for m in missing[:5]]
+
+    # Per-dimension contribution to the overall score, so the UI can show *why* the
+    # number is what it is. `measured` dims are deterministic; `ai_estimate` are softer.
+    measured = {"skill_match", "experience_match"}
+    contributions = sorted(
+        (
+            {
+                "key": k,
+                "score": dims[k],
+                "weight": round(weights[k] * 100, 1),  # percent
+                "points": round(dims[k] * weights[k], 1),  # contribution to overall
+                "kind": "measured" if k in measured else "ai_estimate",
+            }
+            for k in dims
+        ),
+        key=lambda d: d["points"],
+        reverse=True,
+    )
+
+    # Self-describing breakdown the frontend renders as the "AI report" (strengths,
+    # gaps, and a transparent explanation of how the rating was derived).
+    breakdown = {
+        "strengths": strengths,
+        "concerns": concerns,
+        "matched_skills": matched,
+        "missing_skills": missing,
+        # How each skill matched (exact / synonym / subset / semantic) + the candidate's
+        # own wording, so the report can explain *why* a skill counted. Additive keys —
+        # the UI ignores them until it opts in to render the reasons.
+        "match_reasons": match_reasons,
+        "match_method_counts": _method_counts(match_reasons),
+        "contributions": contributions,
+        "keyword_skill": round(kw_skill),
+        "semantic_skill": round(similarity * 100),
+        "skill_blend": {"keyword": 0.65, "semantic": 0.35},
+        "weights": weights,
+        "similarity": round(similarity, 4),
+        "thresholds": {"strong_yes": 80, "yes": 65, "maybe": 50},
+        "summary": rationale,
+        "audit": audit,
+    }
 
     return {
         "overall": overall,
@@ -112,9 +227,10 @@ def finalize(
         "rationale": (rationale + "\n\n" + audit).strip(),
         "recommendation": recommendation,
         "fit_label": fit_label,
-        "strengths": ai_result.get("strengths", matched[:5]),
-        "concerns": ai_result.get("concerns", [f"Missing: {m}" for m in missing[:5]]),
+        "strengths": strengths,
+        "concerns": concerns,
         "matched_skills": matched,
         "missing_skills": missing,
         "similarity": round(similarity, 4),
+        "breakdown": breakdown,
     }

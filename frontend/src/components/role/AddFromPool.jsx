@@ -1,29 +1,48 @@
 import { useEffect, useState } from 'react'
+import { Search } from 'lucide-react'
 import { api } from '../../api'
-import { Card, Button, Field, Spinner, inputClass } from '../../ui'
+import { Card, Button, Spinner, inputClass } from '../../ui'
 import { useToast } from '../Toast'
+import TalentPoolTable from '../talent/TalentPoolTable'
 
 export default function AddFromPool({ roleId, onAdded, onCancel }) {
   const { toast } = useToast()
-  const [candidates, setCandidates] = useState([])
+  const [rows, setRows] = useState([])
   const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState(null)
+  const [selected, setSelected] = useState(() => new Set())
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const t = setTimeout(() => {
-      api.listCandidates(search).then(setCandidates).catch(() => []).finally(() => setLoading(false))
+      api.listCandidatesTable(search).then(setRows).catch(() => setRows([])).finally(() => setLoading(false))
     }, search ? 300 : 0)
     return () => clearTimeout(t)
   }, [search])
 
+  const toggle = (id) => setSelected((s) => {
+    const n = new Set(s)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    return n
+  })
+  const toggleAll = (ids) => setSelected((s) => {
+    const n = new Set(s)
+    const all = ids.length > 0 && ids.every((i) => n.has(i))
+    ids.forEach((i) => (all ? n.delete(i) : n.add(i)))
+    return n
+  })
+
   async function apply() {
-    if (!selected) return
+    if (!selected.size) return
     setBusy(true)
     try {
-      await api.applyCandidate(selected, roleId)
-      toast('Candidate added to this role')
+      const ids = [...selected]
+      const results = await Promise.allSettled(ids.map((id) => api.applyCandidate(id, roleId)))
+      const ok = results.filter((r) => r.status === 'fulfilled').length
+      const failed = results.length - ok
+      if (failed) toast(`Added ${ok} of ${ids.length} — ${failed} failed`, 'error')
+      else toast(`Added ${ok} candidate${ok !== 1 ? 's' : ''} to this job`)
+      setSelected(new Set())
       onAdded()
     } catch (e) {
       toast(e.message, 'error')
@@ -34,35 +53,39 @@ export default function AddFromPool({ roleId, onAdded, onCancel }) {
 
   return (
     <Card className="p-4">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-800">Add from talent pool</h3>
-        <Button variant="ghost" className="text-xs" onClick={onCancel}>Cancel</Button>
+        <div className="flex items-center gap-2">
+          <Button disabled={!selected.size || busy} onClick={apply}>
+            {busy ? <><Spinner /> Adding…</> : `Add${selected.size ? ` ${selected.size}` : ''} to this job`}
+          </Button>
+          <Button variant="ghost" className="text-xs" onClick={onCancel}>Cancel</Button>
+        </div>
       </div>
-      <Field label="Search existing candidates">
-        <input className={inputClass} value={search} onChange={(e) => { setSearch(e.target.value); setLoading(true) }} placeholder="Name, email, skills…" />
-      </Field>
+
+      <div className="relative mb-3 max-w-md">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input
+          className={`${inputClass} pl-9`}
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setLoading(true) }}
+          placeholder="Name, email, skills…"
+        />
+      </div>
+
       {loading ? (
-        <div className="mt-3 flex gap-2 text-sm text-slate-500"><Spinner /> Loading…</div>
+        <div className="flex gap-2 text-sm text-slate-500"><Spinner /> Loading…</div>
+      ) : rows.length === 0 ? (
+        <p className="py-8 text-center text-sm text-slate-400">No candidates found.</p>
       ) : (
-        <ul className="mt-3 max-h-48 space-y-1 overflow-y-auto">
-          {candidates.map((c) => (
-            <li key={c.id}>
-              <button
-                type="button"
-                onClick={() => setSelected(c.id)}
-                className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${selected === c.id ? 'bg-violet-50 text-violet-800 ring-1 ring-violet-200' : 'hover:bg-slate-50'}`}
-              >
-                <span className="font-medium">{c.name || 'Unnamed'}</span>
-                <span className="ml-2 text-xs text-slate-400">{c.email || 'no email'}</span>
-              </button>
-            </li>
-          ))}
-          {candidates.length === 0 && <li className="px-3 py-2 text-sm text-slate-400">No candidates found.</li>}
-        </ul>
+        <TalentPoolTable
+          rows={rows}
+          selectable
+          selectedIds={selected}
+          onToggleSelect={toggle}
+          onToggleAll={toggleAll}
+        />
       )}
-      <Button className="mt-3" disabled={!selected || busy} onClick={apply}>
-        {busy ? <><Spinner /> Adding…</> : 'Add to this job'}
-      </Button>
     </Card>
   )
 }

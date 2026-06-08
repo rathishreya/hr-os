@@ -33,8 +33,8 @@ export default function MultiSelect({ options = [], value = [], onChange, placeh
           {options.map((o) => {
             const on = value.includes(o.value)
             return (
-              <button key={o.value} type="button" onClick={() => toggle(o.value)} className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-slate-50 ${on ? 'bg-violet-50/60' : ''}`}>
-                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${on ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-300'}`}>{on && <Check className="h-3.5 w-3.5" />}</span>
+              <button key={o.value} type="button" onClick={() => toggle(o.value)} className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50 ${on ? 'bg-brand-50/60' : ''}`}>
+                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${on ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300'}`}>{on && <Check className="h-3.5 w-3.5" />}</span>
                 <span className="text-slate-700">{o.label}</span>
               </button>
             )

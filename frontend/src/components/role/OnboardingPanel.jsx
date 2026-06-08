@@ -10,7 +10,7 @@ import { useToast } from '../Toast'
 // Category → icon + chip colors (keys match the AI-generated task categories).
 const CATS = {
   IT: { icon: Laptop, label: 'IT & Access', chip: 'bg-sky-100 text-sky-700', dot: 'bg-sky-500' },
-  HR: { icon: FileText, label: 'HR & Paperwork', chip: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
+  HR: { icon: FileText, label: 'HR & Paperwork', chip: 'bg-brand-100 text-brand-700', dot: 'bg-brand-500' },
   Team: { icon: Users, label: 'Team', chip: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
   Learning: { icon: GraduationCap, label: 'Learning', chip: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
   Compliance: { icon: ShieldCheck, label: 'Compliance', chip: 'bg-rose-100 text-rose-700', dot: 'bg-rose-500' },
@@ -62,8 +62,8 @@ export default function OnboardingPanel({ app }) {
 
   if (!plan) {
     return (
-      <div className="rounded-2xl border border-dashed border-violet-200 bg-violet-50/40 p-8 text-center">
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100 text-violet-600"><Rocket className="h-6 w-6" /></div>
+      <div className="rounded-2xl border border-dashed border-brand-200 bg-brand-50/40 p-8 text-center">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-100 text-brand-600"><Rocket className="h-6 w-6" /></div>
         <p className="mx-auto mb-4 max-w-xs text-sm text-slate-600">Generate a tailored onboarding plan — a task checklist, week-by-week induction schedule, tools, and a suggested buddy.</p>
         <Button onClick={generate} disabled={busy}>{busy ? <><Spinner /> Generating…</> : <><Rocket className="h-4 w-4" /> Generate onboarding plan</>}</Button>
       </div>
@@ -86,13 +86,13 @@ export default function OnboardingPanel({ app }) {
   return (
     <div className="space-y-5">
       {/* Summary */}
-      <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-white p-4">
+      <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-brand-50 to-white p-4">
         <Ring pct={pct} done={complete} />
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-slate-800">{complete ? '🎉 Onboarding complete' : 'Onboarding in progress'}</div>
           <div className="text-xs text-slate-500">{done} of {tasks.length} tasks done</div>
           {plan.buddy && (
-            <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs text-violet-700 shadow-sm">
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs text-brand-700 shadow-sm">
               <Users className="h-3.5 w-3.5" /> Buddy: <strong>{plan.buddy}</strong>
             </div>
           )}
@@ -115,8 +115,8 @@ export default function OnboardingPanel({ app }) {
               </div>
               <div className="space-y-1.5">
                 {items.map((t) => (
-                  <label key={t.id} className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition hover:border-violet-200 hover:bg-violet-50/40">
-                    <input type="checkbox" checked={!!t.done} onChange={(e) => toggle(t.id, e.target.checked)} className="h-4 w-4 shrink-0 accent-violet-600" />
+                  <label key={t.id} className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-colors duration-150 ease-snappy hover:border-brand-200 hover:bg-brand-50/40 focus-within:ring-2 focus-within:ring-brand-500/40">
+                    <input type="checkbox" checked={!!t.done} onChange={(e) => toggle(t.id, e.target.checked)} className="h-4 w-4 shrink-0 accent-brand-600" />
                     <span className={t.done ? 'text-slate-400 line-through' : 'text-slate-700'}>{t.title}</span>
                     {t.owner && <span className="ml-auto shrink-0 text-xs text-slate-400">{t.owner}</span>}
                   </label>
@@ -131,14 +131,14 @@ export default function OnboardingPanel({ app }) {
       {plan.induction?.length > 0 && (
         <div>
           <h4 className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400"><CalendarDays className="h-3.5 w-3.5" /> Induction schedule</h4>
-          <ol className="relative ml-1 space-y-4 border-l-2 border-violet-100 pl-5">
+          <ol className="relative ml-1 space-y-4 border-l-2 border-brand-100 pl-5">
             {plan.induction.map((d, i) => (
               <li key={i} className="relative">
-                <span className="absolute -left-[1.6rem] top-1 h-3 w-3 rounded-full bg-violet-500 ring-4 ring-white" />
-                <div className="text-xs font-semibold text-violet-700">{d.day}</div>
+                <span className="absolute -left-[1.6rem] top-1 h-3 w-3 rounded-full bg-brand-500 ring-4 ring-white" />
+                <div className="text-xs font-semibold text-brand-700">{d.day}</div>
                 <ul className="mt-1 space-y-1">
                   {(d.items || []).map((it, j) => (
-                    <li key={j} className="flex gap-2 text-xs text-slate-600"><span className="mt-0.5 text-violet-300">•</span><span>{it}</span></li>
+                    <li key={j} className="flex gap-2 text-xs text-slate-600"><span className="mt-0.5 text-brand-300">•</span><span>{it}</span></li>
                   ))}
                 </ul>
               </li>
@@ -157,7 +157,7 @@ export default function OnboardingPanel({ app }) {
         </div>
       )}
 
-      <button type="button" onClick={generate} disabled={busy} className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 transition hover:text-violet-600 disabled:opacity-50">
+      <button type="button" onClick={generate} disabled={busy} className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 transition-colors duration-150 ease-snappy hover:text-brand-600 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:opacity-50">
         <RefreshCw className={`h-3.5 w-3.5 ${busy ? 'animate-spin' : ''}`} /> Regenerate plan
       </button>
     </div>

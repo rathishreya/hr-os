@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowLeft, Link2, UserPlus, ChevronDown, MoreHorizontal,
-  Copy, Archive, Trash2, Sparkles, FileText,
+  Copy, Archive, Trash2, Sparkles, FileText, Pencil,
 } from 'lucide-react'
 import { Badge, Button, cx } from '../../ui'
 import { useToast } from '../Toast'
@@ -23,11 +23,13 @@ export const JOB_META_VIEWS = [
 export default function JobDetailShell({
   role,
   summary,
+  jd,
   activeView,
   onViewChange,
   hasLiveScreen,
   onAddUpload,
   onAddPool,
+  onEdit,
   onDuplicate,
   onCloseRole,
   onDelete,
@@ -47,11 +49,16 @@ export default function JobDetailShell({
     return () => document.removeEventListener('mousedown', close)
   }, [])
 
+  // Copies the public careers job-post URL (the page applicants open to apply).
   async function copyLink() {
-    const url = `${window.location.origin}/roles/${role.id}`
+    if (!jd?.id) {
+      toast('Generate the job post first (Job post tab)', 'error')
+      return
+    }
+    const url = `${window.location.origin}/careers/${jd.id}`
     try {
       await navigator.clipboard.writeText(url)
-      toast('Job link copied')
+      toast(jd.status === 'published' ? 'Careers link copied' : 'Link copied — publish the job to make it live')
     } catch {
       toast('Could not copy link', 'error')
     }
@@ -66,7 +73,7 @@ export default function JobDetailShell({
       <div className="flex items-center gap-3 px-4 py-2.5 lg:px-5">
         <Link
           to="/roles"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors duration-150 ease-snappy hover:bg-slate-100 hover:text-slate-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
           title="All jobs"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -82,8 +89,8 @@ export default function JobDetailShell({
               {role.status}
             </Badge>
             {hasLiveScreen && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-500" />
+              <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-medium text-brand-700">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
                 Live screen
               </span>
             )}
@@ -99,20 +106,23 @@ export default function JobDetailShell({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <Button variant="ghost" className="hidden h-8 gap-1 px-2.5 text-xs sm:inline-flex" onClick={copyLink}>
-            <Link2 className="h-3.5 w-3.5" /> Copy link
+          <Button variant="ghost" className="h-8 gap-1 px-2.5 text-xs" onClick={onEdit} title="Edit job details">
+            <Pencil className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Edit</span>
+          </Button>
+          <Button variant="ghost" className="h-8 gap-1 px-2.5 text-xs" onClick={copyLink} title="Copy the public careers link for this job">
+            <Link2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Copy link</span>
           </Button>
 
           <div className="relative">
-            <Button className="h-8 gap-1 px-3 text-xs shadow-md shadow-violet-600/20" onClick={() => setAddOpen((o) => !o)}>
+            <Button className="h-8 gap-1 px-3 text-xs shadow-md shadow-brand-600/20" onClick={() => setAddOpen((o) => !o)}>
               <UserPlus className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Add</span>
               <ChevronDown className="h-3 w-3 opacity-70" />
             </Button>
             {addOpen && (
-              <div className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-xl border border-slate-200/80 bg-white py-1 shadow-xl shadow-slate-900/10">
-                <button type="button" className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={() => { onAddUpload?.(); setAddOpen(false) }}>Upload / paste resume</button>
-                <button type="button" className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={() => { onAddPool?.(); setAddOpen(false) }}>From talent pool</button>
+              <div className="absolute right-0 top-full z-30 mt-1 w-48 origin-top-right menu-in overflow-hidden rounded-xl border border-slate-200/80 bg-white py-1 shadow-xl shadow-slate-900/10">
+                <button type="button" className="block w-full px-3 py-2 text-left text-sm text-slate-700 transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50" onClick={() => { onAddUpload?.(); setAddOpen(false) }}>Upload / paste resume</button>
+                <button type="button" className="block w-full px-3 py-2 text-left text-sm text-slate-700 transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50" onClick={() => { onAddPool?.(); setAddOpen(false) }}>From talent pool</button>
               </div>
             )}
           </div>
@@ -121,24 +131,21 @@ export default function JobDetailShell({
             <button
               type="button"
               onClick={() => setMenuOpen((o) => !o)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-colors duration-150 ease-snappy hover:bg-slate-50 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
             >
               <MoreHorizontal className="h-4 w-4" />
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-full z-30 mt-1 w-44 rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
-                <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" onClick={() => { copyLink(); setMenuOpen(false) }}>
-                  <Link2 className="h-3.5 w-3.5 sm:hidden" /> Copy link
-                </button>
-                <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" onClick={() => { onDuplicate?.(); setMenuOpen(false) }}>
+              <div className="absolute right-0 top-full z-30 mt-1 w-44 origin-top-right menu-in rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50" onClick={() => { onDuplicate?.(); setMenuOpen(false) }}>
                   <Copy className="h-3.5 w-3.5" /> Duplicate
                 </button>
                 {roleStatus === 'open' && (
-                  <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" onClick={() => { onCloseRole?.(); setMenuOpen(false) }}>
+                  <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50" onClick={() => { onCloseRole?.(); setMenuOpen(false) }}>
                     <Archive className="h-3.5 w-3.5" /> Close role
                   </button>
                 )}
-                <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50" onClick={() => { onDelete?.(); setMenuOpen(false) }}>
+                <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-600 transition-colors duration-150 ease-snappy hover:bg-rose-50 focus-visible:outline-none focus-visible:bg-rose-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500/50" onClick={() => { onDelete?.(); setMenuOpen(false) }}>
                   <Trash2 className="h-3.5 w-3.5" /> Delete job
                 </button>
               </div>
@@ -159,15 +166,15 @@ export default function JobDetailShell({
                 type="button"
                 onClick={() => onViewChange(v.id)}
                 className={cx(
-                  'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition',
+                  'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                   active
-                    ? 'bg-white text-violet-800 shadow-sm ring-1 ring-slate-200/80'
+                    ? 'bg-white text-brand-800 shadow-sm ring-1 ring-slate-200/80'
                     : 'text-slate-500 hover:bg-white/50 hover:text-slate-700',
                 )}
               >
                 {v.label}
                 {count != null && (
-                  <span className={cx('ml-1 tabular-nums', active ? 'text-violet-500' : 'text-slate-400')}>
+                  <span className={cx('ml-1 tabular-nums', active ? 'text-brand-500' : 'text-slate-400')}>
                     {count}
                   </span>
                 )}
@@ -184,10 +191,10 @@ export default function JobDetailShell({
                 type="button"
                 onClick={() => onViewChange(v.id)}
                 className={cx(
-                  'inline-flex shrink-0 items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition',
+                  'inline-flex shrink-0 items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                   active
-                    ? 'bg-white text-violet-800 shadow-sm ring-1 ring-violet-200/80'
-                    : 'text-slate-500 hover:bg-white/50 hover:text-violet-700',
+                    ? 'bg-white text-brand-800 shadow-sm ring-1 ring-brand-200/80'
+                    : 'text-slate-500 hover:bg-white/50 hover:text-brand-700',
                 )}
               >
                 <Icon className="h-3 w-3" />

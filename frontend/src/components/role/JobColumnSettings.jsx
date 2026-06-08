@@ -11,7 +11,7 @@ export default function JobColumnSettings({ open, onClose, visible, onToggle, on
               type="checkbox"
               checked={visible[col.id] !== false}
               onChange={(e) => onToggle(col.id, e.target.checked)}
-              className="rounded border-slate-300 text-violet-600"
+              className="rounded border-slate-300 text-brand-600"
             />
             <span className="text-sm text-slate-700">{col.label}</span>
           </label>

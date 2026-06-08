@@ -45,7 +45,7 @@ export default function AddCandidate({ roleId, onAdded }) {
     <Card className="p-5" id="add-candidate">
       <div className="mb-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs">
         {['paste', 'upload'].map((m) => (
-          <button key={m} type="button" onClick={() => setMode(m)} className={`rounded-md px-3 py-1 font-medium transition ${mode === m ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500'}`}>
+          <button key={m} type="button" onClick={() => setMode(m)} className={`rounded-md px-3 py-1 font-medium transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${mode === m ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
             {m === 'paste' ? 'Paste resume' : 'Upload file'}
           </button>
         ))}
@@ -66,7 +66,7 @@ export default function AddCandidate({ roleId, onAdded }) {
           </Field>
         ) : (
           <Field label="Resume file" hint="PDF / DOCX / TXT">
-            <input type="file" accept=".pdf,.docx,.txt" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-violet-700 hover:file:bg-violet-100" />
+            <input type="file" accept=".pdf,.docx,.txt" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100" />
           </Field>
         )}
         {err && <p className="text-sm text-rose-600">{err}</p>}

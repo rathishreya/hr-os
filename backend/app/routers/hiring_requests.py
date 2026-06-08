@@ -15,9 +15,41 @@ from ..services.recruitment import hr_to_dict, log
 router = APIRouter(prefix="/api/hiring-requests", tags=["hiring-requests"])
 
 
+def _normalize_questions(qs) -> list[dict]:
+    """Clean the application-form questions: drop blanks, ensure each has a stable id + type."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for i, q in enumerate(qs or []):
+        if isinstance(q, str):
+            q = {"label": q}
+        if not isinstance(q, dict):
+            continue
+        label = str(q.get("label") or q.get("question") or "").strip()
+        if not label:
+            continue
+        qid = str(q.get("id") or "").strip() or f"q{i + 1}"
+        while qid in seen:
+            qid = f"{qid}_{i}"
+        seen.add(qid)
+        qtype = q.get("type") if q.get("type") in ("text", "textarea") else "textarea"
+        out.append({"id": qid, "label": label, "type": qtype, "required": bool(q.get("required"))})
+    return out
+
+
+def _clean_str_list(values) -> list[str]:
+    return [t for t in dict.fromkeys(str(x).strip() for x in (values or [])) if t]
+
+
 @router.post("", response_model=schemas.HiringRequestOut)
 def create_hiring_request(payload: schemas.HiringRequestCreate, db: Session = Depends(get_db)):
-    hr = models.HiringRequest(**payload.model_dump())
+    data = payload.model_dump()
+    data["application_questions"] = _normalize_questions(data.get("application_questions"))
+    data["interview_types"] = _clean_str_list(data.get("interview_types"))
+    data["interview_panel"] = _clean_str_list(data.get("interview_panel"))
+    data["start_hiring_date"] = (data.get("start_hiring_date") or "").strip()
+    data["hiring_manager"] = (data.get("hiring_manager") or "").strip()
+    data["recruiter"] = (data.get("recruiter") or "").strip()
+    hr = models.HiringRequest(**data)
     db.add(hr)
     db.flush()
 
@@ -37,6 +69,22 @@ def create_hiring_request(payload: schemas.HiringRequestCreate, db: Session = De
     db.commit()
     db.refresh(hr)
     return hr
+
+
+@router.post("/suggest-skills", response_model=schemas.SuggestSkillsOut)
+def suggest_skills(payload: schemas.SuggestSkillsIn):
+    """Stateless helper for the create-job form: suggest mandatory/preferred skills from the
+    position + department + experience range, so the user gets an editable starting checklist."""
+    if not payload.position.strip():
+        return schemas.SuggestSkillsOut()
+    result, provider = ai.suggest_skills(payload.model_dump())
+    if not isinstance(result, dict):  # defensive: a malformed provider response
+        result = {}
+    return schemas.SuggestSkillsOut(
+        mandatory_skills=[s for s in (result.get("mandatory_skills") or []) if s],
+        preferred_skills=[s for s in (result.get("preferred_skills") or []) if s],
+        provider=provider,
+    )
 
 
 @router.get("")
@@ -83,11 +131,45 @@ def update_hiring_request(hr_id: int, body: schemas.HiringRequestUpdate, db: Ses
     hr = db.get(models.HiringRequest, hr_id)
     if not hr:
         raise HTTPException(404, "Hiring request not found")
-    if body.status is not None:
-        if body.status not in ("open", "closed", "on_hold", "draft"):
+    data = body.model_dump(exclude_unset=True)  # only fields the client actually sent
+    changed: list[str] = []
+
+    if "status" in data:
+        if data["status"] not in ("open", "closed", "on_hold", "draft"):
             raise HTTPException(422, "Invalid status")
-        hr.status = body.status
-        log(db, "hiring_request.updated", "hiring_request", hr.id, {"status": body.status})
+        hr.status = data["status"]
+        changed.append("status")
+
+    # Plain text fields (stripped).
+    for fld in ("position", "department", "budget_ctc", "priority", "hiring_deadline",
+                "location", "work_mode", "start_hiring_date", "hiring_manager", "recruiter"):
+        if fld in data and data[fld] is not None:
+            val = str(data[fld]).strip()
+            if fld == "position" and not val:
+                raise HTTPException(422, "Position cannot be empty")
+            setattr(hr, fld, val)
+            changed.append(fld)
+
+    if data.get("yoe_min") is not None:
+        hr.yoe_min = float(data["yoe_min"]); changed.append("yoe_min")
+    if data.get("yoe_max") is not None:
+        hr.yoe_max = float(data["yoe_max"]); changed.append("yoe_max")
+    if data.get("num_openings") is not None:
+        hr.num_openings = max(1, int(data["num_openings"])); changed.append("num_openings")
+
+    for listf in ("mandatory_skills", "preferred_skills", "interview_panel"):
+        if listf in data and data[listf] is not None:
+            setattr(hr, listf, _clean_str_list(data[listf]))
+            changed.append(listf)
+    if data.get("application_questions") is not None:
+        hr.application_questions = _normalize_questions(data["application_questions"])
+        changed.append("application_questions")
+    if data.get("interview_types") is not None:
+        hr.interview_types = _clean_str_list(data["interview_types"])
+        changed.append("interview_types")
+
+    if changed:
+        log(db, "hiring_request.updated", "hiring_request", hr.id, {"fields": changed})
     db.commit()
     db.refresh(hr)
     return hr

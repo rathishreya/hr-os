@@ -25,7 +25,7 @@ export default function InsightsTab({ role }) {
         <Card className="p-4">
           <div className="text-xs text-slate-400">Difficulty</div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${diffPct}%` }} />
+            <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${diffPct}%` }} />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-900">{role.difficulty_score}</span>
@@ -65,7 +65,7 @@ export default function InsightsTab({ role }) {
             <ol className="relative ml-2 space-y-4 border-l border-slate-200 pl-6">
               {role.hiring_plan.map((s, i) => (
                 <li key={i} className="text-sm text-slate-700">
-                  <span className="absolute -left-2 flex h-4 w-4 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-700">{i + 1}</span>
+                  <span className="absolute -left-2 flex h-4 w-4 items-center justify-center rounded-full bg-brand-100 text-[10px] font-bold text-brand-700">{i + 1}</span>
                   {s}
                 </li>
               ))}

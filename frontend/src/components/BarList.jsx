@@ -2,7 +2,7 @@
 // the Home dashboard. Sorts by count desc unless `order` fixes the label order.
 
 const TONES = {
-  violet: 'bg-violet-500',
+  violet: 'bg-brand-500',
   emerald: 'bg-emerald-500',
   amber: 'bg-amber-400',
   rose: 'bg-rose-400',
@@ -31,7 +31,7 @@ export default function BarList({ data = {}, order, colorFor, emptyText = 'No da
               <span className="tabular-nums text-slate-500">{count}</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-              <div className={`h-full rounded-full transition-all ${tone}`} style={{ width: `${(count / max) * 100}%` }} />
+              <div className={`h-full rounded-full transition-[width] duration-300 ease-snappy ${tone}`} style={{ width: `${(count / max) * 100}%` }} />
             </div>
           </div>
         )

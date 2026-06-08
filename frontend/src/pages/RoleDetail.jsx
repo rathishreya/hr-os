@@ -8,6 +8,7 @@ import JobDetailShell from '../components/role/JobDetailShell'
 import JobApplicationsWorkspace from '../components/role/JobApplicationsWorkspace'
 import InsightsTab from '../components/role/InsightsTab'
 import JobPostTab from '../components/role/JobPostTab'
+import EditJobModal from '../components/role/EditJobModal'
 
 function stageToView(stage) {
   if (stage === 'shortlisted') return 'shortlisted'
@@ -16,20 +17,23 @@ function stageToView(stage) {
 }
 
 const TABLE_VIEWS = new Set(['applications', 'shortlisted', 'positions', 'pool', 'analytics'])
+const KNOWN_VIEWS = new Set([...TABLE_VIEWS, 'insights', 'jd'])
 
 export default function RoleDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const stageFromUrl = searchParams.get('stage') || ''
+  const viewFromUrl = searchParams.get('view') || ''  // deep-link a specific tab, e.g. ?view=jd to review the JD
   const { toast } = useToast()
   const [role, setRole] = useState(null)
   const [summary, setSummary] = useState(null)
   const [jd, setJd] = useState(null)
   const [board, setBoard] = useState([])
   const [boardLoading, setBoardLoading] = useState(true)
-  const [view, setView] = useState(() => stageToView(stageFromUrl))
+  const [view, setView] = useState(() => (KNOWN_VIEWS.has(viewFromUrl) ? viewFromUrl : stageToView(stageFromUrl)))
   const [addModalOpen, setAddModalOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const [deleteStep, setDeleteStep] = useState(0)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [deleting, setDeleting] = useState(false)
@@ -68,8 +72,9 @@ export default function RoleDetail() {
   }, [hasLive, loadBoard])
 
   useEffect(() => {
-    if (stageFromUrl) setView(stageToView(stageFromUrl))
-  }, [stageFromUrl])
+    if (KNOWN_VIEWS.has(viewFromUrl)) setView(viewFromUrl)
+    else if (stageFromUrl) setView(stageToView(stageFromUrl))
+  }, [viewFromUrl, stageFromUrl])
 
   async function duplicateRole() {
     try {
@@ -126,16 +131,26 @@ export default function RoleDetail() {
       <JobDetailShell
         role={role}
         summary={summary}
+        jd={jd}
         activeView={view}
         onViewChange={setView}
         hasLiveScreen={hasLive}
         onAddUpload={() => setAddModalOpen(true)}
         onAddPool={() => setView('pool')}
+        onEdit={() => setEditOpen(true)}
         onDuplicate={duplicateRole}
         onCloseRole={closeRole}
         onDelete={openDeleteFlow}
         roleStatus={role.status}
       />
+
+      {editOpen && (
+        <EditJobModal
+          role={role}
+          onClose={() => setEditOpen(false)}
+          onSaved={(updated) => { setRole(updated); setEditOpen(false); loadBoard() }}
+        />
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col bg-slate-50/50 p-3 lg:p-4">
         {TABLE_VIEWS.has(view) ? (

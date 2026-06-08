@@ -9,7 +9,11 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from .config import settings
 
 connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, future=True)
+_engine_kwargs: dict = {"future": True, "connect_args": connect_args}
+if not settings.DATABASE_URL.startswith("sqlite"):
+    # Free/hosted Postgres drops idle connections; pre-ping + recycle avoid stale-conn errors.
+    _engine_kwargs.update(pool_pre_ping=True, pool_recycle=1800, pool_size=5, max_overflow=10)
+engine = create_engine(settings.DATABASE_URL, **_engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
@@ -43,6 +47,18 @@ def _ensure_sqlite_columns() -> None:
         "jobs": [
             ("target_platforms", "TEXT DEFAULT '[]'"),
             ("video_questions", "TEXT DEFAULT '[]'"),
+            ("distribution", "TEXT DEFAULT '{}'"),
+        ],
+        "hiring_requests": [
+            ("start_hiring_date", "VARCHAR DEFAULT ''"),
+            ("application_questions", "TEXT DEFAULT '[]'"),
+            ("interview_types", "TEXT DEFAULT '[]'"),
+            ("hiring_manager", "VARCHAR DEFAULT ''"),
+            ("recruiter", "VARCHAR DEFAULT ''"),
+        ],
+        "applications": [
+            ("score_breakdown", "TEXT DEFAULT '{}'"),
+            ("application_answers", "TEXT DEFAULT '[]'"),
         ],
         "video_interviews": [
             ("transcript", "TEXT DEFAULT ''"),
@@ -51,6 +67,26 @@ def _ensure_sqlite_columns() -> None:
             ("recording", "BLOB"),
             ("recording_mime", "VARCHAR DEFAULT 'video/webm'"),
             ("duration", "FLOAT DEFAULT 0"),
+            ("evaluation", "TEXT DEFAULT '{}'"),
+        ],
+        "screening_interviews": [
+            ("per_question", "TEXT DEFAULT '[]'"),
+        ],
+        "interview_rounds": [
+            ("assessment_id", "INTEGER"),
+            ("panel_feedback", "TEXT DEFAULT '[]'"),
+        ],
+        "documents": [
+            ("template_key", "VARCHAR DEFAULT ''"),
+            ("blocks", "TEXT DEFAULT '[]'"),
+            ("upload_filename", "VARCHAR DEFAULT ''"),
+            ("upload_mime", "VARCHAR DEFAULT ''"),
+            ("upload_size", "INTEGER DEFAULT 0"),
+            ("upload_file", "BLOB"),
+            ("move_to_onboarding", "BOOLEAN DEFAULT 0"),
+        ],
+        "onboarding_plans": [
+            ("details", "TEXT DEFAULT '{}'"),
         ],
     }
     with engine.begin() as conn:
@@ -74,13 +110,33 @@ def _ensure_pg_columns() -> None:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS target_platforms JSONB DEFAULT '[]'::jsonb"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS video_questions JSONB DEFAULT '[]'::jsonb"))
+        conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS distribution JSONB DEFAULT '{}'::jsonb"))
+        conn.execute(text("ALTER TABLE applications ADD COLUMN IF NOT EXISTS score_breakdown JSONB DEFAULT '{}'::jsonb"))
         for stmt in (
+            "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS start_hiring_date VARCHAR DEFAULT ''",
+            "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS application_questions JSONB DEFAULT '[]'::jsonb",
+            "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS interview_types JSONB DEFAULT '[]'::jsonb",
+            "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS hiring_manager VARCHAR DEFAULT ''",
+            "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS recruiter VARCHAR DEFAULT ''",
+            "ALTER TABLE applications ADD COLUMN IF NOT EXISTS application_answers JSONB DEFAULT '[]'::jsonb",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS upload_filename VARCHAR DEFAULT ''",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS upload_mime VARCHAR DEFAULT ''",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS upload_size INTEGER DEFAULT 0",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS upload_file BYTEA",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS move_to_onboarding BOOLEAN DEFAULT FALSE",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS transcript TEXT DEFAULT ''",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS timeline JSONB DEFAULT '[]'::jsonb",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS proctoring JSONB DEFAULT '{}'::jsonb",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS recording BYTEA",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS recording_mime VARCHAR DEFAULT 'video/webm'",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS duration DOUBLE PRECISION DEFAULT 0",
+            "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS evaluation JSONB DEFAULT '{}'::jsonb",
+            "ALTER TABLE screening_interviews ADD COLUMN IF NOT EXISTS per_question JSONB DEFAULT '[]'::jsonb",
+            "ALTER TABLE interview_rounds ADD COLUMN IF NOT EXISTS assessment_id INTEGER",
+            "ALTER TABLE interview_rounds ADD COLUMN IF NOT EXISTS panel_feedback JSONB DEFAULT '[]'::jsonb",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS template_key VARCHAR DEFAULT ''",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS blocks JSONB DEFAULT '[]'::jsonb",
+            "ALTER TABLE onboarding_plans ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb",
         ):
             conn.execute(text(stmt))
 

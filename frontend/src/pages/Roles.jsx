@@ -1,45 +1,91 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
-import { Link } from 'react-router-dom'
-import { Plus, Search, AlertTriangle, Briefcase, LayoutGrid, List, X, Megaphone, GraduationCap } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Plus, Search, AlertTriangle, Briefcase, LayoutGrid, List, Sparkles } from 'lucide-react'
 import { api } from '../api'
 import { Card, Badge, Button, Field, Spinner, Skeleton, PageHeader, EmptyState, inputClass, cx } from '../ui'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import JobsListTable from '../components/jobs/JobsListTable'
 import MultiSelect from '../components/MultiSelect'
-import { POST_PLATFORMS } from '../constants'
+import { SkillChecklist, ApplicationQuestionsBuilder, InterviewTypesPicker, mergeSkills, useTeamOptions } from '../components/role/jobFormParts'
 
 const VIEW_KEY = 'hr-os-jobs-view'
-const PLATFORM_OPTS = POST_PLATFORMS.map((p) => ({ value: p.id, label: p.label }))
 
 const EMPTY = {
   position: '', department: '', budget_ctc: '', yoe_min: 0, yoe_max: 0,
-  mandatory_skills: '', preferred_skills: '', priority: 'medium',
+  mandatory_skills: [], preferred_skills: [], priority: 'medium',
   hiring_deadline: '', location: '', work_mode: 'hybrid', num_openings: 1,
+  start_hiring_date: '', application_questions: [], interview_types: [],
+  hiring_manager: '', recruiter: '', panelists: [],
 }
 
-const PRIORITY_BORDER = { urgent: 'border-l-rose-500', high: 'border-l-amber-500', medium: 'border-l-sky-500', low: 'border-l-slate-300' }
-
-function csv(s) { return s.split(',').map((x) => x.trim()).filter(Boolean) }
+// Priority as a leading dot, not a colored side-stripe (side-stripes read as templated).
+const PRIORITY_DOT = { urgent: 'bg-rose-500', high: 'bg-amber-500', medium: 'bg-sky-500', low: 'bg-slate-300' }
 
 function NewRoleForm({ onCreated, onCancel }) {
+  const { toast } = useToast()
   const [f, setF] = useState(EMPTY)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }))
 
-  // Posting + campus outreach
-  const [post, setPost] = useState(true)
-  const [platforms, setPlatforms] = useState(POST_PLATFORMS.map((p) => p.id))
-  const [tpos, setTpos] = useState([])
-  const [tpoIds, setTpoIds] = useState([])
-  const [tpoMsg, setTpoMsg] = useState('')
-  useEffect(() => { api.listTpos().then(setTpos).catch(() => setTpos([])) }, [])
+  // Team dropdowns are mapped from people in Settings → Users & roles.
+  const teamOpts = useTeamOptions()
 
-  const tpoOpts = tpos.map((t) => ({
-    value: t.id,
-    label: t.college ? (t.name ? `${t.college} — ${t.name}` : t.college) : (t.name || `TPO #${t.id}`),
-  }))
+  // Skill suggestions — auto-filled from position/department/experience; the user edits the checklist.
+  const [mandSug, setMandSug] = useState([])
+  const [prefSug, setPrefSug] = useState([])
+  const [suggesting, setSuggesting] = useState(false)
+  const lastKey = useRef('')
+  const touched = useRef(false)  // true once the user edits a skill list — then auto-fill backs off
+
+  // Skill setters that also mark the lists as user-touched.
+  const setMand = (next) => { touched.current = true; setF((p) => ({ ...p, mandatory_skills: next })) }
+  const setPref = (next) => { touched.current = true; setF((p) => ({ ...p, preferred_skills: next })) }
+
+  const fetchSuggestions = useCallback(async (merge = false) => {
+    const position = f.position.trim()
+    if (!position) return
+    const key = `${position}|${f.department}|${f.yoe_min}|${f.yoe_max}`
+    if (!merge && key === lastKey.current) return  // auto: skip if nothing relevant changed
+    lastKey.current = key
+    setSuggesting(true)
+    try {
+      const res = await api.suggestSkills({
+        position, department: f.department,
+        yoe_min: Number(f.yoe_min) || 0, yoe_max: Number(f.yoe_max) || 0,
+      })
+      const m = res.mandatory_skills || []
+      const p = res.preferred_skills || []
+      // Manual "Suggest" unions into the pool; an auto re-suggest for a new role REPLACES it,
+      // so stale chips from a previous position don't linger.
+      setMandSug((cur) => (merge ? mergeSkills(cur, m) : m))
+      setPrefSug((cur) => (merge ? mergeSkills(cur, p) : p))
+      setF((prev) => {
+        if (merge) return { ...prev, mandatory_skills: mergeSkills(prev.mandatory_skills, m), preferred_skills: mergeSkills(prev.preferred_skills, p) }
+        if (!touched.current) return { ...prev, mandatory_skills: m, preferred_skills: p }  // auto-fill only until the user edits
+        return prev  // respect deliberate edits (incl. a deliberate clear)
+      })
+      // The manual button gives explicit feedback; the auto path stays silent.
+      if (merge) {
+        toast(m.length || p.length
+          ? `Suggested ${m.length} mandatory + ${p.length} preferred skills`
+          : 'No skills suggested for this role')
+      }
+    } catch (e) {
+      // Auto-suggest is best-effort and stays silent; a manual click surfaces the error.
+      if (merge) toast(e.message || 'Could not fetch skill suggestions', 'error')
+    } finally {
+      setSuggesting(false)
+    }
+  }, [f.position, f.department, f.yoe_min, f.yoe_max, toast])
+
+  // Debounced auto-suggest once the role basics are entered (fetchSuggestions no-ops if the
+  // position is blank, and is re-created whenever position/department/yoe change).
+  useEffect(() => {
+    const t = setTimeout(() => fetchSuggestions(false), 700)
+    return () => clearTimeout(t)
+  }, [fetchSuggestions])
 
   async function submit(e) {
     e.preventDefault()
@@ -48,21 +94,19 @@ function NewRoleForm({ onCreated, onCancel }) {
       const role = await api.createRole({
         ...f,
         yoe_min: Number(f.yoe_min), yoe_max: Number(f.yoe_max), num_openings: Number(f.num_openings),
-        mandatory_skills: csv(f.mandatory_skills), preferred_skills: csv(f.preferred_skills),
-        interview_panel: [],
+        mandatory_skills: f.mandatory_skills, preferred_skills: f.preferred_skills,
+        interview_panel: f.panelists,
       })
-      let posted = false
-      if (post) {
-        const jd = await api.generateJD(role.id)   // AI writes the JD
-        await api.publishJob(jd.id, platforms)      // publish to careers page + selected boards
-        posted = true
+      // Draft the JD right away so the HR can review & approve it — but DON'T publish.
+      // Publishing/posting/TPO outreach is the explicit approval step on the Job post tab.
+      let jdReady = false
+      try {
+        await api.generateJD(role.id)
+        jdReady = true
+      } catch {
+        // JD generation is best-effort at create time; the HR can generate it on the Job post tab.
       }
-      let tpoNote = ''
-      if (tpoIds.length) {
-        const r = await api.sendToTpos(role.id, { tpo_ids: tpoIds, message: tpoMsg })
-        tpoNote = ` · emailed ${r.delivered}/${r.total} college${r.total !== 1 ? 's' : ''}`
-      }
-      onCreated(role, { posted, tpoNote })
+      onCreated(role, { jdReady })
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
 
@@ -76,8 +120,6 @@ function NewRoleForm({ onCreated, onCancel }) {
           <Field label="Location"><input className={inputClass} value={f.location} onChange={set('location')} placeholder="Bengaluru" /></Field>
           <Field label="Min YOE"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_min} onChange={set('yoe_min')} /></Field>
           <Field label="Max YOE"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_max} onChange={set('yoe_max')} /></Field>
-          <Field label="Mandatory skills" hint="comma-separated"><input className={inputClass} value={f.mandatory_skills} onChange={set('mandatory_skills')} placeholder="Python, FastAPI, PostgreSQL" /></Field>
-          <Field label="Preferred skills" hint="comma-separated"><input className={inputClass} value={f.preferred_skills} onChange={set('preferred_skills')} placeholder="Kubernetes, Redis" /></Field>
           <Field label="Priority">
             <select className={inputClass} value={f.priority} onChange={set('priority')}>
               <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
@@ -89,33 +131,95 @@ function NewRoleForm({ onCreated, onCancel }) {
             </select>
           </Field>
           <Field label="Hiring deadline"><input type="date" className={inputClass} value={f.hiring_deadline} onChange={set('hiring_deadline')} /></Field>
+          <Field label="Start hiring date" hint="When the team begins actively hiring"><input type="date" className={inputClass} value={f.start_hiring_date} onChange={set('start_hiring_date')} /></Field>
           <Field label="Openings"><input type="number" min="1" className={inputClass} value={f.num_openings} onChange={set('num_openings')} /></Field>
         </div>
 
-        <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-            <input type="checkbox" checked={post} onChange={(e) => setPost(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
-            <Megaphone className="h-4 w-4 text-violet-600" /> Post this job now — AI writes the JD and publishes it
-          </label>
-          {post && (
-            <Field label="Post to free job boards">
-              <MultiSelect options={PLATFORM_OPTS} value={platforms} onChange={setPlatforms} placeholder="Select platforms" allLabel="All free boards" />
+        <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team</h3>
+          <p className="text-xs text-slate-400">Mapped from people in Settings → Users &amp; roles.</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Hiring manager">
+              <select className={inputClass} value={f.hiring_manager} onChange={set('hiring_manager')}>
+                <option value="">Select…</option>
+                {teamOpts.hm.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
             </Field>
-          )}
-          <Field
-            label={<span className="inline-flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" /> Send to college placement officers</span>}
-            hint={tpos.length ? 'Each selected college gets an email with the role details.' : 'Add placement officers in Settings → Placement officers.'}
-          >
-            <MultiSelect options={tpoOpts} value={tpoIds} onChange={setTpoIds} placeholder={tpos.length ? 'Select colleges' : 'No placement officers yet'} disabled={!tpos.length} />
-          </Field>
-          {tpoIds.length > 0 && (
-            <textarea className={`${inputClass} h-16 resize-y`} placeholder="Optional note to include in the email to TPOs…" value={tpoMsg} onChange={(e) => setTpoMsg(e.target.value)} />
-          )}
+            <Field label="Recruiter">
+              <select className={inputClass} value={f.recruiter} onChange={set('recruiter')}>
+                <option value="">Select…</option>
+                {teamOpts.rec.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Panelists">
+              <MultiSelect
+                options={teamOpts.panel}
+                value={f.panelists}
+                onChange={(next) => setF((p) => ({ ...p, panelists: next }))}
+                placeholder="Select panelists…"
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <Sparkles className="h-3.5 w-3.5 text-brand-500" /> Skills
+            </h3>
+            <Button type="button" variant="ghost" className="text-xs" disabled={!f.position.trim() || suggesting} onClick={() => fetchSuggestions(true)}>
+              {suggesting ? <Spinner /> : <><Sparkles className="h-3.5 w-3.5" /> Suggest from role</>}
+            </Button>
+          </div>
+          <p className="text-xs text-slate-400">Auto-suggested from the position, department &amp; experience — tick the ones that apply, untick the rest, or add your own.</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <SkillChecklist
+              label="Mandatory skills"
+              selected={f.mandatory_skills}
+              setSelected={setMand}
+              suggestions={mandSug}
+              loading={suggesting}
+              accent="violet"
+              emptyHint="Enter a position above for suggestions, or add your own."
+            />
+            <SkillChecklist
+              label="Preferred skills"
+              selected={f.preferred_skills}
+              setSelected={setPref}
+              suggestions={prefSug}
+              loading={suggesting}
+              accent="amber"
+              emptyHint="Enter a position above for suggestions, or add your own."
+            />
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Application form questions</h3>
+          <p className="text-xs text-slate-400">Technical / screening questions shown on the public application form — applicants answer them when they apply.</p>
+          <ApplicationQuestionsBuilder
+            questions={f.application_questions}
+            setQuestions={(next) => setF((p) => ({ ...p, application_questions: next }))}
+          />
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Interview rounds</h3>
+          <p className="text-xs text-slate-400">Pick the rounds this job runs. You can bulk-apply them to candidates from the pipeline later.</p>
+          <InterviewTypesPicker
+            selected={f.interview_types}
+            setSelected={(next) => setF((p) => ({ ...p, interview_types: next }))}
+          />
+        </div>
+
+        <div className="flex items-start gap-2 rounded-xl border border-brand-200 bg-brand-50/60 p-4 text-sm text-slate-700">
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+          <span>AI drafts the <strong>job description</strong> as soon as you create this job. You&apos;ll land on the <strong>Job post</strong> tab to review it — then <strong>Publish &amp; post</strong> (to free boards / LinkedIn / colleges) when it&apos;s ready. Nothing goes live until you approve.</span>
         </div>
 
         {err && <p className="text-sm text-rose-600">{err}</p>}
         <div className="flex gap-3">
-          <Button type="submit" disabled={busy}>{busy ? <><Spinner /> {post ? 'Posting…' : 'AI is analyzing…'}</> : (post ? 'Post Job (AI checks it)' : 'Create Job (AI checks it)')}</Button>
+          <Button type="submit" disabled={busy}>{busy ? <><Spinner /> Creating &amp; drafting JD…</> : 'Create Job & draft JD'}</Button>
           <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         </div>
       </form>
@@ -130,10 +234,13 @@ function RoleCard({ r }) {
 
   return (
     <Link to={`/roles/${r.id}`}>
-      <Card className={`border-l-4 p-5 transition hover:border-violet-300 hover:shadow-md ${PRIORITY_BORDER[r.priority] || 'border-l-slate-300'}`}>
+      <Card className="p-5 transition duration-200 ease-snappy hover:border-brand-300 hover:shadow-md active:scale-[0.99]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-lg font-semibold text-slate-900">{r.position}</div>
+            <div className="flex items-center gap-2">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${PRIORITY_DOT[r.priority] || 'bg-slate-300'}`} title={`${r.priority} priority`} />
+              <span className="text-lg font-semibold text-slate-900">{r.position}</span>
+            </div>
             <div className="text-xs text-slate-400">#{r.id} · {r.department} · {r.location} · {r.work_mode}</div>
           </div>
           <Badge tone={{ urgent: 'rose', high: 'amber', medium: 'blue', low: 'gray' }[r.priority]}>{r.priority}</Badge>
@@ -148,7 +255,7 @@ function RoleCard({ r }) {
         </div>
         {flags.length > 0 && (
           <div className="mt-3">
-            <button type="button" onClick={(e) => { e.preventDefault(); setFlagsOpen(!flagsOpen) }} className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700">
+            <button type="button" onClick={(e) => { e.preventDefault(); setFlagsOpen(!flagsOpen) }} className="flex items-center gap-1 rounded text-xs text-amber-600 transition-colors duration-150 ease-snappy hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]">
               <AlertTriangle className="h-3.5 w-3.5" /> {flags.length} AI flag(s) to review
             </button>
             {flagsOpen && (
@@ -164,13 +271,13 @@ function RoleCard({ r }) {
 export default function Roles() {
   usePageTitle('Jobs')
   const { toast } = useToast()
+  const navigate = useNavigate()
   const [view, setView] = useState(() => localStorage.getItem(VIEW_KEY) || 'cards')
   const [roles, setRoles] = useState([])
   const [tableRows, setTableRows] = useState([])
   const [creating, setCreating] = useState(false)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
   const [cardSort, setCardSort] = useState('newest')
   const searchRef = useRef(null)
 
@@ -178,7 +285,7 @@ export default function Roles() {
     setLoading(true)
     try {
       if (view === 'list') {
-        const rows = await api.listRolesTable(search, statusFilter)
+        const rows = await api.listRolesTable(search)
         setTableRows(rows)
         setRoles(rows)
       } else {
@@ -191,7 +298,7 @@ export default function Roles() {
     } finally {
       setLoading(false)
     }
-  }, [view, search, statusFilter])
+  }, [view, search])
 
   useEffect(() => {
     const t = setTimeout(load, view === 'list' ? 280 : 0)
@@ -222,7 +329,6 @@ export default function Roles() {
         [r.position, r.department, r.location, ...(r.mandatory_skills || [])].join(' ').toLowerCase().includes(q),
       )
     }
-    if (statusFilter) list = list.filter((r) => r.status === statusFilter)
     if (cardSort === 'priority') {
       const order = { urgent: 0, high: 1, medium: 2, low: 3 }
       list.sort((a, b) => (order[a.priority] ?? 9) - (order[b.priority] ?? 9))
@@ -230,7 +336,7 @@ export default function Roles() {
       list.sort((a, b) => (b.difficulty_score || 0) - (a.difficulty_score || 0))
     }
     return list
-  }, [roles, search, statusFilter, cardSort])
+  }, [roles, search, cardSort])
 
   const listFiltered = useMemo(() => {
     if (view !== 'list') return tableRows
@@ -259,26 +365,6 @@ export default function Roles() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <select
-            className={`${inputClass} w-36`}
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="">All statuses</option>
-            <option value="open">Open</option>
-            <option value="closed">Closed</option>
-            <option value="on_hold">On hold</option>
-            <option value="draft">Draft</option>
-          </select>
-          {statusFilter && (
-            <button
-              type="button"
-              onClick={() => setStatusFilter('')}
-              className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-3 py-1 text-xs font-medium text-violet-800"
-            >
-              Status: {statusFilter} <X className="h-3 w-3" />
-            </button>
-          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -287,8 +373,8 @@ export default function Roles() {
               type="button"
               onClick={() => setViewMode('cards')}
               className={cx(
-                'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium',
-                view === 'cards' ? 'bg-violet-50 text-violet-800' : 'text-slate-500 hover:text-slate-700',
+                'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]',
+                view === 'cards' ? 'bg-brand-50 text-brand-800' : 'text-slate-500 hover:text-slate-700',
               )}
             >
               <LayoutGrid className="h-4 w-4" /> Cards
@@ -297,8 +383,8 @@ export default function Roles() {
               type="button"
               onClick={() => setViewMode('list')}
               className={cx(
-                'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium',
-                view === 'list' ? 'bg-violet-50 text-violet-800' : 'text-slate-500 hover:text-slate-700',
+                'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]',
+                view === 'list' ? 'bg-brand-50 text-brand-800' : 'text-slate-500 hover:text-slate-700',
               )}
             >
               <List className="h-4 w-4" /> List
@@ -319,8 +405,9 @@ export default function Roles() {
           onCancel={() => setCreating(false)}
           onCreated={(r, meta) => {
             setCreating(false)
-            toast((meta?.posted ? 'Job posted' : 'Job created') + (meta?.tpoNote || ''))
-            load()
+            toast(meta?.jdReady ? 'Job created — review & approve the JD' : 'Job created — generate the JD to review it')
+            // Land on the Job post tab so the HR reviews the drafted JD and publishes when ready.
+            navigate(`/roles/${r.id}?view=jd`)
           }}
         />
       )}
@@ -334,7 +421,7 @@ export default function Roles() {
       ) : (view === 'list' ? listFiltered : cardFiltered).length === 0 ? (
         <EmptyState
           icon={Briefcase}
-          title={search || statusFilter ? 'No matching jobs' : 'No jobs yet'}
+          title={search ? 'No matching jobs' : 'No jobs yet'}
           description={search ? 'Try a different search or filter.' : 'Create your first job to start hiring.'}
           action={!search && !creating && <Button onClick={() => setCreating(true)}><Plus className="h-4 w-4" /> Create Job</Button>}
         />
