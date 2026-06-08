@@ -117,9 +117,15 @@ class Settings:
     # production (otherwise tokens are forgeable). A default is used in dev with a warning.
     SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-insecure-change-me")
     TOKEN_TTL_HOURS: int = int(os.getenv("TOKEN_TTL_HOURS", "168"))  # session length (7 days)
-    # First-run bootstrap admin. If no users exist at startup, one is created with these.
+    # First-run bootstrap admin. Only auto-created when ADMIN_PASSWORD is set; otherwise the
+    # FIRST person to sign up via the UI becomes the admin/owner (no log-password hunting).
     ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@hr-os.local")
-    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")  # blank → a random one is generated + logged
+    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
+    # Self-service sign-up. The first user is ALWAYS allowed (becomes admin). After that,
+    # open sign-up is OFF by default — flip ALLOW_SIGNUP=true to let anyone register.
+    ALLOW_SIGNUP: bool = os.getenv("ALLOW_SIGNUP", "false").lower() == "true"
+    SIGNUP_DEFAULT_ROLE: str = os.getenv("SIGNUP_DEFAULT_ROLE", "admin")  # role for non-first signups
+    SIGNUP_ALLOWED_DOMAIN: str = os.getenv("SIGNUP_ALLOWED_DOMAIN", "")  # e.g. "ez.works" to restrict
 
     # CORS
     FRONTEND_ORIGIN: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")

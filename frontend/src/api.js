@@ -70,6 +70,8 @@ function enrichBoardRow(app) {
 export const api = {
   // Auth
   login: (email, password) => req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  signup: (name, email, password) => req('/auth/signup', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
+  canSignup: () => req('/auth/can-signup'),
   me: () => req('/auth/me'),
 
   aiStatus: () => req('/ai-status'),

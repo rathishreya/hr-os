@@ -202,6 +202,12 @@ class LoginRequest(BaseModel):
     password: str = Field(max_length=200)
 
 
+class SignupRequest(BaseModel):
+    name: str = Field(max_length=160)
+    email: str = Field(max_length=200)
+    password: str = Field(min_length=8, max_length=200)
+
+
 # ---------- Users & roles ----------
 ROLE_CHOICES = ["recruiter", "manager", "admin", "panellist"]
 

@@ -18,19 +18,20 @@ from .services.ai import ai
 
 
 def _ensure_admin() -> None:
-    """Create a bootstrap admin if there are no users yet, so first login works."""
+    """Optionally bootstrap an admin from ADMIN_EMAIL/ADMIN_PASSWORD. If ADMIN_PASSWORD is
+    NOT set, we create nothing — the first person to sign up via the UI becomes the admin."""
+    if not settings.ADMIN_PASSWORD:
+        return
     from . import models
     with SessionLocal() as db:
         if db.scalar(select(models.User).limit(1)):
             return
-        pw = settings.ADMIN_PASSWORD or security.generate_password()
         db.add(models.User(
             name="Admin", email=settings.ADMIN_EMAIL.strip().lower(),
-            roles=["admin"], password_hash=security.hash_password(pw), active=True,
+            roles=["admin"], password_hash=security.hash_password(settings.ADMIN_PASSWORD), active=True,
         ))
         db.commit()
-        src = "ADMIN_PASSWORD" if settings.ADMIN_PASSWORD else "auto-generated (set ADMIN_PASSWORD to control it)"
-        print(f"\n[auth] Bootstrap admin created -- email: {settings.ADMIN_EMAIL}  password: {pw}  [{src}]\n")
+        print(f"\n[auth] Bootstrap admin created -- email: {settings.ADMIN_EMAIL} (password from ADMIN_PASSWORD)\n")
 
 
 @asynccontextmanager
@@ -74,7 +75,7 @@ app.add_middleware(
 # Require a valid token on every /api/* route except the public allowlist. Non-/api
 # paths (the careers pages, the static UI, the candidate video-interview flow) are
 # public by design. Sets request.state.user_id for the current_user dependency.
-_PUBLIC_API = {"/api/auth/login", "/api/health", "/api/company", "/api/ai-status"}
+_PUBLIC_API = {"/api/auth/login", "/api/auth/signup", "/api/auth/can-signup", "/api/health", "/api/company", "/api/ai-status"}
 
 
 def _is_public_api(path: str) -> bool:
