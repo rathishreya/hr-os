@@ -63,7 +63,6 @@ cd backend
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 pip install -r requirements-optional.txt   # PDF/DOCX parsing (optional)
-python -m app.seed                          # demo data (optional)
 uvicorn app.main:app --reload
 ```
 API + docs → http://localhost:8000/docs
