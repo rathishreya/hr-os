@@ -674,6 +674,9 @@ def career_page(job_id: int, src: str = "", db: Session = Depends(get_db)):
                                    '<p class="muted">This role isn\'t published.</p>'
                                    '<a class="apply" href="/careers">View open roles</a></div>'), status_code=404)
     hr = job.hiring_request
+    # Prefer the LIVE requisition facts (what "Edit job" controls) so edits reflect here
+    # immediately; fall back to the generated JD title.
+    title = (hr.position if hr and hr.position else job.title) or "Role"
     # Carry a referral tag (e.g. ?src=linkedin from a shared post) onto the Apply link
     # so the applicant is attributed to that channel when they submit.
     apply_href = f"/careers/{job.id}/apply"
@@ -689,12 +692,15 @@ def career_page(job_id: int, src: str = "", db: Session = Depends(get_db)):
             chips.append(f'<span class="chip alt">{_e(hr.work_mode)}</span>')
         if hr.department:
             chips.append(f'<span class="chip alt">{_e(hr.department)}</span>')
+        # Show the recruiter's stated budget if set, else the AI-suggested range.
         sal = hr.suggested_salary or {}
-        if sal.get("min"):
+        if (hr.budget_ctc or "").strip():
+            chips.append(f'<span class="chip alt">{_e(hr.budget_ctc.strip())}</span>')
+        elif sal.get("min"):
             rng = f"{round(sal['min']/100000)}–{round(sal.get('max', sal['min'])/100000)} LPA" if sal.get("max") else f"{round(sal['min']/100000)} LPA"
             chips.append(f'<span class="chip alt">{_e(rng)}</span>')
     body = (
-        f'<div class="card"><h1>{_e(job.title or (hr.position if hr else "Role"))}</h1>'
+        f'<div class="card"><h1>{_e(title)}</h1>'
         f'<p class="sub">{_e(settings.COMPANY_NAME)}</p>'
         f'<div class="chips">{"".join(chips)}</div>'
         f'<div>{_description_html(job)}</div>'
@@ -702,4 +708,4 @@ def career_page(job_id: int, src: str = "", db: Session = Depends(get_db)):
         f'</div>'
     )
     head = f'<script type="application/ld+json">{_ld_script(ld)}</script>'
-    return HTMLResponse(_page(f"{job.title} — {settings.COMPANY_NAME}", body, head_extra=head))
+    return HTMLResponse(_page(f"{title} — {settings.COMPANY_NAME}", body, head_extra=head))

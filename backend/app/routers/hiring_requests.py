@@ -168,6 +168,15 @@ def update_hiring_request(hr_id: int, body: schemas.HiringRequestUpdate, db: Ses
         hr.interview_types = _clean_str_list(data["interview_types"])
         changed.append("interview_types")
 
+    # Keep the published JD title in sync with the role title so the careers page, feeds and
+    # JSON-LD reflect the edit. (The JD body is regenerated separately via Generate JD.)
+    if "position" in changed:
+        job = db.scalar(select(models.Job).where(models.Job.hiring_request_id == hr.id))
+        if job:
+            job.title = hr.position
+            if not (job.seo_title or "").strip():
+                job.seo_title = hr.position
+
     if changed:
         log(db, "hiring_request.updated", "hiring_request", hr.id, {"fields": changed})
     db.commit()
