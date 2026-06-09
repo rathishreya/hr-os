@@ -75,18 +75,98 @@ def _valid_through(hr: models.HiringRequest) -> str | None:
     return d if _DATE_RE.match(d) else None
 
 
+# ── Lightweight, SAFE formatting subset (bold/italic/underline + nested bullets) ──
+# Everything is HTML-escaped first, then only these known tokens become tags, so no
+# user input can inject markup. Matches the editor toolbar in the frontend.
+_BOLD = re.compile(r"\*\*(.+?)\*\*")
+_UNDER = re.compile(r"__(.+?)__")
+_ITAL = re.compile(r"\*([^*\n]+?)\*")
+
+
+def _fmt_inline(text: str) -> str:
+    s = _e(text)
+    s = _BOLD.sub(r"<strong>\1</strong>", s)
+    s = _UNDER.sub(r"<u>\1</u>", s)
+    s = _ITAL.sub(r"<em>\1</em>", s)
+    return s
+
+
+def _render_list(items) -> str:
+    """Render a list of line-strings as a (one-level) nested <ul>. An item indented by
+    2+ spaces nests under the previous top-level item; leading '- '/'* ' is stripped."""
+    items = [str(i) for i in (items or []) if str(i).strip()]
+    if not items:
+        return ""
+    out: list[str] = ["<ul>"]
+    li_open = sub_open = False
+    for it in items:
+        indent = len(it) - len(it.lstrip())
+        body = it.strip()
+        if body[:2] in ("- ", "* "):
+            body = body[2:].strip()
+        content = _fmt_inline(body)
+        if indent >= 2:
+            if not sub_open:
+                out.append("<ul>")
+                sub_open = True
+            out.append(f"<li>{content}</li>")
+        else:
+            if sub_open:
+                out.append("</ul>")
+                sub_open = False
+            if li_open:
+                out.append("</li>")
+            out.append(f"<li>{content}")
+            li_open = True
+    if sub_open:
+        out.append("</ul>")
+    if li_open:
+        out.append("</li>")
+    out.append("</ul>")
+    return "".join(out)
+
+
+def _markdown_block(text: str) -> str:
+    """Render free text: blank line = paragraph break, '- '/'* ' lines = bullets
+    (2-space indent = sub-bullet), everything else = paragraph. Inline formatting applied."""
+    out: list[str] = []
+    depth = 0
+
+    def close_to(target: int) -> None:
+        nonlocal depth
+        while depth > target:
+            out.append("</ul>")
+            depth -= 1
+
+    for raw in str(text or "").split("\n"):
+        line = raw.rstrip()
+        if not line.strip():
+            close_to(0)
+            continue
+        m = re.match(r"^(\s*)[-*]\s+(.*)$", line)
+        if m:
+            want = 2 if len(m.group(1)) >= 2 else 1
+            while depth < want:
+                out.append("<ul>")
+                depth += 1
+            close_to(want)
+            out.append(f"<li>{_fmt_inline(m.group(2).strip())}</li>")
+        else:
+            close_to(0)
+            out.append(f"<p>{_fmt_inline(line.strip())}</p>")
+    close_to(0)
+    return "".join(out)
+
+
 def _description_html(job: models.Job) -> str:
     parts: list[str] = []
     if job.description:
-        for para in str(job.description).split("\n"):
-            if para.strip():
-                parts.append(f"<p>{_e(para.strip())}</p>")
+        parts.append(_markdown_block(job.description))
 
     def section(title: str, items) -> None:
-        items = [i for i in (items or []) if str(i).strip()]
-        if items:
-            lis = "".join(f"<li>{_e(i)}</li>" for i in items)
-            parts.append(f"<h3>{_e(title)}</h3><ul>{lis}</ul>")
+        body = _render_list(items)
+        if body:
+            parts.append(f"<h3>{_e(title)}</h3>{body}")
 
     section("Responsibilities", job.responsibilities)
     section("Requirements", job.requirements)

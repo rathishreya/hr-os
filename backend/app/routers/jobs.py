@@ -28,6 +28,9 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
 
 
 _JOB_LIST_FIELDS = {"responsibilities", "requirements", "benefits", "screening_questions", "knockout_questions"}
+# These render as bullet lists where a leading indent makes a sub-bullet — so preserve
+# leading whitespace (only trim the trailing end), unlike the other list fields.
+_NESTABLE_LIST_FIELDS = {"responsibilities", "requirements", "benefits"}
 
 
 @router.patch("/{job_id}", response_model=schemas.JobOut)
@@ -39,7 +42,10 @@ def update_job(job_id: int, body: schemas.JobUpdate, db: Session = Depends(get_d
     data = body.model_dump(exclude_unset=True)
     for key, val in data.items():
         if key in _JOB_LIST_FIELDS and isinstance(val, list):
-            val = [str(x).strip() for x in val if str(x).strip()]
+            if key in _NESTABLE_LIST_FIELDS:
+                val = [str(x).rstrip() for x in val if str(x).strip()]  # keep leading indent
+            else:
+                val = [str(x).strip() for x in val if str(x).strip()]
         elif isinstance(val, str):
             val = val.strip()
         setattr(job, key, val)

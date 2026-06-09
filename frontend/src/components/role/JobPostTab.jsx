@@ -6,6 +6,11 @@ import { Card, Button, Field, Spinner, Modal, inputClass } from '../../ui'
 import { useToast } from '../Toast'
 import { CopyBtn, DistributionDetails, LinkedinIcon } from '../distribution/DistributionPanel'
 import { POST_PLATFORMS } from '../../constants'
+import RichTextField from '../RichTextField'
+import { richToHtml, richListToHtml } from '../../utils/richText'
+
+// Styling for rendered rich text (bold/italic/underline + nested bullets).
+const RICH = 'text-pretty text-sm leading-relaxed text-slate-700 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ul_ul]:mt-1 [&_ul_ul]:list-[circle] [&_strong]:font-semibold [&_em]:italic [&_u]:underline'
 
 function CheckRow({ on, onClick, children }) {
   return (
@@ -256,7 +261,9 @@ function EditableJDCard({ jd, company, onSaved }) {
     setEditing(true)
   }
   const upd = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }))
-  const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean)
+  const updv = (k) => (v) => setForm((p) => ({ ...p, [k]: v }))
+  // Keep leading indentation (used for sub-bullets); only drop trailing space + blank lines.
+  const lines = (s) => s.split('\n').map((x) => x.replace(/\s+$/, '')).filter((x) => x.trim())
 
   async function save() {
     setBusy(true)
@@ -295,10 +302,10 @@ function EditableJDCard({ jd, company, onSaved }) {
           <Field label="Title"><input className={inputClass} value={form.title} onChange={upd('title')} /></Field>
           <Field label="SEO title"><input className={inputClass} value={form.seo_title} onChange={upd('seo_title')} /></Field>
         </div>
-        <Field label="Description"><textarea className={`${inputClass} h-40 resize-y`} value={form.description} onChange={upd('description')} /></Field>
-        <Field label="Responsibilities" hint="One per line"><textarea className={`${inputClass} h-28 resize-y`} value={form.responsibilities} onChange={upd('responsibilities')} /></Field>
-        <Field label="Requirements" hint="One per line"><textarea className={`${inputClass} h-28 resize-y`} value={form.requirements} onChange={upd('requirements')} /></Field>
-        <Field label="Benefits" hint="One per line"><textarea className={`${inputClass} h-24 resize-y`} value={form.benefits} onChange={upd('benefits')} /></Field>
+        <RichTextField label="Description" value={form.description} onChange={updv('description')} rows={8} />
+        <RichTextField label="Responsibilities" hint="One per line · use Sub-point to nest" value={form.responsibilities} onChange={updv('responsibilities')} rows={6} />
+        <RichTextField label="Requirements" hint="One per line · use Sub-point to nest" value={form.requirements} onChange={updv('requirements')} rows={6} />
+        <RichTextField label="Benefits" hint="One per line" value={form.benefits} onChange={updv('benefits')} rows={4} />
         <Field label="About the company"><textarea className={`${inputClass} h-24 resize-y`} value={form.company_description} onChange={upd('company_description')} /></Field>
         <Field label="Culture"><textarea className={`${inputClass} h-20 resize-y`} value={form.culture} onChange={upd('culture')} /></Field>
       </Card>
@@ -314,20 +321,20 @@ function EditableJDCard({ jd, company, onSaved }) {
         </div>
         <Button variant="ghost" className="shrink-0 text-xs" onClick={start}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
       </div>
-      <p className="whitespace-pre-wrap text-pretty text-sm leading-relaxed text-slate-700">{jd.description}</p>
+      <div className={RICH} dangerouslySetInnerHTML={{ __html: richToHtml(jd.description) }} />
       {jd.responsibilities?.length > 0 && (
         <Section title="Responsibilities">
-          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">{jd.responsibilities.map((x, i) => <li key={i}>{x}</li>)}</ul>
+          <div className={RICH} dangerouslySetInnerHTML={{ __html: richListToHtml(jd.responsibilities) }} />
         </Section>
       )}
       {jd.requirements?.length > 0 && (
         <Section title="Requirements">
-          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">{jd.requirements.map((x, i) => <li key={i}>{x}</li>)}</ul>
+          <div className={RICH} dangerouslySetInnerHTML={{ __html: richListToHtml(jd.requirements) }} />
         </Section>
       )}
       {jd.benefits?.length > 0 && (
         <Section title="Benefits">
-          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">{jd.benefits.map((x, i) => <li key={i}>{x}</li>)}</ul>
+          <div className={RICH} dangerouslySetInnerHTML={{ __html: richListToHtml(jd.benefits) }} />
         </Section>
       )}
       {(company?.about || jd.company_description) && (
