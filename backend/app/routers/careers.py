@@ -692,13 +692,10 @@ def career_page(job_id: int, src: str = "", db: Session = Depends(get_db)):
             chips.append(f'<span class="chip alt">{_e(hr.work_mode)}</span>')
         if hr.department:
             chips.append(f'<span class="chip alt">{_e(hr.department)}</span>')
-        # Show the recruiter's stated budget if set, else the AI-suggested range.
-        sal = hr.suggested_salary or {}
+        # Salary chip = ONLY the recruiter's stated Budget/CTC (the live, editable value).
+        # No AI-suggested fallback — that was a static estimate that didn't track edits.
         if (hr.budget_ctc or "").strip():
             chips.append(f'<span class="chip alt">{_e(hr.budget_ctc.strip())}</span>')
-        elif sal.get("min"):
-            rng = f"{round(sal['min']/100000)}–{round(sal.get('max', sal['min'])/100000)} LPA" if sal.get("max") else f"{round(sal['min']/100000)} LPA"
-            chips.append(f'<span class="chip alt">{_e(rng)}</span>')
     body = (
         f'<div class="card"><h1>{_e(title)}</h1>'
         f'<p class="sub">{_e(settings.COMPANY_NAME)}</p>'
