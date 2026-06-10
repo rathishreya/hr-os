@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from ...config import settings
+from ..salary import canonicalize_salary
 from . import google_indexing, linkedin
 
 
@@ -49,6 +50,9 @@ def run(db: Session, job, *, channels=("google", "linkedin"), force: bool = Fals
             if not text:
                 title = job.title or (job.hiring_request.position if job.hiring_request else "a new role")
                 text = f"We're hiring: {title}. Apply here:"
+            # Never publish a salary figure that contradicts the recruiter's budget_ctc.
+            budget = (job.hiring_request.budget_ctc or "").strip() if job.hiring_request else ""
+            text = canonicalize_salary(text, budget)
             r = linkedin.share(text, url)
             results["linkedin"] = r
             entry = {"ok": bool(r.get("ok")), "at": _now_iso(), "error": r.get("error", "")}

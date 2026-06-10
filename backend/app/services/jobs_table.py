@@ -1,11 +1,11 @@
 """Enrich hiring requests for the jobs list/table view."""
 from __future__ import annotations
 
-import re
 from datetime import datetime, timezone
 from typing import Any
 
 from .. import models
+from .salary import parse_budget_ctc
 
 STAGES_APPLICATION = {"applied", "screening"}
 STAGES_SHORTLISTED = {"shortlisted"}
@@ -14,26 +14,10 @@ STAGES_PRE_OFFER = {"offer"}
 STAGES_OFFERED = {"hired"}
 
 
-def _parse_budget_ctc(text: str) -> tuple[int | None, int | None]:
-    if not text:
-        return None, None
-    nums = [int(float(x.replace(",", ""))) for x in re.findall(r"(\d+(?:\.\d+)?)", text)]
-    if not nums:
-        return None, None
-    if len(nums) >= 2:
-        a, b = nums[0], nums[1]
-        return (min(a, b), max(a, b))
-    val = nums[0]
-    if val < 100:
-        return int(val * 100000), int(val * 100000)
-    return val, val
-
-
 def _salary_bounds(hr: models.HiringRequest) -> tuple[int | None, int | None]:
-    sal = hr.suggested_salary or {}
-    if sal.get("min") and sal.get("max"):
-        return int(sal["min"]), int(sal["max"])
-    return _parse_budget_ctc(hr.budget_ctc or "")
+    # Bounds derive ONLY from the recruiter's budget_ctc (the displayed truth) so the table
+    # tracks budget edits and never shows the stale AI estimate; "—" when no budget is set.
+    return parse_budget_ctc(hr.budget_ctc or "")
 
 
 def _level_label(hr: models.HiringRequest) -> str:

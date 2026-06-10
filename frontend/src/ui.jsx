@@ -189,6 +189,12 @@ const MODAL_SIZES = {
 export function Modal({ open, onClose, title, children, footer, size = 'md' }) {
   const dialogRef = useRef(null)
   const titleId = useId()
+  // Keep the latest onClose in a ref so the focus effect can depend on `open` ALONE. If it
+  // depended on `onClose` (which callers usually pass as a fresh closure each render), every
+  // parent re-render — e.g. typing in an input inside the modal — would re-run this effect and
+  // yank focus back to the first focusable element after a single character.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   useEffect(() => {
     if (!open) return
@@ -205,10 +211,11 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }) {
         : []
 
     // Move focus into the dialog on open so keyboard/screen-reader users land inside it.
-    ;(focusable()[0] || dialog)?.focus()
+    // Respect an explicit [autofocus] field (e.g. a confirm-by-typing input) when present.
+    ;(dialog?.querySelector('[autofocus]') || focusable()[0] || dialog)?.focus()
 
     const onKey = (e) => {
-      if (e.key === 'Escape') { onClose(); return }
+      if (e.key === 'Escape') { onCloseRef.current?.(); return }
       if (e.key !== 'Tab') return
       // Trap Tab within the dialog.
       const items = focusable()
@@ -227,7 +234,8 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }) {
       // Return focus to whatever opened the modal.
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus()
     }
-  }, [open, onClose])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onClose read via ref on purpose
+  }, [open])
 
   if (!open) return null
 

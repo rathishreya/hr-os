@@ -8,6 +8,7 @@ import { CopyBtn, DistributionDetails, LinkedinIcon } from '../distribution/Dist
 import { POST_PLATFORMS } from '../../constants'
 import RichTextField from '../RichTextField'
 import { richToHtml, richListToHtml } from '../../utils/richText'
+import { canonicalizeSalary, canonicalizeSalaryList } from '../../utils/salary'
 
 // Styling for rendered rich text (bold/italic/underline + nested bullets).
 const RICH = 'text-pretty text-sm leading-relaxed text-slate-700 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ul_ul]:mt-1 [&_ul_ul]:list-[circle] [&_strong]:font-semibold [&_em]:italic [&_u]:underline'
@@ -241,7 +242,7 @@ function CopyBlock({ title, text }) {
 }
 
 // The JD card with an inline Edit mode (F6): turn the AI draft into editable fields, save via PATCH.
-function EditableJDCard({ jd, company, onSaved }) {
+function EditableJDCard({ jd, company, onSaved, budgetCtc = '' }) {
   const { toast } = useToast()
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -321,20 +322,22 @@ function EditableJDCard({ jd, company, onSaved }) {
         </div>
         <Button variant="ghost" className="shrink-0 text-xs" onClick={start}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
       </div>
-      <div className={RICH} dangerouslySetInnerHTML={{ __html: richToHtml(jd.description) }} />
+      {/* Salary figures the AI baked into the body are rewritten to the recruiter's budget so the
+          preview matches the public careers page (whose chip = budget_ctc). */}
+      <div className={RICH} dangerouslySetInnerHTML={{ __html: richToHtml(canonicalizeSalary(jd.description, budgetCtc)) }} />
       {jd.responsibilities?.length > 0 && (
         <Section title="Responsibilities">
-          <div className={RICH} dangerouslySetInnerHTML={{ __html: richListToHtml(jd.responsibilities) }} />
+          <div className={RICH} dangerouslySetInnerHTML={{ __html: richListToHtml(canonicalizeSalaryList(jd.responsibilities, budgetCtc)) }} />
         </Section>
       )}
       {jd.requirements?.length > 0 && (
         <Section title="Requirements">
-          <div className={RICH} dangerouslySetInnerHTML={{ __html: richListToHtml(jd.requirements) }} />
+          <div className={RICH} dangerouslySetInnerHTML={{ __html: richListToHtml(canonicalizeSalaryList(jd.requirements, budgetCtc)) }} />
         </Section>
       )}
       {jd.benefits?.length > 0 && (
         <Section title="Benefits">
-          <div className={RICH} dangerouslySetInnerHTML={{ __html: richListToHtml(jd.benefits) }} />
+          <div className={RICH} dangerouslySetInnerHTML={{ __html: richListToHtml(canonicalizeSalaryList(jd.benefits, budgetCtc)) }} />
         </Section>
       )}
       {(company?.about || jd.company_description) && (
@@ -354,7 +357,7 @@ function EditableJDCard({ jd, company, onSaved }) {
   )
 }
 
-export default function JobPostTab({ roleId, jd, onGenerated }) {
+export default function JobPostTab({ roleId, jd, onGenerated, budgetCtc = '' }) {
   const { toast } = useToast()
   const [genBusy, setGenBusy] = useState(false)
   const [postOpen, setPostOpen] = useState(false)
@@ -398,12 +401,12 @@ export default function JobPostTab({ roleId, jd, onGenerated }) {
       </div>
       <PostJobModal open={postOpen} roleId={roleId} jd={jd} onClose={() => setPostOpen(false)} onPublished={(u) => { onGenerated(u); setPostOpen(false) }} />
       <DistributeCard jd={jd} />
-      <EditableJDCard jd={jd} company={company} onSaved={onGenerated} />
+      <EditableJDCard jd={jd} company={company} onSaved={onGenerated} budgetCtc={budgetCtc} />
       <VideoQuestionsCard jd={jd} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <CopyBlock title="LinkedIn" text={jd.linkedin_copy} />
-        <CopyBlock title="Naukri / Indeed" text={jd.naukri_copy} />
-        <CopyBlock title="Social hook" text={jd.social_copy} />
+        <CopyBlock title="LinkedIn" text={canonicalizeSalary(jd.linkedin_copy, budgetCtc)} />
+        <CopyBlock title="Naukri / Indeed" text={canonicalizeSalary(jd.naukri_copy, budgetCtc)} />
+        <CopyBlock title="Social hook" text={canonicalizeSalary(jd.social_copy, budgetCtc)} />
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {jd.screening_questions?.length > 0 && (

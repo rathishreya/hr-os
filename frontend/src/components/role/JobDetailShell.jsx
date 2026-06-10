@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowLeft, Link2, UserPlus, ChevronDown, MoreHorizontal,
-  Copy, Archive, Trash2, Sparkles, FileText, Pencil,
+  Copy, Archive, Trash2, Sparkles, FileText, Pencil, RotateCcw,
 } from 'lucide-react'
 import { Badge, Button, cx } from '../../ui'
 import { useToast } from '../Toast'
@@ -32,6 +32,7 @@ export default function JobDetailShell({
   onEdit,
   onDuplicate,
   onCloseRole,
+  onReopenRole,
   onDelete,
   roleStatus,
 }) {
@@ -140,9 +141,13 @@ export default function JobDetailShell({
                 <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50" onClick={() => { onDuplicate?.(); setMenuOpen(false) }}>
                   <Copy className="h-3.5 w-3.5" /> Duplicate
                 </button>
-                {roleStatus === 'open' && (
+                {roleStatus === 'open' ? (
                   <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50" onClick={() => { onCloseRole?.(); setMenuOpen(false) }}>
                     <Archive className="h-3.5 w-3.5" /> Close role
+                  </button>
+                ) : (
+                  <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-emerald-700 transition-colors duration-150 ease-snappy hover:bg-emerald-50 focus-visible:outline-none focus-visible:bg-emerald-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500/50" onClick={() => { onReopenRole?.(); setMenuOpen(false) }}>
+                    <RotateCcw className="h-3.5 w-3.5" /> Reopen role
                   </button>
                 )}
                 <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-600 transition-colors duration-150 ease-snappy hover:bg-rose-50 focus-visible:outline-none focus-visible:bg-rose-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500/50" onClick={() => { onDelete?.(); setMenuOpen(false) }}>

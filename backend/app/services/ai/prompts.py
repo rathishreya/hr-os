@@ -114,6 +114,12 @@ def job_description(hr: dict[str, Any]) -> tuple[str, str]:
   "interview_rubric": [{{"area": "<skill area>", "what_to_assess": "<...>", "weight": <0-1>}}]
 }}
 
+Rules:
+- Do NOT state any specific salary, CTC, pay, stipend or compensation figure ANYWHERE (not in
+  description, benefits, responsibilities, requirements, linkedin_copy, naukri_copy or
+  social_copy). The platform shows the recruiter's budget separately. You may write
+  "competitive compensation" without a number, but never invent a range like "5-7 LPA".
+
 Base it on this hiring request:
 {json.dumps(hr, indent=2, default=str)}"""
     return _SYSTEM, user

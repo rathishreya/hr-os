@@ -21,6 +21,7 @@ from .. import models
 from ..config import settings
 from ..database import get_db
 from ..services import recruitment, resume_parser
+from ..services.salary import canonicalize_salary, canonicalize_salary_list, parse_budget_ctc
 
 router = APIRouter(tags=["careers"])
 
@@ -159,12 +160,17 @@ def _markdown_block(text: str) -> str:
 
 
 def _description_html(job: models.Job) -> str:
+    # The recruiter's budget_ctc is the single source of truth for salary. Rewrite any salary
+    # figure the AI baked into the body so it can never contradict the chip (or strip it when
+    # no budget is set). Non-salary numbers (years, head-counts, %) are left untouched.
+    hr = job.hiring_request
+    budget = (hr.budget_ctc or "").strip() if hr else ""
     parts: list[str] = []
     if job.description:
-        parts.append(_markdown_block(job.description))
+        parts.append(_markdown_block(canonicalize_salary(job.description, budget)))
 
     def section(title: str, items) -> None:
-        body = _render_list(items)
+        body = _render_list(canonicalize_salary_list(items, budget))
         if body:
             parts.append(f"<h3>{_e(title)}</h3>{body}")
 
@@ -208,18 +214,21 @@ def _job_posting_ld(job: models.Job) -> dict:
         if (hr.work_mode or "").lower() == "remote":
             ld["jobLocationType"] = "TELECOMMUTE"
             ld["applicantLocationRequirements"] = {"@type": "Country", "name": "India"}
-        sal = hr.suggested_salary or {}
-        if sal.get("min"):
+        # baseSalary derives from the SAME budget_ctc shown in the chip — never the AI estimate,
+        # so Google for Jobs can't index a salary that differs from the visible page. Omitted
+        # entirely when no budget is set (no fabricated figure).
+        lo, hi = parse_budget_ctc(hr.budget_ctc or "")
+        if lo:
             value: dict = {
                 "@type": "QuantitativeValue",
-                "minValue": sal.get("min"),
+                "minValue": lo,
                 "unitText": "YEAR",
             }
-            if sal.get("max"):
-                value["maxValue"] = sal.get("max")
+            if hi and hi != lo:
+                value["maxValue"] = hi
             ld["baseSalary"] = {
                 "@type": "MonetaryAmount",
-                "currency": sal.get("currency") or "INR",
+                "currency": "INR",
                 "value": value,
             }
     return ld
@@ -333,14 +342,11 @@ def career_structured_data(job_id: int, db: Session = Depends(get_db)):
 # Register the feed URL once with each free aggregator and they crawl it on a
 # schedule — no paid API, no ToS-violating bots. See GET /api/distribution/channels.
 
-def _salary_text(hr: models.Job | None) -> str:
+def _salary_text(hr: models.HiringRequest | None) -> str:
+    # Job-board feeds get the SAME salary as the page chip — the recruiter's budget_ctc — so an
+    # aggregator never advertises a different figure. (The AI suggested_salary is advisory only.)
     if not hr:
         return ""
-    sal = hr.suggested_salary or {}
-    if sal.get("min"):
-        cur = sal.get("currency") or "INR"
-        rng = f"{sal['min']}-{sal['max']}" if sal.get("max") else f"{sal['min']}"
-        return f"{cur} {rng} per year"
     return (hr.budget_ctc or "").strip()
 
 

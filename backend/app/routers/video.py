@@ -310,6 +310,11 @@ def submit_recording(
     vi = db.get(models.VideoInterview, interview_id)
     if not vi:
         raise HTTPException(404, "Interview not found")
+    # One-time link: once an interview has been submitted (uploading/evaluating or finished),
+    # reject any further submission so the same URL can't be used to record again. A recruiter
+    # can DELETE the interview to deliberately allow a re-take.
+    if vi.status in ("processing", "completed"):
+        raise HTTPException(409, "This interview has already been submitted.")
     try:
         vi.timeline = json.loads(timeline) if timeline else []
     except (ValueError, TypeError):

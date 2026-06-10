@@ -191,9 +191,15 @@ def _delete_hiring_request_cascade(db: Session, hr: models.HiringRequest) -> int
     ).all()
     app_ids = [a.id for a in apps]
     if app_ids:
+        # Delete EVERY child that references these applications first, or Postgres rejects the
+        # delete with a foreign-key violation (which is why "posted" jobs — the ones that have
+        # accumulated interview rounds / video interviews — wouldn't delete). VideoInterview's
+        # answers cascade via the ORM relationship.
         for model, col in (
             (models.EmailMessage, models.EmailMessage.application_id),
             (models.ScreeningInterview, models.ScreeningInterview.application_id),
+            (models.InterviewRound, models.InterviewRound.application_id),
+            (models.VideoInterview, models.VideoInterview.application_id),
             (models.Document, models.Document.application_id),
             (models.OnboardingPlan, models.OnboardingPlan.application_id),
         ):

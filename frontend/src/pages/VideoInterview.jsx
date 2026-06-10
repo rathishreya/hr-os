@@ -8,7 +8,9 @@ import { blobToPCM16k } from '../utils/audio'
 import { usePageTitle } from '../hooks/usePageTitle'
 
 const MAX_TOTAL_SECONDS = 10 * 60   // hard cap on the whole session
-const SILENCE_MS = 2600             // auto-advance after this much silence once they've spoken
+const SILENCE_MS = 4000             // a natural pause this long starts the "moving on" countdown
+const GRACE_MS = 4000               // visible countdown shown before we actually advance — keep
+                                    // talking during it to cancel and continue your answer
 const MIN_ANSWER_MS = 1500          // don't advance in the first moment
 const MAX_WAIT_NO_SPEECH = 60000    // if they never speak, move on after this
 const VOL_THRESHOLD = 0.025         // RMS above this = speaking
@@ -55,6 +57,7 @@ export default function VideoInterview() {
   const [speaking, setSpeaking] = useState(false)
   const [listening, setListening] = useState(false)
   const [consent, setConsent] = useState(false)
+  const [countdown, setCountdown] = useState(null)   // seconds left before auto-advancing (null = not counting)
 
   const streamRef = useRef(null)
   const liveRef = useRef(null)
@@ -74,9 +77,15 @@ export default function VideoInterview() {
   const hasSpokenRef = useRef(false)
   const lastVoiceRef = useRef(0)
   const listenStartRef = useRef(0)
+  const countdownStartRef = useRef(0)   // when the auto-advance countdown began (0 = not counting)
 
   useEffect(() => {
-    api.getVideoInterview(appId).then(setInterview).catch((e) => setErr(e.message))
+    api.getVideoInterview(appId).then((vi) => {
+      setInterview(vi)
+      // One-time link: if this interview was already submitted (uploading/evaluating or done),
+      // show the completed screen instead of letting them record again with the same URL.
+      if (vi.status === 'processing' || vi.status === 'completed') setPhase('already')
+    }).catch((e) => setErr(e.message))
     api.company().then(setCompany).catch(() => {})
     return () => cleanup()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,6 +122,7 @@ export default function VideoInterview() {
       if (started) return
       started = true
       setSpeaking(false)
+      cancelCountdown()
       hasSpokenRef.current = false
       lastVoiceRef.current = Date.now()
       listenStartRef.current = Date.now()
@@ -129,8 +139,16 @@ export default function VideoInterview() {
     setTimeout(begin, Math.max(4000, (text || '').length * 80))
   }
 
+  function cancelCountdown() {
+    if (countdownStartRef.current) {
+      countdownStartRef.current = 0
+      setCountdown(null)
+    }
+  }
+
   function advance() {
     if (!listeningRef.current && phaseRef.current === 'live') { /* allow manual even if not listening */ }
+    cancelCountdown()
     listeningRef.current = false
     setListening(false)
     const cur = idxRef.current
@@ -151,8 +169,20 @@ export default function VideoInterview() {
     const rms = Math.sqrt(sum / buf.length)
     const t = Date.now()
     if (rms > VOL_THRESHOLD) { hasSpokenRef.current = true; lastVoiceRef.current = t }
-    if (hasSpokenRef.current && t - lastVoiceRef.current > SILENCE_MS && t - listenStartRef.current > MIN_ANSWER_MS) advance()
-    else if (!hasSpokenRef.current && t - listenStartRef.current > MAX_WAIT_NO_SPEECH) advance()
+
+    const pausedAfterSpeaking = hasSpokenRef.current && t - lastVoiceRef.current > SILENCE_MS && t - listenStartRef.current > MIN_ANSWER_MS
+    const neverSpoke = !hasSpokenRef.current && t - listenStartRef.current > MAX_WAIT_NO_SPEECH
+    if (pausedAfterSpeaking || neverSpoke) {
+      // Don't jump straight to the next question — start a visible countdown so the candidate is
+      // warned, and keep talking cancels it. Only advance once the countdown actually elapses.
+      if (!countdownStartRef.current) countdownStartRef.current = t
+      const remaining = GRACE_MS - (t - countdownStartRef.current)
+      if (remaining <= 0) advance()
+      else setCountdown(Math.max(1, Math.ceil(remaining / 1000)))
+    } else if (countdownStartRef.current) {
+      // They resumed speaking (or the pause was too short) — stop the countdown.
+      cancelCountdown()
+    }
   }
 
   async function startInterview() {
@@ -198,6 +228,7 @@ export default function VideoInterview() {
   function finish() {
     clearInterval(tickRef.current)
     clearInterval(detectRef.current)
+    cancelCountdown()
     listeningRef.current = false
     window.speechSynthesis?.cancel()
     setPhase('processing')
@@ -233,6 +264,21 @@ export default function VideoInterview() {
   const companyAbout = (company?.about || '').split(/\n\s*\n/)[0].trim()
   const firstName = (interview.candidate_name || '').trim().split(/\s+/)[0] || ''
 
+  if (phase === 'already') {
+    return (
+      <Shell company={company}>
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><CheckCircle2 className="h-8 w-8" /></div>
+          <h1 className="text-2xl font-bold text-balance text-slate-900">Interview already completed</h1>
+          <p className="mx-auto mt-2 max-w-md text-pretty text-sm leading-relaxed text-slate-600">
+            You've already submitted your interview for <strong>{interview.role_position}</strong>{companyName ? <> at <strong>{companyName}</strong></> : ''}. This link can only be used once, so there's nothing more to do here.
+          </p>
+          <p className="mt-5 text-xs text-slate-400">If you think this is a mistake, reach out to the hiring team. You can safely close this tab.</p>
+        </div>
+      </Shell>
+    )
+  }
+
   if (phase === 'done') {
     return (
       <Shell company={company}>
@@ -253,7 +299,7 @@ export default function VideoInterview() {
     const estMins = Math.max(2, Math.ceil(qCount * 1.5))
     const steps = [
       { icon: Volume2, title: 'Listen', text: `The AI interviewer reads each question aloud — ${qCount} in total, one at a time.` },
-      { icon: Mic, title: 'Answer out loud', text: 'Speak naturally. When you pause, the next question begins on its own.' },
+      { icon: Mic, title: 'Answer out loud', text: 'Speak naturally. When you pause, a short countdown appears before the next question — keep talking to continue.' },
       { icon: Video, title: 'One continuous take', text: 'Everything records in a single take. No pausing or re-recording — just be yourself.' },
     ]
     const tips = [
@@ -374,6 +420,14 @@ export default function VideoInterview() {
                 ? <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600/90 px-3 py-1.5 text-xs font-medium text-white shadow-lg backdrop-blur-sm"><Mic className="h-3.5 w-3.5 animate-pulse" /> Listening — answer now</span>
                 : null)}
           </div>
+          {/* Auto-advance warning — shown only during the grace countdown, so moving on is never a surprise */}
+          {phase === 'live' && countdown != null && (
+            <div className="absolute right-3 top-3">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/95 px-3 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur-sm">
+                Next question in {countdown}s — keep talking to stay
+              </span>
+            </div>
+          )}
           {/* Question caption */}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-5 pt-10">
             <p className="text-pretty text-lg font-semibold leading-snug text-white">{questions[idx]}</p>
@@ -387,7 +441,7 @@ export default function VideoInterview() {
           </div>
         ) : (
           <div className="mt-4 flex items-center justify-between gap-3 text-xs">
-            <span className="text-slate-400">{speaking ? 'Listen to the question…' : 'The next question starts automatically when you finish speaking.'}</span>
+            <span className={cx(countdown != null ? 'font-medium text-amber-600' : 'text-slate-400')}>{countdown != null ? `Moving to the next question in ${countdown}s — keep talking to continue your answer.` : speaking ? 'Listen to the question…' : 'When you finish speaking, you’ll get a short countdown before the next question.'}</span>
             <button type="button" onClick={advance} className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 font-semibold text-brand-600 transition-colors duration-150 ease-snappy hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]">{idx + 1 >= questions.length ? 'Finish now' : 'Done — next'} →</button>
           </div>
         )}

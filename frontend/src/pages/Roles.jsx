@@ -289,7 +289,9 @@ export default function Roles() {
         setTableRows(rows)
         setRoles(rows)
       } else {
-        const rows = await api.listRoles()
+        // Use the enriched (table) endpoint even for cards so each card has its funnel counts
+        // (the "N candidates" badge). Cards filter client-side, so fetch the full set (no query).
+        const rows = await api.listRolesTable()
         setRoles(rows)
       }
     } catch {

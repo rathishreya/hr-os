@@ -213,7 +213,9 @@ export default function JobsListTable({ rows, onStatusChange }) {
                   <td className="whitespace-nowrap px-2 py-2.5 text-slate-600">{row.level_label || '—'}</td>
                   <td className="whitespace-nowrap px-2 py-2.5 text-slate-600">{row.location || '—'}</td>
                   <td className="px-2 py-2.5 text-center">
-                    <PipelinePill count={f.application || 0} roleId={row.id} stage="application" />
+                    {/* Total applications received — the headline "how many applied" count, which
+                        stays accurate even after candidates progress past the applied stage. */}
+                    <PipelinePill count={f.total || 0} roleId={row.id} stage="" />
                   </td>
                   <td className="px-2 py-2.5 text-center">
                     <PipelinePill count={f.shortlisted || 0} roleId={row.id} stage="shortlisted" />

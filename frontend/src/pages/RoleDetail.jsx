@@ -96,6 +96,16 @@ export default function RoleDetail() {
     }
   }
 
+  async function reopenRole() {
+    try {
+      const updated = await api.updateRole(id, { status: 'open' })
+      setRole(updated)
+      toast('Role reopened')
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+  }
+
   function openDeleteFlow() {
     setDeleteConfirmText('')
     setDeleteStep(1)
@@ -140,6 +150,7 @@ export default function RoleDetail() {
         onEdit={() => setEditOpen(true)}
         onDuplicate={duplicateRole}
         onCloseRole={closeRole}
+        onReopenRole={reopenRole}
         onDelete={openDeleteFlow}
         roleStatus={role.status}
       />
@@ -171,7 +182,7 @@ export default function RoleDetail() {
           </div>
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-200/60 bg-white p-5 shadow-sm">
-            <JobPostTab roleId={id} jd={jd} onGenerated={setJd} />
+            <JobPostTab roleId={id} jd={jd} onGenerated={setJd} budgetCtc={role.budget_ctc} />
           </div>
         )}
       </div>
