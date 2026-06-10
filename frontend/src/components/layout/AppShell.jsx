@@ -20,14 +20,14 @@ function SidebarContent({ onNavigate }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-8 flex items-center gap-2.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-fuchsia-600 text-lg font-black text-white">H</div>
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-fuchsia-600 text-lg font-black text-white shadow-sm shadow-brand-600/30 ring-1 ring-inset ring-white/20">H</div>
         <div>
           <div className="text-sm font-bold tracking-tight text-slate-900">HR-OS</div>
           <div className="text-[10px] font-medium text-slate-500">by EZ Works</div>
         </div>
       </div>
 
-      <nav className="flex flex-col gap-1">
+      <nav className="flex flex-col gap-0.5">
         {NAV.map((n) => {
           const Icon = n.icon
           return (
@@ -37,19 +37,25 @@ function SidebarContent({ onNavigate }) {
               end={n.end}
               onClick={onNavigate}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${
-                  isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${
+                  isActive
+                    ? 'bg-brand-50 font-semibold text-brand-700 shadow-[inset_0_0_0_1px] shadow-brand-100'
+                    : 'font-medium text-slate-500 hover:bg-slate-100/70 hover:text-slate-900'
                 }`
               }
             >
-              <Icon className="h-4 w-4 shrink-0 opacity-70" />
-              {n.label}
+              {({ isActive }) => (
+                <>
+                  <Icon className={`h-4 w-4 shrink-0 transition-opacity duration-150 ${isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-90'}`} />
+                  {n.label}
+                </>
+              )}
             </NavLink>
           )
         })}
       </nav>
 
-      <div className="mt-auto space-y-3">
+      <div className="mt-auto space-y-3 border-t border-slate-100 pt-4">
         <NavLink
           to="/settings"
           onClick={onNavigate}

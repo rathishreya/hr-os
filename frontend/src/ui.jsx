@@ -3,9 +3,16 @@ import { X } from 'lucide-react'
 
 export const cx = (...c) => c.filter(Boolean).join(' ')
 
-export function Card({ className = '', children }) {
+export function Card({ className = '', hover = false, children }) {
   return (
-    <div className={cx('rounded-2xl border border-slate-200 bg-white shadow-sm', className)}>
+    <div
+      className={cx(
+        'rounded-2xl border border-slate-200 bg-white shadow-card',
+        // Opt-in lift for interactive cards (links/buttons): a small, snappy rise on hover.
+        hover && 'transition duration-200 ease-snappy hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-card-hover',
+        className,
+      )}
+    >
       {children}
     </div>
   )
@@ -13,7 +20,7 @@ export function Card({ className = '', children }) {
 
 export function Button({ variant = 'primary', className = '', ...props }) {
   const styles = {
-    primary: 'bg-brand-600 hover:bg-brand-700 text-white shadow-sm shadow-brand-600/20',
+    primary: 'bg-brand-600 hover:bg-brand-700 text-white shadow-sm shadow-brand-600/25 hover:shadow-md hover:shadow-brand-600/30',
     ghost: 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200',
     subtle: 'bg-transparent hover:bg-slate-100 text-slate-500 hover:text-slate-800',
     danger: 'bg-rose-600 hover:bg-rose-700 text-white',
@@ -108,7 +115,7 @@ export function Field({ label, children, hint }) {
 }
 
 export const inputClass =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100'
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition-colors duration-150 ease-snappy placeholder:text-slate-400 hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25'
 
 export const stageTone = {
   applied: 'gray', screening: 'blue', shortlisted: 'violet',
@@ -248,7 +255,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }) {
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         tabIndex={-1}
-        className={`relative z-10 flex max-h-[92vh] w-full ${MODAL_SIZES[size] || MODAL_SIZES.md} flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-xl focus:outline-none`}
+        className={`relative z-10 flex max-h-[92vh] w-full ${MODAL_SIZES[size] || MODAL_SIZES.md} flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-pop focus:outline-none menu-in`}
       >
         <div className="mb-4 flex shrink-0 items-start gap-4">
           {title && <h2 id={titleId} className="text-lg font-semibold text-slate-900">{title}</h2>}

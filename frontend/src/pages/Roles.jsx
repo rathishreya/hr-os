@@ -248,7 +248,7 @@ function RoleCard({ r }) {
         {r.ai_summary && <p className="mt-3 line-clamp-2 text-sm text-slate-500">{r.ai_summary}</p>}
         <div className="mt-4 flex flex-wrap gap-2">
           <Badge tone={r.status === 'open' ? 'green' : 'gray'}>{r.status}</Badge>
-          {total != null && <Badge tone="violet">{total} candidates</Badge>}
+          {total != null && <Badge tone="violet">{total} candidate{total === 1 ? '' : 's'}</Badge>}
           <Badge tone={{ 'very hard': 'rose', hard: 'amber', moderate: 'blue', easy: 'green' }[r.difficulty_label] || 'gray'}>
             {r.difficulty_label || 'n/a'} · {r.difficulty_score}/100
           </Badge>

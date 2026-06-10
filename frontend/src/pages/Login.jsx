@@ -44,17 +44,19 @@ export default function Login() {
   const showSignupToggle = canSignup?.open
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100/60 px-4">
-      <div className="w-full max-w-sm">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-50 px-4">
+      {/* Calm brand wash — a faint glow at the top, never loud (restrained product brand). */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[460px] bg-[radial-gradient(60%_120%_at_50%_-10%,var(--color-brand-100)_0%,transparent_62%)]" />
+      <div className="relative w-full max-w-sm">
         <div className="mb-6 flex items-center justify-center gap-2.5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-fuchsia-600 text-lg font-black text-white">H</div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-fuchsia-600 text-lg font-black text-white shadow-sm shadow-brand-600/30 ring-1 ring-inset ring-white/20">H</div>
           <div className="leading-tight">
             <div className="text-base font-bold tracking-tight text-slate-900">HR-OS</div>
             <div className="text-xs text-slate-400">by EZ Works</div>
           </div>
         </div>
 
-        <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-pop">
           <h1 className="text-lg font-bold text-slate-900">{isSignup ? (firstUser ? 'Create your workspace' : 'Create your account') : 'Sign in'}</h1>
           <p className="mt-1 text-sm text-slate-500">
             {isSignup

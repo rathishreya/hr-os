@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Search, Users, RefreshCw } from 'lucide-react'
 import { api } from '../api'
 import { Spinner, PageHeader, EmptyState, inputClass, Button } from '../ui'
@@ -6,15 +6,6 @@ import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import CandidateProfileModal from '../components/CandidateProfileModal'
 import TalentPoolTable from '../components/talent/TalentPoolTable'
-
-function StatChip({ label, value }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
-      <div className="text-xl font-bold tabular-nums text-slate-900">{value}</div>
-      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</div>
-    </div>
-  )
-}
 
 export default function Candidates() {
   usePageTitle('Talent Pool')
@@ -48,13 +39,6 @@ export default function Candidates() {
     }
   }
 
-  const stats = useMemo(() => {
-    const withActive = rows.filter((r) => r.active_applications > 0).length
-    const scored = rows.filter((r) => r.top_score > 0)
-    const avg = scored.length ? Math.round(scored.reduce((s, r) => s + r.top_score, 0) / scored.length) : 0
-    return { total: rows.length, withActive, avg }
-  }, [rows])
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -69,11 +53,6 @@ export default function Candidates() {
       />
 
       <div className="flex flex-wrap items-end gap-4">
-        <div className="flex flex-wrap gap-3">
-          <StatChip label="Candidates" value={stats.total} />
-          <StatChip label="In active pipeline" value={stats.withActive} />
-          <StatChip label="Avg top score" value={stats.avg || '—'} />
-        </div>
         <div className="relative min-w-[280px] flex-1 max-w-lg">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
