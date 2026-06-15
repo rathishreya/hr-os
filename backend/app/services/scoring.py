@@ -42,7 +42,7 @@ def _num(x: Any, default: float = 60.0) -> float:
 
 
 def _method_counts(reasons: dict[str, dict]) -> dict[str, int]:
-    counts = {"exact": 0, "synonym": 0, "related": 0, "subset": 0, "title": 0, "semantic": 0}
+    counts = {"exact": 0, "synonym": 0, "related": 0, "near": 0, "subset": 0, "title": 0, "resume": 0, "semantic": 0}
     for r in reasons.values():
         if r.get("reason") in counts:
             counts[r["reason"]] += 1
@@ -53,8 +53,10 @@ def _method_counts(reasons: dict[str, dict]) -> dict[str, int]:
 _REASON_PHRASE = {
     "synonym": "synonym of",
     "related": "implied by",
+    "near": "related to",
     "subset": "matches",
     "title": "role-title match",
+    "resume": "found in resume",
     "semantic": "similar to",
 }
 
@@ -77,7 +79,9 @@ def keyword_skill_match_detailed(
     cand = list(parsed.get("skills", []) or [])
     mand = list(hr.get("mandatory_skills", []) or [])
     pref = list(hr.get("preferred_skills", []) or [])
-    rep = skill_normalize.match_report(cand, mand, pref)
+    # Pass the raw resume text so a required skill counts when it appears in the body even if
+    # it wasn't extracted as a discrete skill (fixes "0 matched skills" on e.g. QA resumes).
+    rep = skill_normalize.match_report(cand, mand, pref, extra_text=parsed.get("_resume_text", ""))
 
     n_mand = len(rep["mandatory_canon"])
     n_pref = len(rep["preferred_canon"])
@@ -130,8 +134,16 @@ def finalize(
     weights = normalize_weights(weights or DEFAULT_WEIGHTS)
 
     kw_skill, matched, missing, match_reasons = keyword_skill_match_detailed(parsed, hr)
-    # Blend keyword overlap with semantic similarity for the skill dimension.
-    skill = _clamp(0.65 * kw_skill + 0.35 * similarity * 100)
+    # Blend keyword overlap with semantic similarity for the skill dimension — BUT only when a
+    # real embedder (Ollama) is configured. The default hash embedder returns ~0 similarity for
+    # reworded skills, which would wrongly drag the skill score down, so use keyword alone there.
+    semantic_ok = skill_normalize._semantic_enabled()
+    if semantic_ok:
+        skill = _clamp(0.65 * kw_skill + 0.35 * similarity * 100)
+        skill_blend = {"keyword": 0.65, "semantic": 0.35}
+    else:
+        skill = _clamp(kw_skill)
+        skill_blend = {"keyword": 1.0, "semantic": 0.0}
     exp = experience_match(parsed, hr)
 
     ai_dims = ai_result.get("dimensions", {})
@@ -212,7 +224,7 @@ def finalize(
         "contributions": contributions,
         "keyword_skill": round(kw_skill),
         "semantic_skill": round(similarity * 100),
-        "skill_blend": {"keyword": 0.65, "semantic": 0.35},
+        "skill_blend": skill_blend,
         "weights": weights,
         "similarity": round(similarity, 4),
         "thresholds": {"strong_yes": 80, "yes": 65, "maybe": 50},

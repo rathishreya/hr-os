@@ -31,6 +31,7 @@ const EMPTY_ROUND = {
   notes: '',
   feedback: '',
   assessment_id: null,
+  send_invite: false,
 }
 
 function typeLabel(v) {
@@ -159,6 +160,19 @@ function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, busy, is
             />
           </Field>
         </div>
+        {isNew && (
+          <div className="sm:col-span-2">
+            <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-white p-2.5 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={!!form.send_invite}
+                onChange={(e) => setForm({ ...form, send_invite: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              />
+              <span>Email the candidate the date, time &amp; meeting link with a calendar invite (.ics). <span className="text-slate-400">Needs a date &amp; time.</span></span>
+            </label>
+          </div>
+        )}
       </div>
       {form.interview_type === 'assessment' && (
         <Field label="Assessment to send" hint="Manage assessments on the Assessments page">

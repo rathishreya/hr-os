@@ -727,7 +727,11 @@ async def submit_application(
             "salary_expectation": expected_ctc.strip(),
             "notice_period": notice_period.strip(),
         }
-        app = recruitment.apply_candidate(db, cand, hr, auto_score=True)
+        # "Applied by" for a public application = the channel they came through (Careers,
+        # Referral, LinkedIn, ...), since the candidate applied themselves.
+        app = recruitment.apply_candidate(
+            db, cand, hr, auto_score=True, applied_by=(chosen_source or "careers").replace("_", " ").title(),
+        )
         if answers:
             app.application_answers = answers
         db.commit()

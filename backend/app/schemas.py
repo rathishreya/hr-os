@@ -148,6 +148,7 @@ class ApplicationOut(BaseModel):
     fit_label: str
     human_override: dict[str, Any]
     application_answers: list[Any] = Field(default_factory=list)
+    applied_by: str = ""
     scored_at: datetime | None
     created_at: datetime
 
@@ -388,6 +389,7 @@ class InterviewRoundCreate(BaseModel):
     notes: str = ""
     feedback: str = ""
     assessment_id: int | None = None
+    send_invite: bool = False  # email the candidate the date/time/link + a calendar (.ics) invite
 
 
 class BulkInterviewRoundsRequest(BaseModel):
@@ -397,6 +399,9 @@ class BulkInterviewRoundsRequest(BaseModel):
     interview_types: list[str] = Field(default_factory=list)
     duration_minutes: int = 60
     panelists: list[str] = Field(default_factory=list)
+    scheduled_at: str = ""        # optional shared date/time for the allocated rounds
+    location_or_link: str = ""    # optional shared meeting link / location
+    send_invite: bool = False     # email each candidate the schedule + a calendar invite
     skip_existing: bool = True  # don't duplicate a type a candidate already has
 
 

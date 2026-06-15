@@ -139,6 +139,9 @@ class Application(Base):
     # Answers to the role's extra application questions, captured on the public apply form.
     # List of {"id": str, "label": str, "answer": str}.
     application_answers: Mapped[list] = mapped_column(JSON, default=list)
+    # Who/what created this application: a recruiter's name/email, or the public channel the
+    # candidate applied through ("Careers", "Referral", "LinkedIn", ...). Shown as "Applied by".
+    applied_by: Mapped[str] = mapped_column(String(120), default="")
 
     # --- explainable AI score (suggestion only; human can override) ---
     score_overall: Mapped[float] = mapped_column(Float, default=0)  # 0-100

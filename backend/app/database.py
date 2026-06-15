@@ -59,6 +59,7 @@ def _ensure_sqlite_columns() -> None:
         "applications": [
             ("score_breakdown", "TEXT DEFAULT '{}'"),
             ("application_answers", "TEXT DEFAULT '[]'"),
+            ("applied_by", "VARCHAR DEFAULT ''"),
         ],
         "video_interviews": [
             ("transcript", "TEXT DEFAULT ''"),
@@ -119,6 +120,7 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS hiring_manager VARCHAR DEFAULT ''",
             "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS recruiter VARCHAR DEFAULT ''",
             "ALTER TABLE applications ADD COLUMN IF NOT EXISTS application_answers JSONB DEFAULT '[]'::jsonb",
+            "ALTER TABLE applications ADD COLUMN IF NOT EXISTS applied_by VARCHAR DEFAULT ''",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS upload_filename VARCHAR DEFAULT ''",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS upload_mime VARCHAR DEFAULT ''",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS upload_size INTEGER DEFAULT 0",

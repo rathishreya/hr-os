@@ -104,8 +104,8 @@ function SectionContent({ lines }) {
   function flushBullets() {
     if (!bulletGroup.length) return
     blocks.push(
-      <ul key={`ul-${blocks.length}`} className="mb-3 list-disc space-y-1.5 pl-5 text-sm text-slate-700">
-        {bulletGroup.map((b, j) => <li key={j}>{b}</li>)}
+      <ul key={`ul-${blocks.length}`} className="mb-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-slate-700 marker:text-slate-400">
+        {bulletGroup.map((b, j) => <li key={j} className="pl-1">{b}</li>)}
       </ul>,
     )
     bulletGroup = []
@@ -159,21 +159,23 @@ export default function FormattedResume({ text, className = '' }) {
 
   return (
     <article
-      className={`mx-auto max-w-[640px] rounded-xl border border-slate-200 bg-white px-8 py-8 shadow-sm ${className}`}
+      className={`mx-auto w-full max-w-3xl bg-white px-6 py-7 text-slate-800 sm:px-10 sm:py-9 ${className}`}
     >
-      <header className="border-b border-slate-200 pb-4 text-center">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">{doc.name}</h1>
-        <div className="mt-2 space-y-0.5">
+      <header className="border-b border-slate-200 pb-5 text-center">
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900 text-balance">{doc.name}</h1>
+        <div className="mx-auto mt-2.5 max-w-2xl space-y-0.5">
           {doc.contactLines.map((line, i) => (
             <ContactLine key={i} line={line} />
           ))}
         </div>
       </header>
 
-      <div className="pt-5">
+      <div className="pt-6">
         {doc.sections.map((sec, i) => (
-          <section key={i} className="mb-5 last:mb-0">
-            <h2 className="mb-2 text-sm font-bold text-blue-800">{sec.title}</h2>
+          <section key={i} className="mb-7 last:mb-0">
+            <h2 className="mb-3 border-b border-slate-200 pb-1 text-xs font-bold uppercase tracking-[0.12em] text-brand-700">
+              {sec.title}
+            </h2>
             <SectionContent lines={sec.lines} />
           </section>
         ))}

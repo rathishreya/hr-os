@@ -119,12 +119,18 @@ def render_draft(
     return s, b, False
 
 
-def _smtp_send(to_email: str, to_name: str, subject: str, body: str) -> None:
+def _smtp_send(to_email: str, to_name: str, subject: str, body: str, ics: str | None = None) -> None:
     msg = MimeEmail()
     msg["From"] = f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM}>"
     msg["To"] = f"{to_name} <{to_email}>" if to_name else to_email
     msg["Subject"] = subject
     msg.set_content(body)
+    if ics:
+        # Attach the calendar invite; clients show an "Add to calendar" affordance.
+        msg.add_attachment(
+            ics.encode("utf-8"), maintype="text", subtype="calendar",
+            filename="invite.ics", params={"method": "REQUEST", "name": "invite.ics"},
+        )
 
     with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as server:
         if settings.SMTP_STARTTLS:
@@ -146,8 +152,10 @@ def compose(
     use_ai: bool = False,
     candidate_id: int | None = None,
     application_id: int | None = None,
+    ics: str | None = None,
 ) -> models.EmailMessage:
-    """Build (optionally with AI), send-or-log, and persist an email."""
+    """Build (optionally with AI), send-or-log, and persist an email. `ics`, if given, is
+    attached as a calendar invite (.ics)."""
     ctx = {"name": to_name, "role": role, "company": settings.COMPANY_NAME, "sender": settings.EMAIL_FROM_NAME}
     subject, body, ai_generated = render_draft(template, ctx, use_ai=use_ai, subject=subject, body=body)
 
@@ -167,14 +175,17 @@ def compose(
         rec.error = "No recipient email address."
     elif settings.email_configured:
         try:
-            _smtp_send(to_email, to_name, subject, body)
+            _smtp_send(to_email, to_name, subject, body, ics=ics)
             rec.status = "sent"
         except Exception as exc:  # don't crash the request on a send failure
             rec.status = "failed"
             rec.error = str(exc)
     else:
         rec.status = "logged"
-        _safe_print(f"\n[EMAIL · logged — SMTP not configured]\nTo: {to_email}\nSubject: {subject}\n{body}\n")
+        _safe_print(
+            f"\n[EMAIL · logged — SMTP not configured]\nTo: {to_email}\nSubject: {subject}\n{body}\n"
+            + ("[+ calendar invite (.ics) attached]\n" if ics else "")
+        )
 
     db.add(rec)
     db.flush()

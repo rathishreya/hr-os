@@ -4,11 +4,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import models
-from . import embeddings, scoring
+from . import embeddings, scoring, skill_normalize
 from .ai import ai
 from .resume_extract import merge_parsed, parse_resume_text
 
@@ -88,15 +88,35 @@ def suggest_roles_for(
     limit: int = 1,
     exclude_hr_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Best-fit roles for a candidate by resume↔role embedding similarity (suggestion only)."""
-    emb = candidate.embedding or []
-    if not emb or not role_vecs:
+    """Best-fit roles for a candidate (suggestion only).
+
+    Ranks mostly by concrete SKILL overlap (with a resume-text fallback) and uses embedding
+    similarity as a secondary signal. Skill overlap is what stops a QA resume from being
+    suggested a frontend role just because the default hash embedder is noisy.
+    """
+    if not role_vecs:
         return []
+    emb = candidate.embedding or []
+    parsed = candidate.parsed or {}
+    cand_skills = list(parsed.get("skills", []) or [])
+    resume_text = candidate.resume_text or ""
+
     scored: list[tuple[float, models.HiringRequest]] = []
     for hr, vec in role_vecs:
         if exclude_hr_id is not None and hr.id == exclude_hr_id:
             continue
-        scored.append((embeddings.cosine(emb, vec), hr))
+        sim = embeddings.cosine(emb, vec) if emb else 0.0
+        mand = hr.mandatory_skills or []
+        pref = hr.preferred_skills or []
+        skill_score = 0.0
+        if mand or pref:
+            rep = skill_normalize.match_report(cand_skills, mand, pref, extra_text=resume_text)
+            n_req = len(rep["mandatory_canon"]) or len(rep["preferred_canon"])
+            n_hit = len(rep["matched_canon"]) + len(rep["matched_pref_canon"])
+            skill_score = min(1.0, n_hit / n_req) if n_req else 0.0  # preferred can exceed n_req
+        # Skill overlap dominates; embedding similarity breaks ties / fills skill-less roles.
+        blended = 0.65 * skill_score + 0.35 * sim
+        scored.append((blended, hr))
     scored.sort(key=lambda x: x[0], reverse=True)
     return [
         {
@@ -128,16 +148,49 @@ def ingest_candidate(
     heur = parse_resume_text(resume_text, fallback_name=name, fallback_source=source) if resume_text.strip() else {}
     parsed_ai, provider = ai.parse_resume(resume_text) if resume_text.strip() else ({}, "mock")
     parsed = merge_parsed(parsed_ai, heur)
-    # Prefer explicit form values, else fall back to parsed values.
+    final_email = (email or parsed.get("email", "") or "").strip()
+    final_name = name or parsed.get("name", "") or ""
+    final_phone = phone or parsed.get("phone", "") or ""
+    embedding = embeddings.embed(candidate_text(parsed, resume_text))
+
+    # ONE candidate + ONE resume per email: if this email already exists, update that record
+    # in place (latest resume wins) instead of creating a duplicate row.
+    existing = None
+    if final_email:
+        existing = db.scalar(
+            select(models.Candidate).where(func.lower(models.Candidate.email) == final_email.lower())
+        )
+    if existing:
+        if final_name:
+            existing.name = final_name
+        if final_phone:
+            existing.phone = final_phone
+        if not (existing.source or "").strip():
+            existing.source = source or "direct"  # keep first-touch source if already set
+        if resume_text.strip():
+            existing.resume_text = resume_text
+            existing.parsed = parsed
+            existing.ai_summary = parsed.get("summary", "") or existing.ai_summary
+            existing.embedding = embedding
+            existing.ai_provider = provider
+        if file_bytes:  # replace stored file only when a new one is uploaded
+            existing.resume_filename = filename or existing.resume_filename
+            existing.resume_mime = mime or existing.resume_mime
+            existing.resume_file = file_bytes
+        db.flush()
+        log(db, "candidate.updated", "candidate", existing.id,
+            {"provider": provider, "skills": parsed.get("skills", []), "dedup_email": final_email})
+        return existing
+
     cand = models.Candidate(
-        name=name or parsed.get("name", "") or "",
-        email=email or parsed.get("email", "") or "",
-        phone=phone or parsed.get("phone", "") or "",
+        name=final_name,
+        email=final_email,
+        phone=final_phone,
         source=source or "direct",
         resume_text=resume_text,
         parsed=parsed,
         ai_summary=parsed.get("summary", ""),
-        embedding=embeddings.embed(candidate_text(parsed, resume_text)),
+        embedding=embedding,
         ai_provider=provider,
         resume_filename=filename or "",
         resume_mime=mime or "",
@@ -159,7 +212,8 @@ def score_application(db: Session, application: models.Application, weights: dic
     sim = embeddings.cosine(cand.embedding or [], job_vec)
 
     ai_result, provider = ai.score_candidate(hr_d, parsed, weights or scoring.DEFAULT_WEIGHTS)
-    result = scoring.finalize(ai_result, hr_d, parsed, sim, weights)
+    # Give the scorer the raw resume text too (resume-text skill fallback) without persisting it.
+    result = scoring.finalize(ai_result, hr_d, {**parsed, "_resume_text": cand.resume_text or ""}, sim, weights)
 
     application.score_overall = result["overall"]
     application.score_dimensions = result["dimensions"]
@@ -185,11 +239,32 @@ def score_application(db: Session, application: models.Application, weights: dic
     return application
 
 
-def apply_candidate(db: Session, candidate: models.Candidate, hr: models.HiringRequest, *, auto_score: bool = True) -> models.Application:
-    app = models.Application(candidate_id=candidate.id, hiring_request_id=hr.id, stage="applied")
+def apply_candidate(
+    db: Session,
+    candidate: models.Candidate,
+    hr: models.HiringRequest,
+    *,
+    auto_score: bool = True,
+    applied_by: str = "",
+) -> models.Application:
+    # One application per candidate per opening — re-applying returns the existing one instead
+    # of creating a duplicate (the "same user can apply multiple times" guard).
+    existing = db.scalar(
+        select(models.Application).where(
+            models.Application.candidate_id == candidate.id,
+            models.Application.hiring_request_id == hr.id,
+        )
+    )
+    if existing:
+        return existing
+    app = models.Application(
+        candidate_id=candidate.id, hiring_request_id=hr.id, stage="applied",
+        applied_by=applied_by or "",
+    )
     db.add(app)
     db.flush()
-    log(db, "application.created", "application", app.id, {"candidate_id": candidate.id, "hiring_request_id": hr.id})
+    log(db, "application.created", "application", app.id,
+        {"candidate_id": candidate.id, "hiring_request_id": hr.id, "applied_by": applied_by})
     if auto_score:
         score_application(db, app)
     return app

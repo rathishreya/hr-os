@@ -72,6 +72,7 @@ const FILTER_ACCESSORS = {
   source: (r) => r.candidate?.source || '',
   sub_source: (r) => profileOf(r).sub_source || '',
   applied: (r) => formatDate(r.created_at),
+  applied_by: (r) => r.applied_by || '',
   changed: (r) => formatDate(r.stage_changed_at),
   activity: (r) => r.meta?.activity || '',
   email: (r) => (r.meta?.email_count ? String(r.meta.email_count) : ''),
@@ -93,6 +94,9 @@ function BulkRoundsModal({ onClose, allIds, selectedIds, defaultTypes, onDone })
   const [scope, setScope] = useState(hasSel ? 'selected' : 'all')
   const [types, setTypes] = useState(defaultTypes || [])
   const [duration, setDuration] = useState(60)
+  const [scheduledAt, setScheduledAt] = useState('')
+  const [link, setLink] = useState('')
+  const [sendInvite, setSendInvite] = useState(false)
   const [busy, setBusy] = useState(false)
   const ids = scope === 'selected' ? selectedIds : allIds
   const toggle = (v) => setTypes((t) => (t.includes(v) ? t.filter((x) => x !== v) : [...t, v]))
@@ -100,10 +104,15 @@ function BulkRoundsModal({ onClose, allIds, selectedIds, defaultTypes, onDone })
   async function apply() {
     if (!types.length) { toast('Pick at least one round', 'error'); return }
     if (!ids.length) { toast('No candidates to apply to', 'error'); return }
+    if (sendInvite && !scheduledAt) { toast('Set a date & time to send invites', 'error'); return }
     setBusy(true)
     try {
-      const r = await api.bulkInterviewRounds({ application_ids: ids, interview_types: types, duration_minutes: Number(duration) })
-      toast(`Added ${r.created} round${r.created !== 1 ? 's' : ''} across ${r.applications} candidate${r.applications !== 1 ? 's' : ''}${r.skipped ? ` · ${r.skipped} already existed` : ''}`)
+      const r = await api.bulkInterviewRounds({
+        application_ids: ids, interview_types: types, duration_minutes: Number(duration),
+        scheduled_at: scheduledAt, location_or_link: link.trim(), send_invite: sendInvite,
+      })
+      const invited = sendInvite ? ' · invites emailed' : ''
+      toast(`Added ${r.created} round${r.created !== 1 ? 's' : ''} across ${r.applications} candidate${r.applications !== 1 ? 's' : ''}${r.skipped ? ` · ${r.skipped} already existed` : ''}${invited}`)
       onDone()
     } catch (e) {
       toast(e.message, 'error')
@@ -157,11 +166,25 @@ function BulkRoundsModal({ onClose, allIds, selectedIds, defaultTypes, onDone })
           </div>
           <p className="mt-2 text-xs text-slate-400">A round a candidate already has is skipped, so this is safe to re-run.</p>
         </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">Date &amp; time</span>
+            <input type="datetime-local" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">Duration</span>
+            <select className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" value={duration} onChange={(e) => setDuration(e.target.value)}>
+              {[30, 45, 60, 90, 120].map((d) => <option key={d} value={d}>{d} min</option>)}
+            </select>
+          </label>
+        </div>
         <label className="block">
-          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">Default duration</span>
-          <select className="w-40 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" value={duration} onChange={(e) => setDuration(e.target.value)}>
-            {[30, 45, 60, 90, 120].map((d) => <option key={d} value={d}>{d} min</option>)}
-          </select>
+          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">Meeting link / location</span>
+          <input className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" placeholder="Zoom / Google Meet link, or office room" value={link} onChange={(e) => setLink(e.target.value)} />
+        </label>
+        <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm text-slate-700">
+          <input type="checkbox" checked={sendInvite} onChange={(e) => setSendInvite(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+          <span>Email each candidate the date, time &amp; meeting link with a calendar invite (.ics). <span className="text-slate-400">Requires a date &amp; time.</span></span>
         </label>
       </div>
     </Modal>
@@ -401,6 +424,10 @@ export default function JobApplicationsWorkspace({
         return <span className="text-xs text-slate-600">{p.sub_source || '—'}</span>
       case 'applied':
         return <span className="text-xs text-slate-500">{formatDate(row.created_at)}</span>
+      case 'applied_by':
+        return row.applied_by
+          ? <span className="text-xs text-slate-600">{row.applied_by}</span>
+          : <span className="text-slate-300">—</span>
       case 'changed':
         return <span className="text-xs text-slate-500">{formatDate(row.stage_changed_at)}</span>
       case 'activity':

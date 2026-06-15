@@ -18,6 +18,7 @@ export const JOB_APP_COLUMNS = [
   { id: 'source', label: 'Source' },
   { id: 'sub_source', label: 'Sub-source' },
   { id: 'applied', label: 'Applied on' },
+  { id: 'applied_by', label: 'Applied by' },
   { id: 'changed', label: 'Status changed' },
   { id: 'activity', label: 'Activity' },
   { id: 'interview', label: 'Interview' },
@@ -28,7 +29,7 @@ export const JOB_APP_COLUMNS = [
 const DEFAULT_VISIBLE = {
   select: true, idx: true, edit: true, name: true, rating: true, status: true,
   role: true, education: true, comp: true, exp: true, location: true, notice: true,
-  source: true, sub_source: false, applied: true, changed: true, activity: false,
+  source: true, sub_source: false, applied: true, applied_by: true, changed: true, activity: false,
   interview: true, email: false, ai: true,
 }
 

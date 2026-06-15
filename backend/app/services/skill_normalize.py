@@ -99,7 +99,7 @@ SYNONYM_GROUPS: list[tuple[str, ...]] = [
     ("program management", "program manager"),
     # ── Data (science / engineering / analysis kept DISTINCT) ───────────────
     ("data engineering", "data engineer"),
-    ("data analysis", "data analyst", "business intelligence", "bi analyst"),
+    ("data analysis", "data analyst", "business intelligence", "bi", "bi analyst"),
     # ── Design ──────────────────────────────────────────────────────────────
     ("ux design", "ux designer", "user experience design", "product design",
      "product designer", "ui/ux", "ui/ux design"),
@@ -119,6 +119,92 @@ SYNONYM_GROUPS: list[tuple[str, ...]] = [
     ("finance", "financial planning and analysis", "fp&a", "fpa", "corporate finance"),
     ("accounting", "accountant", "bookkeeping", "accounts payable", "accounts receivable"),
     ("supply chain", "supply chain management", "logistics"),
+    # ── HR / People (the headline "HR ↔ Human Resources" case) ───────────────
+    ("human resources", "hr", "human resource", "hrm", "hr management",
+     "human resource management", "human resources management"),
+    ("payroll", "payroll management", "payroll processing"),
+    ("performance management", "performance appraisal", "performance reviews"),
+    # ── Microsoft / Office tools (MS ↔ Microsoft, full app names) ─────────────
+    ("excel", "ms excel", "microsoft excel", "msexcel", "advanced excel"),
+    ("word", "ms word", "microsoft word", "msword"),
+    ("powerpoint", "ms powerpoint", "microsoft powerpoint", "power point", "ppt", "mspowerpoint"),
+    ("outlook", "ms outlook", "microsoft outlook"),
+    ("microsoft office", "ms office", "msoffice", "office suite", "microsoft office suite"),
+    ("google workspace", "g suite", "gsuite", "google suite"),
+    ("power bi", "powerbi", "microsoft power bi", "ms power bi"),
+    # ── Common abbreviations recruiters actually type ────────────────────────
+    ("search engine optimization", "search engine optimisation", "seo"),
+    ("search engine marketing", "sem"),
+    ("customer relationship management", "crm"),
+    ("standard operating procedures", "standard operating procedure", "sop", "sops"),
+    ("software as a service", "saas"),
+    ("object oriented programming", "object-oriented programming", "oop", "oops"),
+    ("application programming interface", "api", "apis"),
+    ("artificial intelligence", "ai"),
+    ("generative ai", "gen ai", "genai", "generative artificial intelligence"),
+    ("key performance indicators", "key performance indicator", "kpi", "kpis"),
+    ("return on investment", "roi"),
+    ("user acceptance testing", "uat"),
+    ("master of business administration", "mba"),
+    # ── More cross-role abbreviations & synonyms (sales, marketing, finance, eng) ──
+    ("enterprise resource planning", "erp"),
+    ("salesforce", "sfdc"),
+    ("google ads", "google adwords", "adwords"),
+    ("pay per click", "ppc"),
+    ("conversion rate optimization", "conversion rate optimisation", "cro"),
+    ("goods and services tax", "gst"),
+    ("computer aided design", "cad"),
+    ("test driven development", "tdd"),
+    ("behaviour driven development", "behavior driven development", "bdd"),
+    ("internationalization", "internationalisation", "i18n"),
+    ("localization", "localisation", "l10n"),
+    ("business analysis", "business analyst"),
+    ("six sigma", "lean six sigma"),
+    ("email marketing", "e-mail marketing"),
+    ("electronic health records", "electronic medical records", "ehr", "emr"),
+    ("financial modelling", "financial modeling"),
+]
+
+# Bidirectional "related / near" clusters — members are NOT identical (so they keep their own
+# canonical) but are CLOSE ENOUGH to count as a match in both directions. This is what makes a
+# "PowerPoint" requirement satisfied by a candidate's "presentation design", or "Figma" by
+# "Sketch". Keep each cluster to genuinely substitutable / adjacent skills.
+RELATED_GROUPS: list[tuple[str, ...]] = [
+    # Presentation family — the headline "PowerPoint ↔ presentation/slides" case.
+    ("powerpoint", "presentation", "presentations", "presentation design", "presentation skills",
+     "slides", "slide deck", "slide decks", "keynote", "google slides", "pitch deck", "pitch decks"),
+    # Spreadsheets
+    ("excel", "spreadsheets", "spreadsheet", "google sheets", "advanced excel"),
+    # UI/UX design tools (substitutable)
+    ("figma", "sketch", "adobe xd", "framer", "invision", "ui design", "ux design"),
+    # Graphic / visual design tools
+    ("photoshop", "illustrator", "indesign", "coreldraw", "canva", "graphic design",
+     "adobe creative suite", "adobe creative cloud", "adobe photoshop", "adobe illustrator"),
+    # Communication / soft skills
+    ("communication", "communication skills", "verbal communication", "written communication",
+     "interpersonal skills", "interpersonal communication", "presentation skills"),
+    # Documentation / writing
+    ("documentation", "technical writing", "technical documentation", "report writing", "content writing"),
+    # Analytics / BI tools
+    ("data analysis", "data analytics", "analytics", "power bi", "tableau", "looker", "qlik",
+     "business intelligence", "google analytics"),
+    # Project / agile
+    ("agile", "scrum", "kanban", "agile methodology", "agile methodologies", "jira"),
+    # Marketing / advertising (substitutable channels & tools)
+    ("google ads", "facebook ads", "linkedin ads", "pay per click", "search engine marketing",
+     "paid advertising", "digital advertising", "performance marketing", "paid media"),
+    ("email marketing", "mailchimp", "marketing automation", "hubspot", "klaviyo"),
+    # Sales / CRM tools
+    ("salesforce", "hubspot", "zoho crm", "customer relationship management", "pipedrive"),
+    # Accounting / finance tools
+    ("tally", "quickbooks", "sap", "zoho books", "accounting software", "busy accounting"),
+    # Relational databases (substitutable for shortlisting)
+    ("mysql", "postgresql", "sql server", "oracle", "mariadb", "relational database",
+     "relational databases", "rdbms"),
+    # Cloud platforms
+    ("amazon web services", "microsoft azure", "google cloud platform", "cloud computing", "cloud"),
+    # Word processing / docs
+    ("word", "google docs", "word processing"),
 ]
 
 SEMANTIC_THRESHOLD = 0.82  # high, per-skill cosine — precision over recall for the long tail
@@ -228,6 +314,12 @@ _IMPLIES_RAW: dict[str, list[str]] = {
     "rails": ["ruby"],
     "laravel": ["php"],
     "tailwind": ["css"],
+    # Knowing an Office app implies general MS Office familiarity (one-directional: requiring
+    # "MS Office" is satisfied by "Excel", but requiring "Excel" is NOT satisfied by bare "Office").
+    "excel": ["microsoft office"],
+    "word": ["microsoft office"],
+    "powerpoint": ["microsoft office"],
+    "outlook": ["microsoft office"],
 }
 
 
@@ -258,6 +350,19 @@ def canonical(raw: str) -> str:
 
 # Built after `canonical` is defined (it depends on it).
 _IMPLIES_CLOSURE: dict[str, frozenset[str]] = _build_implies()
+
+
+def _build_related() -> dict[str, frozenset[str]]:
+    """canonical -> the set of canonicals in its related cluster(s) (bidirectional)."""
+    m: dict[str, set[str]] = {}
+    for group in RELATED_GROUPS:
+        canons = {canonical(t) for t in group}
+        for c in canons:
+            m.setdefault(c, set()).update(canons - {c})
+    return {k: frozenset(v) for k, v in m.items()}
+
+
+_RELATED_MAP: dict[str, frozenset[str]] = _build_related()
 
 
 # Title-tier gate: a stripped job-title core only COUNTS as a match if it is a term the curated
@@ -378,12 +483,17 @@ def match_report(
     preferred: Iterable[str] | None = None,
     *,
     allow_semantic: bool | None = None,
+    extra_text: str = "",
 ) -> dict:
     """Match a candidate's skills against a role's mandatory/preferred skills.
 
     Returns canonical lists + a per-skill reason map. Each required skill is judged
     independently against the candidate's whole skill set; the score denominator uses
     UNIQUE canonicals so a JD listing both 'js' and 'javascript' can't distort it.
+
+    `extra_text` (e.g. the raw resume body) is a LAST-RESORT signal: a required skill that
+    isn't in the extracted skill list still counts if it literally appears in the resume
+    text. This fixes "0 matched skills" when a domain's skills (QA, etc.) weren't extracted.
     """
     # Guard every list at the source — a caller (e.g. a provider) may pass None for a
     # present-but-null field, which dict.get(k, []) would not catch.
@@ -392,6 +502,28 @@ def match_report(
     preferred = preferred or []
     if allow_semantic is None:
         allow_semantic = _semantic_enabled()
+
+    # Normalized resume-text blob + its token set, for the text-presence fallback.
+    _text_norm = " " + re.sub(r"[^a-z0-9+#.]+", " ", (extra_text or "").lower()) + " "
+    _text_tokens = set(_TOKEN.findall(_text_norm)) if extra_text else set()
+
+    def _in_text(req_canon: str) -> bool:
+        if not _text_tokens:
+            return False
+        rt = skill_tokens(req_canon)
+        if not rt:
+            return False
+        if len(rt) == 1:
+            tok = next(iter(rt))
+            # Single common/ambiguous words ("go", "r", "rest") are too noisy to trust from
+            # free text; require a distinctive token (len>=3, not an ambiguous core).
+            if len(tok) < 3 or tok in AMBIGUOUS_TITLE_CORES:
+                return False
+            return tok in _text_tokens
+        # Multi-token: the whole phrase, or all of its tokens, present in the resume.
+        if (" " + req_canon + " ") in _text_norm:
+            return True
+        return all(t in _text_tokens for t in rt)
 
     cand_map = _dedup_canon(cand_skills)            # canon -> surface
     cand_canons = list(cand_map)
@@ -415,6 +547,13 @@ def match_report(
         for c in cand_canons:
             if req_canon in _IMPLIES_CLOSURE.get(c, ()):
                 return {"reason": "related", "matched_with": cand_map[c], "confidence": 0.9}
+        # Tier 3.5 — bidirectional "near" cluster (PowerPoint ↔ presentation/slides, Figma ↔
+        # Sketch, communication ↔ interpersonal). Near-equivalent skills count in both directions.
+        near = _RELATED_MAP.get(req_canon)
+        if near:
+            for c in cand_canons:
+                if c in near:
+                    return {"reason": "near", "matched_with": cand_map[c], "confidence": 0.82}
         # Tier 4 — candidate skill is strictly more specific (required tokens ⊂ candidate).
         # Require a MULTI-TOKEN requirement: a single generic word ("web", "management")
         # appearing as a token inside a longer candidate skill is too weak a signal and
@@ -436,6 +575,14 @@ def match_report(
             for c in cand_canons:
                 if req_cores & title_cores(c):
                     return {"reason": "title", "matched_with": cand_map[c], "confidence": 0.9}
+        # Tier 4.7 — the skill (or a near-equivalent) literally appears in the resume text.
+        # The related-term scan makes "PowerPoint" match a resume that mentions "presentation"
+        # even when neither was extracted as a discrete skill — flexible matching for any role.
+        if _in_text(req_canon):
+            return {"reason": "resume", "matched_with": "resume text", "confidence": 0.8}
+        for rel in _RELATED_MAP.get(req_canon, ()):
+            if _in_text(rel):
+                return {"reason": "near", "matched_with": rel, "confidence": 0.78}
         # Tier 5 — semantic, only when a real embedder is configured.
         if allow_semantic and cand_embeds:
             rv = embeddings.embed(req_canon)

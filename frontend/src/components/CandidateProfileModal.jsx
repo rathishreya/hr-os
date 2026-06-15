@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  X, Mail, Phone, Globe, MapPin, Download, ExternalLink, Send, FileText, Bot,
+  X, Mail, Phone, Globe, MapPin, Download, ExternalLink, Send, FileText, Bot, Trash2,
 } from 'lucide-react'
 import { api } from '../api'
 import {
   Badge, Button, Spinner, Avatar, Tabs, inputClass, stageTone, scoreTone, cx,
 } from '../ui'
 import { useToast } from './Toast'
+import { useAuth } from '../contexts/auth'
 import FormattedResume from './role/FormattedResume'
 
 const ROUND_TONE = { draft: 'gray', scheduled: 'blue', completed: 'green', cancelled: 'rose', no_show: 'amber' }
@@ -96,8 +97,9 @@ function DataTable({ columns, rows, empty }) {
   )
 }
 
-export default function CandidateProfileModal({ candidateId, open, onClose, roles = [], onApplied }) {
+export default function CandidateProfileModal({ candidateId, open, onClose, roles = [], onApplied, onDeleted }) {
   const { toast } = useToast()
+  const { hasRole } = useAuth()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('resume')
@@ -186,6 +188,22 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
     } catch (e) {
       toast(e.message, 'error')
     } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove() {
+    if (!window.confirm(
+      `Delete ${c.name || 'this candidate'} and ALL their data (applications, interviews, emails)?\n\nThis cannot be undone.`,
+    )) return
+    setBusy(true)
+    try {
+      await api.deleteCandidate(candidateId)
+      toast('Candidate deleted')
+      onClose()
+      ;(onDeleted || onApplied)?.()
+    } catch (e) {
+      toast(e.message, 'error')
       setBusy(false)
     }
   }
@@ -482,7 +500,12 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
             </div>
 
             <div className="flex shrink-0 items-center gap-2 border-t border-slate-200 bg-white px-6 py-3">
-              <select className={`${inputClass} max-w-md flex-1`} value={applyRole} onChange={(e) => setApplyRole(e.target.value)}>
+              {hasRole('admin', 'manager') && (
+                <Button variant="danger" onClick={remove} disabled={busy} title="Delete candidate and all their data">
+                  <Trash2 className="h-4 w-4" /> <span className="hidden sm:inline">Delete</span>
+                </Button>
+              )}
+              <select className={`${inputClass} ml-auto max-w-md flex-1`} value={applyRole} onChange={(e) => setApplyRole(e.target.value)}>
                 <option value="">Apply to a job…</option>
                 {roles.filter((r) => r.status === 'open').map((r) => (
                   <option key={r.id} value={r.id}>{r.position}</option>

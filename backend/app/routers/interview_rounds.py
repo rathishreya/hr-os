@@ -8,11 +8,61 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..config import settings
 from ..database import get_db
 from ..deps import current_user
+from ..services import calendar_invite, mailer
 from ..services.recruitment import log
 
 router = APIRouter(prefix="/api/interview-rounds", tags=["interview-rounds"])
+
+
+def _round_label(round_no: int, itype: str) -> str:
+    return f"Round {round_no} · {itype.replace('_', ' ').title()}"
+
+
+def _send_interview_invite(
+    db: Session, app: models.Application, *, scheduled_at: str, location_or_link: str,
+    duration_minutes: int, label: str,
+) -> None:
+    """Email the candidate the interview date/time/link, with a calendar (.ics) invite attached.
+    Best-effort: a candidate with no email, or an unparseable date, is simply skipped."""
+    cand = db.get(models.Candidate, app.candidate_id)
+    if not cand or not (cand.email or "").strip():
+        return
+    hr = db.get(models.HiringRequest, app.hiring_request_id)
+    role = hr.position if hr else "the role"
+    start = calendar_invite.parse_local_dt(scheduled_at)
+    when = start.strftime("%A, %d %b %Y · %I:%M %p") if start else (scheduled_at or "To be confirmed")
+    where = location_or_link.strip() or "Will be shared before the interview"
+    subject = f"Interview scheduled — {role} at {settings.COMPANY_NAME}"
+    body = (
+        f"Hi {cand.name or 'there'},\n\n"
+        f"Your {label} for the {role} role at {settings.COMPANY_NAME} has been scheduled.\n\n"
+        f"When: {when}\n"
+        f"Where / meeting link: {where}\n\n"
+        f"A calendar invite is attached. If this time doesn't work, just reply to this email.\n\n"
+        f"Best,\n{settings.EMAIL_FROM_NAME}"
+    )
+    ics = None
+    if start:
+        ics = calendar_invite.build_ics(
+            summary=f"{label} — {role}",
+            start=start,
+            duration_minutes=duration_minutes,
+            description=(f"Interview for {role} at {settings.COMPANY_NAME}."
+                        + (f" Meeting link: {location_or_link}" if location_or_link.strip() else "")),
+            location=location_or_link.strip(),
+            uid=f"hros-round-{app.id}-{start.strftime('%Y%m%dT%H%M%S')}@hr-os",
+            organizer_email=settings.EMAIL_FROM,
+            organizer_name=settings.EMAIL_FROM_NAME,
+            attendees=[cand.email],
+        )
+    mailer.compose(
+        db, to_email=cand.email, to_name=cand.name or "", template="interview_invite",
+        role=role, subject=subject, body=body,
+        candidate_id=cand.id, application_id=app.id, ics=ics,
+    )
 
 
 # Panelists see capability info only — _candidate_prep whitelists fields and omits
@@ -244,6 +294,11 @@ def create_round(body: schemas.InterviewRoundCreate, db: Session = Depends(get_d
         "round": round_no,
         "type": itype,
     })
+    if body.send_invite and row.scheduled_at:
+        _send_interview_invite(
+            db, app, scheduled_at=row.scheduled_at, location_or_link=row.location_or_link,
+            duration_minutes=row.duration_minutes, label=_round_label(round_no, itype),
+        )
     db.commit()
     db.refresh(row)
     return row
@@ -264,7 +319,9 @@ def bulk_create_rounds(body: schemas.BulkInterviewRoundsRequest, db: Session = D
         raise HTTPException(422, "Select at least one candidate")
     panelists = [p.strip() for p in body.panelists if p and str(p).strip()]
     duration = max(15, min(body.duration_minutes, 480))
-    created = skipped = touched = 0
+    scheduled_at = (body.scheduled_at or "").strip()
+    location_or_link = (body.location_or_link or "").strip()
+    created = skipped = touched = invited = 0
     for app_id in app_ids:
         app = db.get(models.Application, app_id)
         if not app:
@@ -275,6 +332,7 @@ def bulk_create_rounds(body: schemas.BulkInterviewRoundsRequest, db: Session = D
             .where(models.InterviewRound.application_id == app_id)
         ).all())
         next_no = _next_round_number(db, app_id)
+        app_created_types: list[str] = []
         for t in types:
             if body.skip_existing and t in existing:
                 skipped += 1
@@ -282,12 +340,22 @@ def bulk_create_rounds(body: schemas.BulkInterviewRoundsRequest, db: Session = D
             db.add(models.InterviewRound(
                 application_id=app_id, round_number=next_no, interview_type=t,
                 status="scheduled", duration_minutes=duration, panelists=panelists,
+                scheduled_at=scheduled_at, location_or_link=location_or_link,
             ))
             existing.add(t)
             next_no += 1
             created += 1
+            app_created_types.append(t)
+        # One invite per candidate (not per round) when a shared date is set.
+        if body.send_invite and scheduled_at and app_created_types:
+            first = app_created_types[0].replace("_", " ").title()
+            _send_interview_invite(
+                db, app, scheduled_at=scheduled_at, location_or_link=location_or_link,
+                duration_minutes=duration, label=f"Interview ({first})",
+            )
+            invited += 1
     log(db, "interview.rounds_bulk_created", "interview_round", None,
-        {"applications": touched, "created": created, "skipped": skipped, "types": types})
+        {"applications": touched, "created": created, "skipped": skipped, "types": types, "invited": invited})
     db.commit()
     return schemas.BulkInterviewRoundsOut(created=created, skipped=skipped, applications=touched)
 

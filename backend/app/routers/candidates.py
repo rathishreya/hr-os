@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
-from ..deps import require_roles
+from ..deps import current_user, require_roles
 from ..services import recruitment, resume_extract, resume_parser
 from ..services.ai import ai
 
@@ -16,16 +16,20 @@ router = APIRouter(prefix="/api/candidates", tags=["candidates"])
 _MAX_RESUME_BYTES = 25 * 1024 * 1024  # 25 MB — guard the free-tier instance from OOM
 
 
-def _maybe_apply(db: Session, cand: models.Candidate, hiring_request_id: int | None) -> None:
+def _actor_label(user: models.User | None) -> str:
+    return (user.name or user.email) if user else ""
+
+
+def _maybe_apply(db: Session, cand: models.Candidate, hiring_request_id: int | None, applied_by: str = "") -> None:
     if hiring_request_id:
         hr = db.get(models.HiringRequest, hiring_request_id)
         if not hr:
             raise HTTPException(404, "Hiring request not found")
-        recruitment.apply_candidate(db, cand, hr, auto_score=True)
+        recruitment.apply_candidate(db, cand, hr, auto_score=True, applied_by=applied_by)
 
 
 @router.post("", response_model=schemas.CandidateOut)
-def create_candidate(payload: schemas.CandidateCreate, db: Session = Depends(get_db)):
+def create_candidate(payload: schemas.CandidateCreate, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
     cand = recruitment.ingest_candidate(
         db,
         name=payload.name,
@@ -34,7 +38,7 @@ def create_candidate(payload: schemas.CandidateCreate, db: Session = Depends(get
         source=payload.source,
         resume_text=payload.resume_text,
     )
-    _maybe_apply(db, cand, payload.hiring_request_id)
+    _maybe_apply(db, cand, payload.hiring_request_id, applied_by=_actor_label(user))
     db.commit()
     db.refresh(cand)
     return cand
@@ -49,6 +53,7 @@ def upload_candidate(
     source: str = Form("upload"),
     hiring_request_id: int | None = Form(None),
     db: Session = Depends(get_db),
+    user: models.User = Depends(current_user),
 ):
     content = file.file.read(_MAX_RESUME_BYTES + 1)
     if len(content) > _MAX_RESUME_BYTES:
@@ -61,7 +66,7 @@ def upload_candidate(
         name=name, email=email, phone=phone, source=source, resume_text=text,
         file_bytes=content, filename=file.filename or "", mime=file.content_type or "",
     )
-    _maybe_apply(db, cand, hiring_request_id)
+    _maybe_apply(db, cand, hiring_request_id, applied_by=_actor_label(user))
     db.commit()
     db.refresh(cand)
     return cand
@@ -207,14 +212,14 @@ def get_candidate(cand_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{cand_id}/apply", response_model=schemas.ApplicationOut)
-def apply_to_role(cand_id: int, body: schemas.ApplyToRoleRequest, db: Session = Depends(get_db)):
+def apply_to_role(cand_id: int, body: schemas.ApplyToRoleRequest, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
     cand = db.get(models.Candidate, cand_id)
     if not cand:
         raise HTTPException(404, "Candidate not found")
     hr = db.get(models.HiringRequest, body.hiring_request_id)
     if not hr:
         raise HTTPException(404, "Hiring request not found")
-    app = recruitment.apply_candidate(db, cand, hr, auto_score=True)
+    app = recruitment.apply_candidate(db, cand, hr, auto_score=True, applied_by=_actor_label(user))
     db.commit()
     db.refresh(app)
     return app

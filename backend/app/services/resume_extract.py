@@ -12,7 +12,53 @@ _SKILL_HINTS = [
     "nlp", "llm", "langchain", "tailwind", "next.js", "vue", "angular", "git", "ci/cd",
     "microservices", "pandas", "numpy", "scikit-learn", "matplotlib", "tableau", "power bi",
     "excel", "r ", "data science", "deep learning",
+    # QA / testing (this whole domain was previously invisible to extraction)
+    "manual testing", "automation testing", "test automation", "api testing",
+    "regression testing", "functional testing", "performance testing", "load testing",
+    "selenium", "selenium webdriver", "cypress", "playwright", "appium", "jmeter",
+    "postman", "rest assured", "junit", "testng", "cucumber", "bdd", "test cases",
+    "qa", "sdet", "quality assurance",
+    # Web / general engineering
+    "html", "css", "sass", "redux", "express", "spring", "spring boot", "hibernate",
+    "php", "laravel", "ruby", "rails", ".net", "linux", "bash", "shell scripting",
+    "jenkins", "github actions", "gitlab", "agile", "scrum", "jira",
+    # Design / marketing / business
+    "figma", "photoshop", "illustrator", "ui/ux", "salesforce", "hubspot", "seo",
+    "google analytics", "digital marketing", "content writing",
 ]
+
+# Split a skills-section line into individual skills. Handles comma / pipe / slash / bullet /
+# multi-space separators and "Category: a, b, c" lines (keeps the part after the colon).
+_SKILL_SPLIT = re.compile(r"[,;|/•·]|\s{2,}")
+_SKILL_LABEL = re.compile(
+    r"^(?:technical\s+|core\s+|key\s+|soft\s+)?"
+    r"(?:skills?|technologies|tools?|tech\s*stack|competenc(?:y|ies)|expertise|proficienc(?:y|ies))"
+    r"\s*[:\-–]\s*",
+    re.IGNORECASE,
+)
+_SKILL_STOP = {"and", "or", "etc", "etc.", "others", "various", "including", "e.g.", "i.e."}
+
+
+def _skills_from_section(lines: list[str]) -> list[str]:
+    """Extract individual skills from the resume's Skills section — works for ANY domain
+    (QA, design, marketing...), not just a fixed tech keyword list."""
+    out: list[str] = []
+    for raw in lines:
+        line = _SKILL_LABEL.sub("", raw.strip())
+        # "Category: a, b, c" → keep the values after the first colon
+        if ":" in line and len(line.split(":", 1)[0]) <= 40:
+            line = line.split(":", 1)[1]
+        for part in _SKILL_SPLIT.split(line):
+            p = part.strip().strip("•-–·*().").strip()
+            p = re.sub(r"\s+", " ", p)
+            if not p or not re.search(r"[A-Za-z]", p):
+                continue
+            if len(p) > 40 or len(p.split()) > 5:  # a sentence, not a skill
+                continue
+            if p.lower() in _SKILL_STOP:
+                continue
+            out.append(p)
+    return out
 
 _SECTION_MARKERS = {
     "summary": ("professional summary", "summary", "profile", "objective", "about me"),
@@ -320,6 +366,15 @@ def parse_resume_text(text: str, *, fallback_name: str = "", fallback_source: st
     education = _extract_education(edu_lines, text)
     co0 = _best_company(companies)
 
+    # Skills = keyword hints (whole text) UNION whatever is listed in the Skills section
+    # (captures domain skills like "Manual Testing", "Selenium WebDriver" the hint list misses).
+    skills_seen: dict[str, str] = {}
+    for s in [*_detect_skills(text), *_skills_from_section(sections.get("skills", []))]:
+        k = s.strip().lower()
+        if k and k not in skills_seen:
+            skills_seen[k] = s.strip()
+    skills = list(skills_seen.values())
+
     parsed: dict[str, Any] = {
         "name": _extract_name(header, fallback_name),
         "email": email_m.group(0) if email_m else "",
@@ -327,7 +382,7 @@ def parse_resume_text(text: str, *, fallback_name: str = "", fallback_source: st
         "location": _extract_location(text, header),
         "linkedin": linkedin_m.group(0) if linkedin_m else "",
         "github": github_m.group(0) if github_m else "",
-        "skills": _detect_skills(text),
+        "skills": skills,
         "total_yoe": _years_from_text(text),
         "current_company": co0.get("name") or "",
         "current_title": co0.get("title") or "",
@@ -369,7 +424,17 @@ def merge_parsed(ai: dict[str, Any], heur: dict[str, Any]) -> dict[str, Any]:
     keys = set(heur) | set(ai or {})
     for key in keys:
         hv, av = heur.get(key), (ai or {}).get(key)
-        if key in ("companies", "education", "skills"):
+        if key == "skills":
+            # UNION AI + heuristic skills (dedup case-insensitively) — maximize recall so the
+            # matcher has every skill to work with; extra candidate skills only help.
+            seen: dict[str, str] = {}
+            for s in [*(av if isinstance(av, list) else []), *(hv if isinstance(hv, list) else [])]:
+                k = str(s).strip().lower()
+                if k and k not in seen:
+                    seen[k] = str(s).strip()
+            out[key] = list(seen.values())
+            continue
+        if key in ("companies", "education"):
             out[key] = av if isinstance(av, list) and len(av) >= len(hv or []) else (hv or av or [])
             continue
         if key == "total_yoe":

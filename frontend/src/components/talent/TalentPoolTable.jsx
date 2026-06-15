@@ -266,8 +266,12 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
             {new Date(row.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
           </span>
         )
-      case 'applied_by':
-        return <span className="text-sm text-slate-400">—</span>
+      case 'applied_by': {
+        const by = row.applied_by || row.sub_source || row.source
+        return by
+          ? <span className="text-sm capitalize text-slate-600">{by}</span>
+          : <span className="text-slate-300">—</span>
+      }
       default:
         return null
     }

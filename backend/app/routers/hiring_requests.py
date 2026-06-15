@@ -1,6 +1,8 @@
 """Hiring request intake + AI validation + JD generation."""
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -38,6 +40,32 @@ def _normalize_questions(qs) -> list[dict]:
 
 def _clean_str_list(values) -> list[str]:
     return [t for t in dict.fromkeys(str(x).strip() for x in (values or [])) if t]
+
+
+def _parse_deadline(d: str) -> date | None:
+    d = (d or "").strip()
+    if not d:
+        return None
+    try:
+        return date.fromisoformat(d[:10])  # tolerant of a trailing time component
+    except ValueError:
+        return None
+
+
+def _auto_close_expired(db: Session, rows: list[models.HiringRequest]) -> None:
+    """Lazily flip an OPEN role to 'closed' once its hiring deadline has passed, so the job
+    status reflects reality without a cron. Runs on every list/get (cheap, idempotent)."""
+    today = date.today()
+    changed = False
+    for r in rows:
+        if r.status == "open":
+            dl = _parse_deadline(r.hiring_deadline)
+            if dl and dl < today:
+                r.status = "closed"
+                log(db, "hiring_request.auto_closed", "hiring_request", r.id, {"deadline": r.hiring_deadline})
+                changed = True
+    if changed:
+        db.commit()
 
 
 @router.post("", response_model=schemas.HiringRequestOut)
@@ -95,6 +123,7 @@ def list_hiring_requests(
     db: Session = Depends(get_db),
 ):
     rows = db.scalars(select(models.HiringRequest).order_by(models.HiringRequest.created_at.desc())).all()
+    _auto_close_expired(db, rows)  # past-deadline open roles → closed before filtering/returning
     if status.strip():
         rows = [r for r in rows if r.status == status.strip()]
     if q.strip():
@@ -123,6 +152,7 @@ def get_hiring_request(hr_id: int, db: Session = Depends(get_db)):
     hr = db.get(models.HiringRequest, hr_id)
     if not hr:
         raise HTTPException(404, "Hiring request not found")
+    _auto_close_expired(db, [hr])
     return hr
 
 
