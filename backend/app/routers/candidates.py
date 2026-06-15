@@ -73,8 +73,9 @@ def upload_candidate(
 
 
 @router.post("/reparse-all")
-def reparse_all_candidates(db: Session = Depends(get_db)):
-    """Re-extract parsed fields from every candidate's resume_text (updates talent pool columns)."""
+def reparse_all_candidates(db: Session = Depends(get_db), _user: models.User = Depends(require_roles("admin", "manager"))):
+    """Re-extract parsed fields from every candidate's resume_text (updates talent pool columns).
+    Admin/manager only — it re-runs AI parsing across the whole pool (a costly bulk operation)."""
     rows = db.scalars(select(models.Candidate)).all()
     updated = 0
     for c in rows:

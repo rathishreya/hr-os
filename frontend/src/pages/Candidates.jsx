@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Search, Users, RefreshCw } from 'lucide-react'
+import { Search, Users, RefreshCw, Sparkles } from 'lucide-react'
 import { api } from '../api'
 import { Spinner, PageHeader, EmptyState, inputClass, Button } from '../ui'
 import { useToast } from '../components/Toast'
+import { useAuth } from '../contexts/auth'
 import { usePageTitle } from '../hooks/usePageTitle'
 import CandidateProfileModal from '../components/CandidateProfileModal'
 import TalentPoolTable from '../components/talent/TalentPoolTable'
@@ -10,10 +11,12 @@ import TalentPoolTable from '../components/talent/TalentPoolTable'
 export default function Candidates() {
   usePageTitle('Talent Pool')
   const { toast } = useToast()
+  const { hasRole } = useAuth()
   const [rows, setRows] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [rescoring, setRescoring] = useState(false)
   const [roles, setRoles] = useState([])
   const [openId, setOpenId] = useState(null)
 
@@ -39,16 +42,39 @@ export default function Candidates() {
     }
   }
 
+  async function rescoreAll() {
+    setRescoring(true)
+    try {
+      const res = await api.rescoreAll()
+      toast(`Re-scored ${res.rescored} application${res.rescored === 1 ? '' : 's'} with the latest matcher${res.failed ? ` · ${res.failed} failed` : ''}`)
+      await load(search)
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setRescoring(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Talent Pool"
         subtitle="Columns are filled from each candidate's resume — role, education, compensation, location, and more."
         actions={(
-          <Button variant="ghost" className="text-xs" onClick={syncFromResumes} disabled={syncing || loading}>
-            {syncing ? <Spinner /> : <RefreshCw className="h-4 w-4" />}
-            Sync from resumes
-          </Button>
+          <>
+            {hasRole('admin', 'manager') && (
+              <Button variant="ghost" className="text-xs" onClick={rescoreAll} disabled={rescoring || loading} title="Re-score every application with the latest skill matcher">
+                {rescoring ? <Spinner /> : <Sparkles className="h-4 w-4" />}
+                Re-score all
+              </Button>
+            )}
+            {hasRole('admin', 'manager') && (
+              <Button variant="ghost" className="text-xs" onClick={syncFromResumes} disabled={syncing || loading}>
+                {syncing ? <Spinner /> : <RefreshCw className="h-4 w-4" />}
+                Sync from resumes
+              </Button>
+            )}
+          </>
         )}
       />
 

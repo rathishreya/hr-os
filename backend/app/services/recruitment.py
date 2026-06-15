@@ -202,16 +202,39 @@ def ingest_candidate(
     return cand
 
 
-def score_application(db: Session, application: models.Application, weights: dict[str, float] | None = None) -> models.Application:
+def score_application(
+    db: Session,
+    application: models.Application,
+    weights: dict[str, float] | None = None,
+    *,
+    reuse_ai: bool = False,
+    role_vec: list[float] | None = None,
+) -> models.Application:
     hr = application.hiring_request
     cand = application.candidate
     hr_d = hr_to_dict(hr)
     parsed = cand.parsed or {}
 
-    job_vec = embeddings.embed(role_text(hr))
+    # Accept a precomputed role embedding (bulk re-score reuses one vector per role instead of
+    # re-embedding the same role for every candidate).
+    job_vec = role_vec if role_vec is not None else embeddings.embed(role_text(hr))
     sim = embeddings.cosine(cand.embedding or [], job_vec)
 
-    ai_result, provider = ai.score_candidate(hr_d, parsed, weights or scoring.DEFAULT_WEIGHTS)
+    # reuse_ai: re-derive the DETERMINISTIC parts (skill/experience matching) with the current
+    # matcher while keeping the AI's previously-computed soft dimensions — so a bulk re-score is
+    # instant and makes no new LLM calls. Falls back to a full AI score if never scored before.
+    if reuse_ai and application.scored_at and (application.score_dimensions or {}):
+        prev = application.score_dimensions or {}
+        bd = application.score_breakdown or {}
+        ai_result = {
+            "dimensions": prev,
+            "rationale": bd.get("summary") or application.score_rationale or "",
+            "strengths": bd.get("strengths"),
+            "concerns": bd.get("concerns"),
+        }
+        provider = "deterministic"
+    else:
+        ai_result, provider = ai.score_candidate(hr_d, parsed, weights or scoring.DEFAULT_WEIGHTS)
     # Give the scorer the raw resume text too (resume-text skill fallback) without persisting it.
     result = scoring.finalize(ai_result, hr_d, {**parsed, "_resume_text": cand.resume_text or ""}, sim, weights)
 

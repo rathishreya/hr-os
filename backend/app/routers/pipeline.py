@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..config import settings
 from ..database import get_db
+from ..deps import require_roles
 from ..services import recruitment
 from ..services import resume_extract
 from ..services.ai import ai
@@ -255,6 +256,55 @@ def rescore(app_id: int, weights: schemas.ScoringWeights | None = None, db: Sess
     db.commit()
     db.refresh(app)
     return app
+
+
+@router.post("/applications/rescore-all")
+def rescore_all(
+    hr_id: int | None = None,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(require_roles("admin", "manager")),
+):
+    """Re-score every application (optionally just one job's) with the CURRENT matcher, so an
+    existing pipeline benefits from matching improvements. Re-derives the deterministic skill/
+    experience match and keeps each application's prior AI soft-skill judgment — no new LLM calls,
+    so it's fast and quota-free. Per-application try/commit isolates any single failure."""
+    stmt = select(models.Application)
+    if hr_id is not None:
+        stmt = stmt.where(models.Application.hiring_request_id == hr_id)
+    apps = db.scalars(stmt).all()
+
+    # Embed each distinct role ONCE (not per application) — the deterministic re-score reuses it.
+    role_vecs: dict[int, list[float]] = {}
+    for rid in {a.hiring_request_id for a in apps}:
+        hr = db.get(models.HiringRequest, rid)
+        if hr:
+            role_vecs[rid] = recruitment.embeddings.embed(recruitment.role_text(hr))
+
+    rescored = failed = 0
+    failed_ids: list[int] = []
+    for app in apps:
+        try:
+            recruitment.score_application(db, app, reuse_ai=True, role_vec=role_vecs.get(app.hiring_request_id))
+            db.commit()
+            rescored += 1
+        except Exception as e:  # isolate a single bad application; keep going
+            db.rollback()
+            failed += 1
+            failed_ids.append(app.id)
+            try:
+                recruitment.log(db, "application.rescore_failed", "application", app.id, {"error": str(e)[:300]})
+                db.commit()
+            except Exception:
+                db.rollback()
+
+    # Best-effort summary audit — never let it turn a completed re-score into a 500.
+    try:
+        recruitment.log(db, "application.rescored_all", "application", None,
+                        {"rescored": rescored, "failed": failed, "hr_id": hr_id})
+        db.commit()
+    except Exception:
+        db.rollback()
+    return {"rescored": rescored, "failed": failed, "failed_ids": failed_ids[:50], "total": len(apps)}
 
 
 @router.put("/applications/{app_id}/override", response_model=schemas.ApplicationOut)

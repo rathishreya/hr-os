@@ -152,6 +152,7 @@ export const api = {
   updateNotes: (id, notes) =>
     req(`/applications/${id}/notes`, { method: 'PATCH', body: JSON.stringify({ notes }) }),
   rescore: (id) => req(`/applications/${id}/score`, { method: 'PUT' }),
+  rescoreAll: () => req('/applications/rescore-all', { method: 'POST' }),
   override: (id, body) => req(`/applications/${id}/override`, { method: 'PUT', body: JSON.stringify(body) }),
 
   emailTemplates: () => req('/comms/templates'),
