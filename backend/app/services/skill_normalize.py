@@ -248,6 +248,41 @@ _TITLE_WORDS = SENIORITY_LEAD | ROLE_TRAIL
 _WS = re.compile(r"\s+")
 _TOKEN = re.compile(r"[a-z0-9+#.]+")  # same token class as embeddings._TOKEN
 
+# Negation cues — used so "no experience with X" / "not familiar with X" in the resume body
+# doesn't count as having skill X (a resume-text false positive).
+_NEGATION = re.compile(r"\b(?:no|not|without|lack|lacking|never|nil|zero)\b|n't\b", re.IGNORECASE)
+
+
+def _damerau(a: str, b: str) -> int:
+    """Damerau-Levenshtein edit distance (counts a transposition as 1) — catches common typos
+    including swapped letters ('pyhton' → 'python')."""
+    la, lb = len(a), len(b)
+    prev2: list[int] = []
+    prev = list(range(lb + 1))
+    for i in range(1, la + 1):
+        cur = [i] + [0] * lb
+        for j in range(1, lb + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+        prev2, prev = prev, cur
+    return prev[lb]
+
+
+def _fuzzy_token(t1: str, t2: str) -> bool:
+    """True if two tokens are the same skill with a typo. Conservative: only for tokens ≥5 chars,
+    same first AND last letter, length within 1, and edit distance ≤1 — so 'kubernets'≈'kubernetes'
+    but 'react'≉'redux' and 'java'≉'rust'."""
+    if t1 == t2:
+        return True
+    n1, n2 = len(t1), len(t2)
+    if n1 < 5 or n2 < 5 or abs(n1 - n2) > 1:
+        return False
+    if t1[0] != t2[0] or t1[-1] != t2[-1]:
+        return False
+    return _damerau(t1, t2) <= 1
+
 
 def normalize_token(raw: str) -> str:
     """Lowercase, collapse whitespace, strip trailing sentence punctuation — while
@@ -507,6 +542,16 @@ def match_report(
     _text_norm = " " + re.sub(r"[^a-z0-9+#.]+", " ", (extra_text or "").lower()) + " "
     _text_tokens = set(_TOKEN.findall(_text_norm)) if extra_text else set()
 
+    def _present(needle: str) -> bool:
+        """An occurrence of `needle` (a whole token/phrase) that is NOT preceded by a negation
+        cue within ~30 chars — so 'no experience with java' doesn't count as having java."""
+        i = _text_norm.find(" " + needle + " ")
+        while i != -1:
+            if not _NEGATION.search(_text_norm[max(0, i - 30):i]):
+                return True
+            i = _text_norm.find(" " + needle + " ", i + 1)
+        return False
+
     def _in_text(req_canon: str) -> bool:
         if not _text_tokens:
             return False
@@ -519,10 +564,13 @@ def match_report(
             # free text; require a distinctive token (len>=3, not an ambiguous core).
             if len(tok) < 3 or tok in AMBIGUOUS_TITLE_CORES:
                 return False
-            return tok in _text_tokens
+            if tok in _text_tokens and _present(tok):
+                return True
+            # Catch a typo of the skill in the resume body ("kubernets" → kubernetes).
+            return any(_fuzzy_token(tok, tt) and _present(tt) for tt in _text_tokens)
         # Multi-token: the whole phrase, or all of its tokens, present in the resume.
         if (" " + req_canon + " ") in _text_norm:
-            return True
+            return _present(req_canon)
         return all(t in _text_tokens for t in rt)
 
     cand_map = _dedup_canon(cand_skills)            # canon -> surface
@@ -575,6 +623,27 @@ def match_report(
             for c in cand_canons:
                 if req_cores & title_cores(c):
                     return {"reason": "title", "matched_with": cand_map[c], "confidence": 0.9}
+        # Tier 4.6 — fuzzy typo match: same token shape, each token a typo of the candidate's
+        # ("kubernets"≈"kubernetes", "manual testng"≈"manual testing"). Guarded so it never fuses
+        # two DISTINCT known skills, and only for tokens ≥5 chars (see _fuzzy_token).
+        rt_sorted = sorted(rt)
+        for c in cand_canons:
+            ct_sorted = sorted(cand_tokens[c])
+            if len(rt_sorted) != len(ct_sorted) or rt_sorted == ct_sorted:
+                continue
+            pairs = list(zip(rt_sorted, ct_sorted))
+            if all(_fuzzy_token(a, b) for a, b in pairs) and not any(
+                a != b and a in KNOWN_TERMS and b in KNOWN_TERMS for a, b in pairs
+            ):
+                return {"reason": "fuzzy", "matched_with": cand_map[c], "confidence": 0.78}
+        # Tier 4.65 — a distinctive single-token requirement is a token of a MORE-SPECIFIC
+        # candidate skill ("Python" ⊂ "Python 3.11", "CSS" ⊂ "HTML/CSS"). Generic words excluded.
+        if len(rt) == 1:
+            rtok = next(iter(rt))
+            if len(rtok) >= 3 and rtok not in _DENY_GENERIC and rtok not in AMBIGUOUS_TITLE_CORES:
+                for c in cand_canons:
+                    if len(cand_tokens[c]) >= 2 and rtok in cand_tokens[c]:
+                        return {"reason": "subset", "matched_with": cand_map[c], "confidence": 0.8}
         # Tier 4.7 — the skill (or a near-equivalent) literally appears in the resume text.
         # The related-term scan makes "PowerPoint" match a resume that mentions "presentation"
         # even when neither was extracted as a discrete skill — flexible matching for any role.

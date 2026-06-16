@@ -17,8 +17,9 @@ from . import skill_normalize
 
 # Bump when the deterministic matcher changes meaningfully — lets read paths lazily re-derive
 # stale scores with the current matcher (see pipeline board auto-heal). v2 = flexible matcher
-# (synonyms/abbreviations/near clusters + resume-text fallback).
-SCORER_VERSION = 2
+# (synonyms/abbreviations/near clusters + resume-text fallback). v3 = + fuzzy/typo matching,
+# distinctive-token subset (versioned/concatenated skills), and negation-aware resume text.
+SCORER_VERSION = 3
 
 DEFAULT_WEIGHTS: dict[str, float] = {
     "skill_match": 0.30,
@@ -47,7 +48,7 @@ def _num(x: Any, default: float = 60.0) -> float:
 
 
 def _method_counts(reasons: dict[str, dict]) -> dict[str, int]:
-    counts = {"exact": 0, "synonym": 0, "related": 0, "near": 0, "subset": 0, "title": 0, "resume": 0, "semantic": 0}
+    counts = {"exact": 0, "synonym": 0, "related": 0, "near": 0, "subset": 0, "title": 0, "fuzzy": 0, "resume": 0, "semantic": 0}
     for r in reasons.values():
         if r.get("reason") in counts:
             counts[r["reason"]] += 1
@@ -61,6 +62,7 @@ _REASON_PHRASE = {
     "near": "related to",
     "subset": "matches",
     "title": "role-title match",
+    "fuzzy": "likely typo of",
     "resume": "found in resume",
     "semantic": "similar to",
 }
