@@ -15,6 +15,11 @@ from typing import Any
 
 from . import skill_normalize
 
+# Bump when the deterministic matcher changes meaningfully — lets read paths lazily re-derive
+# stale scores with the current matcher (see pipeline board auto-heal). v2 = flexible matcher
+# (synonyms/abbreviations/near clusters + resume-text fallback).
+SCORER_VERSION = 2
+
 DEFAULT_WEIGHTS: dict[str, float] = {
     "skill_match": 0.30,
     "experience_match": 0.20,
@@ -230,6 +235,7 @@ def finalize(
         "thresholds": {"strong_yes": 80, "yes": 65, "maybe": 50},
         "summary": rationale,
         "audit": audit,
+        "scorer_version": SCORER_VERSION,
     }
 
     return {

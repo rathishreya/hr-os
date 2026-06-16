@@ -11,6 +11,7 @@ from ..database import get_db
 from ..deps import require_roles
 from ..services import recruitment
 from ..services import resume_extract
+from ..services import scoring
 from ..services.ai import ai
 from ..services.documents import render_document
 from ..services.jobs_table import _panel_email
@@ -108,6 +109,26 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
         .where(models.Application.hiring_request_id == hr_id)
         .order_by(models.Application.score_overall.desc())
     ).all()
+
+    # Auto-heal: re-derive any score computed by an OLD matcher version with the current one
+    # (deterministic, no LLM calls). One-time per application — version-gated, so the live-poll
+    # refresh never re-does it. This is what makes existing pipelines reflect matcher upgrades
+    # without anyone clicking "Re-score all".
+    stale = [a for a in apps if a.scored_at and (a.score_breakdown or {}).get("scorer_version") != scoring.SCORER_VERSION]
+    if stale:
+        role_vec = recruitment.embeddings.embed(recruitment.role_text(hr))
+        for a in stale:
+            try:
+                recruitment.score_application(db, a, reuse_ai=True, role_vec=role_vec)
+                db.commit()  # per-app commit isolates a single failure
+            except Exception:
+                db.rollback()
+        apps = db.scalars(
+            select(models.Application)
+            .where(models.Application.hiring_request_id == hr_id)
+            .order_by(models.Application.score_overall.desc())
+        ).all()
+
     # Embed roles once; used to suggest a better-fit role for candidates the AI rejects here.
     role_vecs = recruitment.build_role_vectors(db)
     rows = []

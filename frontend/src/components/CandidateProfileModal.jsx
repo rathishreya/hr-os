@@ -9,6 +9,7 @@ import {
 } from '../ui'
 import { useToast } from './Toast'
 import { useAuth } from '../contexts/auth'
+import { useResumeFile } from '../hooks/useResumeFile'
 import FormattedResume from './role/FormattedResume'
 
 const ROUND_TONE = { draft: 'gray', scheduled: 'blue', completed: 'green', cancelled: 'rose', no_show: 'amber' }
@@ -157,6 +158,12 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
     return () => { cancelled = true }
   }, [open, candidateId, data])
 
+  // NOTE: keep this hook ABOVE the early return so hooks run unconditionally every render.
+  const _cand = data?.candidate
+  const hasFile = !!(_cand?.resume_filename || _cand?.resume_mime)
+  // Auth-gated file → fetch as a blob URL (an <iframe>/<a> can't send the bearer token).
+  const { url: fileUrl, state: fileState } = useResumeFile(candidateId, open && hasFile)
+
   if (!open) return null
 
   const c = data?.candidate || {}
@@ -165,9 +172,8 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
   const company = p.current_company || p.companies?.[0]?.name || ''
   const title = p.current_title || p.companies?.[0]?.title || ''
   const roleTitle = [title, company].filter(Boolean).join(' at ') || 'Candidate'
-  const fileUrl = `/api/candidates/${candidateId}/resume-file`
-  const hasFile = !!(c.resume_filename || c.resume_mime)
   const isPdf = (c.resume_mime || '').includes('pdf') || (c.resume_filename || '').toLowerCase().endsWith('.pdf')
+  const isImage = (c.resume_mime || '').startsWith('image/')
   const linkedin = p.linkedin
     ? (p.linkedin.startsWith('http') ? p.linkedin : `https://${p.linkedin}`)
     : ''
@@ -302,45 +308,55 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
               {tab === 'resume' && (
                 <div className="flex h-full min-h-[480px] flex-col">
                   <div className="mb-3 flex items-center justify-end gap-2">
-                    {hasFile && (
-                      <a
-                        href={fileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-[color,border-color,transform] duration-150 ease-snappy hover:border-brand-300 hover:text-brand-700 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
-                      >
-                        <Send className="h-4 w-4" /> Share Resume
-                      </a>
-                    )}
-                    {(hasFile || c.resume_text) && (
-                      <a
-                        href={fileUrl}
-                        download={c.resume_filename || 'resume'}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 transition-[background-color,transform] duration-150 ease-snappy hover:bg-slate-50 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
-                      >
-                        <Download className="h-4 w-4" />
-                      </a>
+                    {hasFile && fileState === 'ready' && (
+                      <>
+                        <a
+                          href={fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-[color,border-color,transform] duration-150 ease-snappy hover:border-brand-300 hover:text-brand-700 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+                        >
+                          <Send className="h-4 w-4" /> Open in new tab
+                        </a>
+                        <a
+                          href={fileUrl}
+                          download={c.resume_filename || 'resume'}
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 transition-[background-color,transform] duration-150 ease-snappy hover:bg-slate-50 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+                        >
+                          <Download className="h-4 w-4" />
+                        </a>
+                      </>
                     )}
                   </div>
-                  {isPdf && hasFile ? (
+                  {hasFile && fileState === 'loading' ? (
+                    <div className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-500">
+                      <Spinner /> Loading résumé…
+                    </div>
+                  ) : hasFile && fileState === 'ready' && isPdf ? (
                     <iframe
                       title="Resume preview"
                       src={fileUrl}
                       className="min-h-[520px] flex-1 w-full rounded-xl border border-slate-300 bg-white shadow-inner"
                     />
+                  ) : hasFile && fileState === 'ready' && isImage ? (
+                    <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <img src={fileUrl} alt="Résumé" className="mx-auto max-w-full rounded-lg" />
+                    </div>
+                  ) : hasFile && fileState === 'ready' ? (
+                    <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white py-16">
+                      <FileText className="mb-3 h-10 w-10 text-slate-300" />
+                      <p className="text-sm text-slate-600">Preview not available for this file type.</p>
+                      <a href={fileUrl} download={c.resume_filename || 'resume'} className="mt-4 text-sm font-medium text-brand-600 hover:underline">
+                        <ExternalLink className="mr-1 inline h-4 w-4" /> Download {c.resume_filename}
+                      </a>
+                    </div>
                   ) : c.resume_text ? (
                     <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                       <FormattedResume text={c.resume_text} />
                     </div>
-                  ) : hasFile ? (
-                    <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white py-16">
-                      <FileText className="mb-3 h-10 w-10 text-slate-300" />
-                      <p className="text-sm text-slate-600">Preview not available for this file type.</p>
-                      <a href={fileUrl} target="_blank" rel="noreferrer" className="mt-4 text-sm font-medium text-brand-600 hover:underline">
-                        <ExternalLink className="mr-1 inline h-4 w-4" /> Download {c.resume_filename}
-                      </a>
+                  ) : hasFile && fileState === 'error' ? (
+                    <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white text-sm text-slate-500">
+                      Couldn&apos;t load the résumé file.
                     </div>
                   ) : (
                     <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white text-sm text-slate-500">

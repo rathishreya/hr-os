@@ -6,6 +6,7 @@ import {
 import { api } from '../api'
 import { Badge, Button, Spinner, Avatar, inputClass, stageTone, scoreTone, cx } from '../ui'
 import { useToast } from './Toast'
+import { useResumeFile } from '../hooks/useResumeFile'
 
 function Row({ icon: Icon, label, children }) {
   return (
@@ -32,6 +33,11 @@ export default function CandidateProfileDrawer({ candidateId, open, onClose, rol
     api.getCandidateProfile(candidateId).then(setData).catch(() => {}).finally(() => setLoading(false))
   }, [open, candidateId])
 
+  // Hook must run unconditionally (above the early return). Auth-gated file → blob URL.
+  const _cand = data?.candidate
+  const _hasFile = !!(_cand?.resume_filename || _cand?.resume_mime)
+  const { url: fileUrl, state: fileState } = useResumeFile(candidateId, open && _hasFile)
+
   if (!open) return null
 
   const c = data?.candidate || {}
@@ -39,7 +45,6 @@ export default function CandidateProfileDrawer({ candidateId, open, onClose, rol
   const apps = data?.applications || []
   const company = p.current_company || p.companies?.[0]?.name || ''
   const title = p.current_title || p.companies?.[0]?.title || ''
-  const fileUrl = `/api/candidates/${candidateId}/resume-file`
   const isPdf = (c.resume_mime || '').includes('pdf') || (c.resume_filename || '').toLowerCase().endsWith('.pdf')
 
   async function apply() {
@@ -149,13 +154,15 @@ export default function CandidateProfileDrawer({ candidateId, open, onClose, rol
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Resume</h4>
-                  {c.resume_filename && (
+                  {_hasFile && fileState === 'ready' && (
                     <a href={fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded text-xs font-medium text-brand-600 transition-colors duration-150 ease-snappy hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
                       <ExternalLink className="h-3.5 w-3.5" /> Open
                     </a>
                   )}
                 </div>
-                {isPdf ? (
+                {isPdf && fileState === 'loading' ? (
+                  <div className="flex h-[60vh] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-500"><Spinner /> Loading résumé…</div>
+                ) : isPdf && fileState === 'ready' ? (
                   <iframe title="Resume" src={fileUrl} className="h-[60vh] w-full rounded-xl border border-slate-200" />
                 ) : c.resume_text ? (
                   <pre className="max-h-80 overflow-y-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">{c.resume_text}</pre>

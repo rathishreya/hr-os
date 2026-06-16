@@ -3,6 +3,7 @@ import { X, Download, FileText, SlidersHorizontal } from 'lucide-react'
 import { Badge, IconButton, Tabs, Button, Spinner, Field, inputClass, scoreTone, stageTone } from '../../ui'
 import { api } from '../../api'
 import { useToast } from '../Toast'
+import { useResumeFile } from '../../hooks/useResumeFile'
 import AiReportTab, { verdictFor } from './AiReportTab'
 import InterviewPlanningPanel from './InterviewPlanningPanel'
 import EmailPanel from './EmailPanel'
@@ -205,9 +206,10 @@ function ResumePreview({ candidate, defaultView = 'formatted' }) {
   const fname = candidate.resume_filename || ''
   const mime = candidate.resume_mime || ''
   const hasFile = !!(fname || candidate.resume_mime)
-  const fileUrl = `/api/candidates/${candidate.id}/resume-file`
   const isPdf = mime.includes('pdf') || fname.toLowerCase().endsWith('.pdf')
   const isImg = mime.startsWith('image/')
+  // Auth-gated file → blob URL (an <iframe>/<a> can't attach the bearer token).
+  const { url: fileUrl, state: fileState } = useResumeFile(candidate.id, hasFile)
   const initialView = hasFile && isPdf && defaultView === 'document' ? 'document' : 'formatted'
   const [view, setView] = useState(initialView)
 
@@ -245,21 +247,27 @@ function ResumePreview({ candidate, defaultView = 'formatted' }) {
               </button>
             )}
           </div>
-          <a href={fileUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700">
-            <Download className="h-3.5 w-3.5" /> Download
-          </a>
+          {fileState === 'ready' && (
+            <a href={fileUrl} download={fname || 'resume'} className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700">
+              <Download className="h-3.5 w-3.5" /> Download
+            </a>
+          )}
         </div>
       )}
 
-      {view === 'document' && hasFile && isPdf ? (
+      {view === 'document' && hasFile && fileState === 'loading' ? (
+        <div className="flex h-[72vh] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-500"><Spinner /> Loading résumé…</div>
+      ) : view === 'document' && hasFile && fileState === 'error' ? (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">Couldn&apos;t load the résumé file.</div>
+      ) : view === 'document' && hasFile && fileState === 'ready' && isPdf ? (
         <iframe title="Resume preview" src={fileUrl} className="h-[72vh] w-full rounded-xl border border-slate-200 bg-white" />
-      ) : view === 'document' && hasFile && isImg ? (
+      ) : view === 'document' && hasFile && fileState === 'ready' && isImg ? (
         <img src={fileUrl} alt="Resume" className="w-full rounded-xl border border-slate-200" />
-      ) : view === 'document' && hasFile ? (
+      ) : view === 'document' && hasFile && fileState === 'ready' ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
           <FileText className="mx-auto mb-3 h-8 w-8 text-slate-400" />
           <p className="text-sm text-slate-600">Preview not available for this file type.</p>
-          <a href={fileUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+          <a href={fileUrl} download={fname || 'resume'} className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
             <Download className="h-4 w-4" /> Download {fname || 'resume'}
           </a>
         </div>
