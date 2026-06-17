@@ -19,7 +19,8 @@ from . import skill_normalize
 # stale scores with the current matcher (see pipeline board auto-heal). v2 = flexible matcher
 # (synonyms/abbreviations/near clusters + resume-text fallback). v3 = + fuzzy/typo matching,
 # distinctive-token subset (versioned/concatenated skills), and negation-aware resume text.
-SCORER_VERSION = 3
+# v4 = + semantic tier active (Gemini/Ollama embeddings) for morphology & unseen synonyms.
+SCORER_VERSION = 4
 
 DEFAULT_WEIGHTS: dict[str, float] = {
     "skill_match": 0.30,
@@ -146,7 +147,10 @@ def finalize(
     # reworded skills, which would wrongly drag the skill score down, so use keyword alone there.
     semantic_ok = skill_normalize._semantic_enabled()
     if semantic_ok:
-        skill = _clamp(0.65 * kw_skill + 0.35 * similarity * 100)
+        # Semantic resume↔role similarity can only ADD to the deterministic keyword score, never
+        # dilute it — so a stale or mismatched-dimension candidate vector (similarity 0) is a
+        # no-op rather than a penalty.
+        skill = _clamp(max(kw_skill, 0.65 * kw_skill + 0.35 * similarity * 100))
         skill_blend = {"keyword": 0.65, "semantic": 0.35}
     else:
         skill = _clamp(kw_skill)

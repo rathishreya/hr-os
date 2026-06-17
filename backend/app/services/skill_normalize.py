@@ -30,6 +30,7 @@ from functools import lru_cache
 from typing import Iterable
 
 from . import embeddings
+from ..config import settings
 
 # Each tuple is one equivalence group; element[0] is the canonical label shown in the UI.
 # Keep groups to genuinely interchangeable terms — over-merging hurts precision.
@@ -207,7 +208,7 @@ RELATED_GROUPS: list[tuple[str, ...]] = [
     ("word", "google docs", "word processing"),
 ]
 
-SEMANTIC_THRESHOLD = 0.82  # high, per-skill cosine — precision over recall for the long tail
+SEMANTIC_THRESHOLD = settings.EMBEDDINGS_SIM_THRESHOLD  # per-skill cosine cutoff (configurable)
 
 # Job-title normalization: a resume skill is often a TITLE ("Business Development Executive",
 # "Sales Manager") rather than the bare competency. We peel leading seniority words and
@@ -490,7 +491,7 @@ def title_cores(canon: str) -> set[str]:
 
 def _semantic_enabled() -> bool:
     try:
-        return embeddings._resolve_provider() == "ollama"
+        return embeddings._resolve_provider() in ("ollama", "gemini")
     except Exception:
         return False
 
@@ -576,9 +577,18 @@ def match_report(
     cand_map = _dedup_canon(cand_skills)            # canon -> surface
     cand_canons = list(cand_map)
     cand_tokens = {c: skill_tokens(c) for c in cand_canons}
-    cand_embeds = (
-        {c: embeddings.embed(c) for c in cand_canons} if allow_semantic and cand_canons else {}
-    )
+
+    # Lazily embed skill strings, and only when the semantic tier is actually reached (i.e. a
+    # required skill went unmatched by every cheap tier). Most skills match earlier, so this
+    # keeps hosted-embedding calls to a minimum. embeddings.embed() also caches across calls.
+    _vec_cache: dict[str, list[float]] = {}
+
+    def _vec(s: str) -> list[float]:
+        v = _vec_cache.get(s)
+        if v is None:
+            v = embeddings.embed(s)
+            _vec_cache[s] = v
+        return v
 
     mand_map = _dedup_canon(mandatory)
     pref_map = _dedup_canon(preferred)
@@ -652,12 +662,13 @@ def match_report(
         for rel in _RELATED_MAP.get(req_canon, ()):
             if _in_text(rel):
                 return {"reason": "near", "matched_with": rel, "confidence": 0.78}
-        # Tier 5 — semantic, only when a real embedder is configured.
-        if allow_semantic and cand_embeds:
-            rv = embeddings.embed(req_canon)
+        # Tier 5 — semantic, only when a real embedder (Ollama/Gemini) is configured. Last resort:
+        # catches morphology (managing↔management) and unseen synonyms not in the dictionary.
+        if allow_semantic and cand_canons:
+            rv = _vec(req_canon)
             best_c, best_score = None, 0.0
             for c in cand_canons:
-                sc = embeddings.cosine(rv, cand_embeds[c])
+                sc = embeddings.cosine(rv, _vec(c))
                 if sc > best_score:
                     best_c, best_score = c, sc
             if best_c is not None and best_score >= SEMANTIC_THRESHOLD:

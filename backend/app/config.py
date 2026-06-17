@@ -44,9 +44,19 @@ class Settings:
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.1")
 
-    # Embeddings: "auto" uses Ollama embeddings if available, else hashing fallback.
+    # Embeddings: "auto" prefers a hosted Gemini embedder (when a Gemini key is set on the
+    # OPENAI_* vars), else Ollama if reachable, else a dependency-free hashing fallback.
+    # Force one with EMBEDDINGS_PROVIDER = gemini | ollama | hash.
     EMBEDDINGS_PROVIDER: str = os.getenv("EMBEDDINGS_PROVIDER", "auto").lower()
     OLLAMA_EMBED_MODEL: str = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+    # Gemini (generativelanguage) embeddings. A DEDICATED key/base can be set so embeddings use
+    # Gemini even when the chat LLM is something else; otherwise it reuses OPENAI_* when those
+    # already point at Gemini.
+    EMBEDDINGS_API_KEY: str = os.getenv("EMBEDDINGS_API_KEY", "")
+    EMBEDDINGS_BASE_URL: str = os.getenv("EMBEDDINGS_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+    GEMINI_EMBED_MODEL: str = os.getenv("GEMINI_EMBED_MODEL", "text-embedding-004")
+    # Per-skill semantic cosine threshold for the long-tail matcher tier (precision vs recall).
+    EMBEDDINGS_SIM_THRESHOLD: float = float(os.getenv("EMBEDDINGS_SIM_THRESHOLD", "0.80"))
 
     # Database. Render/Heroku hand out `postgres://` or `postgresql://` URLs, which
     # SQLAlchemy routes to psycopg2 — but we install psycopg3, so normalise to the
@@ -135,6 +145,27 @@ class Settings:
     # backend serves it so the UI, API and careers pages share one origin (no separate
     # static host, no VITE_API_BASE). Empty in dev (Vite serves the UI on :5173).
     FRONTEND_DIST_DIR: str = os.getenv("FRONTEND_DIST_DIR", "")
+
+    @property
+    def embed_key(self) -> str:
+        """Key for Gemini embeddings: a dedicated EMBEDDINGS_API_KEY wins; else reuse the chat
+        key only when OPENAI_* already targets Gemini."""
+        if self.EMBEDDINGS_API_KEY:
+            return self.EMBEDDINGS_API_KEY
+        if "generativelanguage" in (self.OPENAI_BASE_URL or ""):
+            return self.OPENAI_API_KEY
+        return ""
+
+    @property
+    def embed_base(self) -> str:
+        if self.EMBEDDINGS_API_KEY:
+            return self.EMBEDDINGS_BASE_URL
+        return self.OPENAI_BASE_URL or self.EMBEDDINGS_BASE_URL
+
+    @property
+    def gemini_embeddings_configured(self) -> bool:
+        """A usable Gemini embeddings key + a generativelanguage base are present."""
+        return bool(self.embed_key) and "generativelanguage" in (self.embed_base or "")
 
     @property
     def email_configured(self) -> bool:

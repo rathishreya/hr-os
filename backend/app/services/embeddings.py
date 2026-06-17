@@ -1,12 +1,14 @@
-"""Text embeddings with a real provider + a dependency-free fallback.
+"""Text embeddings with real providers + a dependency-free fallback.
 
 Provider order (EMBEDDINGS_PROVIDER=auto):
-  1. Ollama embeddings API (e.g. `nomic-embed-text`) — real semantic vectors, open source
-  2. Hashing bag-of-words vectorizer — deterministic, zero-dependency fallback
+  1. Gemini embeddings (generativelanguage `text-embedding-004`) — hosted, real semantic
+     vectors, reuses the configured Gemini key (OPENAI_API_KEY + a generativelanguage base)
+  2. Ollama embeddings API (e.g. `nomic-embed-text`) — real semantic vectors, open source
+  3. Hashing bag-of-words vectorizer — deterministic, zero-dependency fallback
 
-NOTE: vectors from different providers aren't comparable. Pick a provider per
-deployment; if you switch, re-embed existing candidates (re-run the seed / re-ingest).
-Cosine returns 0 for mismatched dimensions so a mix never produces bogus matches.
+Successful real-provider vectors are cached in-process by (provider, text) so repeated skill
+strings cost one API call total. NOTE: vectors from different providers aren't comparable;
+cosine returns 0 for mismatched dimensions so a provider switch never produces bogus matches.
 """
 from __future__ import annotations
 
@@ -30,6 +32,11 @@ _demoted_until: float = 0.0  # monotonic deadline; stay on hash (no re-probe) un
 _PROBE_TIMEOUT = 30.0   # one-time health check — tolerant of an Ollama model cold-load
 _CALL_TIMEOUT = 15.0    # per-embed once the model is warm
 _DEMOTE_COOLDOWN = 120.0  # after a mid-run failure, use hash this long, then re-probe (self-heal)
+
+# Cache successful real-provider vectors by (provider, text) — skills repeat heavily across
+# candidates/roles, so this keeps hosted-embedding cost to one call per distinct string.
+_EMBED_CACHE: dict[tuple[str, str], list[float]] = {}
+_EMBED_CACHE_MAX = 50000
 
 
 def _tokens(text: str) -> list[str]:
@@ -67,46 +74,86 @@ def _ollama_embed(text: str, timeout: float = _CALL_TIMEOUT) -> list[float] | No
     return None
 
 
+def _gemini_embed(text: str, timeout: float = _CALL_TIMEOUT) -> list[float] | None:
+    """Embed via Google's generativelanguage embedContent endpoint (reuses the Gemini key).
+    Returns a normalized vector, or None on any failure (caller falls back to hash)."""
+    if not settings.gemini_embeddings_configured:
+        return None
+    base = (settings.embed_base or "").rstrip("/")
+    model = settings.GEMINI_EMBED_MODEL
+    url = f"{base}/models/{model}:embedContent?key={settings.embed_key}"
+    try:
+        resp = httpx.post(
+            url,
+            json={"model": f"models/{model}", "content": {"parts": [{"text": (text or "")[:8000]}]}},
+            timeout=timeout,
+        )
+        if resp.status_code == 429:  # quota — let the caller demote to hash for the cooldown
+            return None
+        resp.raise_for_status()
+        vec = (resp.json().get("embedding") or {}).get("values")
+        if vec:
+            norm = math.sqrt(sum(v * v for v in vec)) or 1.0
+            return [round(v / norm, 6) for v in vec]
+    except Exception:
+        return None
+    return None
+
+
 def _resolve_provider() -> str:
     global _provider_cache, _demoted_until
     choice = settings.EMBEDDINGS_PROVIDER
     if choice == "hash":
         _provider_cache = "hash"
         return "hash"
-    if _provider_cache == "ollama":
-        return "ollama"
+    if _provider_cache in ("ollama", "gemini"):
+        return _provider_cache
     # Stay on hash without re-probing until the cooldown elapses (set on a failed probe or a
     # mid-run embed failure) — then fall through and re-probe so a cold-start/restart self-heals.
     if _provider_cache == "hash" and time.monotonic() < _demoted_until:
         return "hash"
-    # Health-check (with a cold-load-tolerant timeout) before arming the Ollama path, so a
-    # down server doesn't make every embed() block on a timeout before falling back to hash.
+
+    # Hosted Gemini: no network probe needed — key presence is enough (a real embed that fails
+    # at runtime demotes to hash for the cooldown, then we re-probe).
+    if choice in ("gemini", "auto") and settings.gemini_embeddings_configured:
+        _provider_cache = "gemini"
+        return "gemini"
+    # Ollama: health-check (cold-load-tolerant) before arming it, so a down server doesn't make
+    # every embed() block on a timeout before falling back to hash.
     if choice in ("ollama", "auto") and _ollama_embed("ping", timeout=_PROBE_TIMEOUT) is not None:
         _provider_cache = "ollama"
-    else:
-        _provider_cache = "hash"
-        _demoted_until = time.monotonic() + _DEMOTE_COOLDOWN  # cache the result; re-probe later
-        if choice in ("ollama", "auto"):
-            logger.warning(
-                "Embeddings: Ollama unreachable at %s — using the hash fallback (semantic "
-                "matching reduced). Set EMBEDDINGS_PROVIDER=hash to silence this.",
-                settings.OLLAMA_BASE_URL,
-            )
-    return _provider_cache
+        return "ollama"
+
+    _provider_cache = "hash"
+    _demoted_until = time.monotonic() + _DEMOTE_COOLDOWN
+    if choice in ("ollama", "gemini", "auto"):
+        logger.warning(
+            "Embeddings: no real embedder reachable (Gemini configured=%s, Ollama=%s) — using "
+            "the hash fallback. Set EMBEDDINGS_PROVIDER=hash to silence this.",
+            settings.gemini_embeddings_configured, settings.OLLAMA_BASE_URL,
+        )
+    return "hash"
 
 
 def embed(text: str) -> list[float]:
     global _provider_cache, _demoted_until
     text = text or ""
-    if _resolve_provider() == "ollama":
-        vec = _ollama_embed(text)
+    provider = _resolve_provider()
+    if provider in ("ollama", "gemini"):
+        ckey = (provider, text)
+        cached = _EMBED_CACHE.get(ckey)
+        if cached is not None:
+            return cached
+        vec = _gemini_embed(text) if provider == "gemini" else _ollama_embed(text)
         if vec is not None:
+            if len(_EMBED_CACHE) < _EMBED_CACHE_MAX:
+                _EMBED_CACHE[ckey] = vec
             return vec
-        # Transient mid-run failure: fall back to hash, but only for a cooldown window (not
-        # permanently) so a blip or cold-start re-probes and recovers instead of latching off.
+        # Transient mid-run failure (quota/network): fall back to hash for a cooldown window so a
+        # blip re-probes and recovers instead of latching off permanently.
         _provider_cache = "hash"
         _demoted_until = time.monotonic() + _DEMOTE_COOLDOWN
-        logger.warning("Embeddings: Ollama embed failed; using hash for ~%ss then re-probing.", int(_DEMOTE_COOLDOWN))
+        logger.warning("Embeddings: %s embed failed; using hash for ~%ss then re-probing.", provider, int(_DEMOTE_COOLDOWN))
     return _hash_embed(text)
 
 

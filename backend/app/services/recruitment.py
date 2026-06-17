@@ -110,7 +110,9 @@ def suggest_roles_for(
         pref = hr.preferred_skills or []
         skill_score = 0.0
         if mand or pref:
-            rep = skill_normalize.match_report(cand_skills, mand, pref, extra_text=resume_text)
+            # Keyword/curated only here — running per-skill embeddings for every candidate × every
+            # role (talent-pool suggestions) would be far too many hosted-embedding calls.
+            rep = skill_normalize.match_report(cand_skills, mand, pref, extra_text=resume_text, allow_semantic=False)
             n_req = len(rep["mandatory_canon"]) or len(rep["preferred_canon"])
             n_hit = len(rep["matched_canon"]) + len(rep["matched_pref_canon"])
             skill_score = min(1.0, n_hit / n_req) if n_req else 0.0  # preferred can exceed n_req
