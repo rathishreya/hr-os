@@ -157,6 +157,29 @@ def embed(text: str) -> list[float]:
     return _hash_embed(text)
 
 
+def status() -> dict:
+    """Report the active embeddings provider WITHOUT a network probe — for /api/ai-status, so an
+    operator can confirm whether semantic matching is live after setting the env vars."""
+    choice = settings.EMBEDDINGS_PROVIDER
+    gemini = settings.gemini_embeddings_configured
+    if _provider_cache:
+        active = _provider_cache
+    elif choice == "hash":
+        active = "hash"
+    elif choice in ("gemini", "auto") and gemini:
+        active = "gemini"
+    elif choice == "ollama" or (choice == "auto" and not gemini):
+        active = "ollama?"  # configured/intended; reachability checked on first real embed
+    else:
+        active = "hash"
+    return {
+        "provider": active,
+        "semantic": active in ("gemini", "ollama"),
+        "gemini_configured": gemini,
+        "configured_choice": choice,
+    }
+
+
 def cosine(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0

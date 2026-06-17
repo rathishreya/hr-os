@@ -13,7 +13,7 @@ from sqlalchemy import select
 from .config import settings
 from .database import SessionLocal, init_db
 from .routers import admin, auth, assessments, candidates, careers, comms, distribution, documents, hiring_requests, interview_rounds, jobs, onboarding, outreach, pipeline, screening, tpos, users, video
-from .services import security
+from .services import embeddings, security
 from .services.ai import ai
 
 
@@ -150,6 +150,8 @@ def ai_status() -> dict:
             else settings.OLLAMA_MODEL if name == "ollama"
             else "rule-based fallback (no LLM connected)"
         ),
+        # So an operator can confirm semantic résumé matching is live after setting env vars.
+        "embeddings": embeddings.status(),
     }
 
 
