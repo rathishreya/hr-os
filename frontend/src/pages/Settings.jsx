@@ -32,19 +32,26 @@ function RolesSelect({ value, onChange }) {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [])
   const toggle = (id) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id])
-  const label = value.length ? value.map((v) => ROLE_LABEL[v] || v).join(', ') : 'Select roles'
   return (
     <div ref={ref} className="relative">
-      <button type="button" onClick={() => setOpen((o) => !o)} className={`${inputClass} flex items-center justify-between text-left`}>
-        <span className={value.length ? 'text-slate-800' : 'text-slate-400'}>{label}</span>
+      <button type="button" onClick={() => setOpen((o) => !o)} className={`${inputClass} flex items-center justify-between gap-2 text-left`}>
+        {/* Show each selected role as its own chip so it reads as a true multi-select. */}
+        {value.length ? (
+          <span className="flex flex-wrap items-center gap-1">
+            {value.map((v) => <Badge key={v} tone={ROLE_TONE[v] || 'gray'}>{ROLE_LABEL[v] || v}</Badge>)}
+          </span>
+        ) : (
+          <span className="text-slate-400">Select one or more roles</span>
+        )}
         <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
       </button>
       {open && (
         <div className="absolute z-20 mt-1 w-full origin-top menu-in overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+          <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-400">Pick all that apply — a user can hold several roles at once.</div>
           {ROLES.map((r) => {
             const on = value.includes(r.id)
             return (
-              <button key={r.id} type="button" onClick={() => toggle(r.id)} className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-sm transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-slate-50 ${on ? 'bg-brand-50/60' : ''}`}>
+              <button key={r.id} type="button" onClick={() => toggle(r.id)} aria-pressed={on} className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-sm transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-slate-50 ${on ? 'bg-brand-50/60' : ''}`}>
                 <span className={`flex h-5 w-5 items-center justify-center rounded border ${on ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300'}`}>{on && <Check className="h-3.5 w-3.5" />}</span>
                 <span className="text-slate-700">{r.label}</span>
               </button>
@@ -106,7 +113,7 @@ function UserModal({ open, onClose, onSaved, user }) {
         <Field label="Email"><input className={inputClass} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@company.com" /></Field>
         <Field label="Name"><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" /></Field>
         <Field label="Title (optional)"><input className={inputClass} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Senior Engineer" /></Field>
-        <Field label="Roles"><RolesSelect value={form.roles} onChange={(roles) => setForm({ ...form, roles })} /></Field>
+        <Field label="Roles" hint="Select every role this person needs — e.g. a manager who also sits on interview panels can be both Manager and Panellist."><RolesSelect value={form.roles} onChange={(roles) => setForm({ ...form, roles })} /></Field>
         <Field label={editing ? 'Reset password (optional)' : 'Password'}>
           <PasswordField value={form.password} onChange={(p) => setForm({ ...form, password: p })} />
           {editing && <span className="mt-1 block text-xs text-slate-400">Leave blank to keep the current password.</span>}
@@ -129,7 +136,7 @@ function UserModal({ open, onClose, onSaved, user }) {
 
 const TPO_FIELDS = [
   ['name', 'Name', 'Officer name'],
-  ['college', 'College', 'College / university'],
+  ['college', 'College / organisation', 'College, university, or vendor'],
   ['email', 'Email', 'tpo@college.edu'],
   ['phone', 'Phone', '+91…'],
   ['designation', 'Designation', 'e.g. Training & Placement Officer'],
@@ -145,18 +152,18 @@ function AddTpoModal({ open, onClose, onCreated }) {
   if (!form) return null
 
   async function submit() {
-    if (!form.name.trim() && !form.college.trim()) { toast('Enter a name or college', 'error'); return }
+    if (!form.name.trim() && !form.college.trim()) { toast('Enter a name or college / organisation', 'error'); return }
     setBusy(true)
     try {
       await api.createTpo(form)
-      toast('Placement officer added')
+      toast('Hiring partner added')
       onCreated(); onClose()
     } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Add placement officer"
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit} disabled={busy}>{busy ? <Spinner /> : 'Add TPO'}</Button></>}>
+    <Modal open={open} onClose={onClose} title="Add placement cell or hiring vendor"
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit} disabled={busy}>{busy ? <Spinner /> : 'Add partner'}</Button></>}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {TPO_FIELDS.map(([k, label, ph]) => (
           <div key={k} className={k === 'address' ? 'sm:col-span-2' : ''}>
@@ -235,13 +242,20 @@ function TposTab() {
 
   return (
     <div className="space-y-4">
+      <Card className="border-sky-200 bg-sky-50/60 p-4">
+        <p className="text-pretty text-sm leading-relaxed text-sky-800/90">
+          <strong>Pairs with Distribution.</strong> These campus placement cells and hiring vendors are an outreach
+          channel alongside the job boards on the <strong>Distribution</strong> page — pick which to notify when you
+          publish a role from the <strong>Post job</strong> step.
+        </p>
+      </Card>
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">College Training &amp; Placement Officers. Send a role to selected campuses from the <strong>Post job</strong> step.</p>
-        <Button onClick={() => setAdd(true)}><Plus className="h-4 w-4" /> Add TPO</Button>
+        <p className="text-sm text-slate-500">College Training &amp; Placement Officers and other hiring partners you broadcast roles to.</p>
+        <Button onClick={() => setAdd(true)}><Plus className="h-4 w-4" /> Add partner</Button>
       </div>
       {!tpos ? <div className="flex items-center gap-2 text-sm text-slate-400"><Spinner /> Loading…</div>
         : tpos.length === 0 ? (
-          <EmptyState icon={GraduationCap} title="No placement officers yet" description="Add TPOs so you can broadcast hiring requests to colleges." action={<Button onClick={() => setAdd(true)}><Plus className="h-4 w-4" /> Add TPO</Button>} />
+          <EmptyState icon={GraduationCap} title="No placement cells or vendors yet" description="Add campus placement officers or hiring vendors so you can broadcast roles to them when posting." action={<Button onClick={() => setAdd(true)}><Plus className="h-4 w-4" /> Add partner</Button>} />
         ) : (
           <Card className="divide-y divide-slate-100">
             {tpos.map((t) => (
@@ -288,6 +302,10 @@ function DataTab() {
 
   return (
     <div className="max-w-2xl space-y-4">
+      <p className="text-sm text-slate-500">
+        Back up your workspace. Export a JSON snapshot of your core hiring records — candidates, roles, jobs,
+        applications, interviews and the email trail. Important on the free tier, where the database is temporary.
+      </p>
       <Card className="border-amber-200 bg-amber-50/60 p-5">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-amber-800"><AlertTriangle className="h-4 w-4" /> Free-tier data is temporary</h3>
         <p className="mt-1.5 text-pretty text-sm leading-relaxed text-amber-800/90">
@@ -342,6 +360,10 @@ function EmailTab() {
 
   return (
     <div className="max-w-2xl space-y-4">
+      <p className="text-sm text-slate-500">
+        Shows whether outbound email is being delivered for real or only logged, and lets you send a test to confirm
+        end-to-end. This panel is read-only — SMTP credentials live in <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">backend/.env</code>, not here.
+      </p>
       {/* Status */}
       <Card className="p-5">
         <div className="flex items-start gap-3">
@@ -410,7 +432,7 @@ function EmailTab() {
 
 const TABS = [
   { id: 'users', label: 'Users & roles' },
-  { id: 'tpos', label: 'Placement officers' },
+  { id: 'tpos', label: 'Placement cells & hiring vendors' },
   { id: 'email', label: 'Email' },
   { id: 'data', label: 'Data' },
 ]
@@ -420,7 +442,7 @@ export default function Settings() {
   const [tab, setTab] = useState('users')
   return (
     <div className="space-y-6">
-      <PageHeader title="Settings" subtitle="Manage your team, campus placement officers, and workspace configuration." />
+      <PageHeader title="Settings" subtitle="Manage your team, placement cells & hiring vendors, and workspace configuration." />
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'users' && <UsersTab />}
       {tab === 'tpos' && <TposTab />}

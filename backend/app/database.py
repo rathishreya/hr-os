@@ -55,6 +55,8 @@ def _ensure_sqlite_columns() -> None:
             ("interview_types", "TEXT DEFAULT '[]'"),
             ("hiring_manager", "VARCHAR DEFAULT ''"),
             ("recruiter", "VARCHAR DEFAULT ''"),
+            ("status_changed_at", "DATETIME"),
+            ("role_brief", "TEXT DEFAULT ''"),
         ],
         "applications": [
             ("score_breakdown", "TEXT DEFAULT '{}'"),
@@ -85,6 +87,12 @@ def _ensure_sqlite_columns() -> None:
             ("upload_size", "INTEGER DEFAULT 0"),
             ("upload_file", "BLOB"),
             ("move_to_onboarding", "BOOLEAN DEFAULT 0"),
+            ("personal_email", "VARCHAR DEFAULT ''"),
+        ],
+        "assessments": [
+            ("team", "VARCHAR DEFAULT ''"),
+            ("department", "VARCHAR DEFAULT ''"),
+            ("role", "VARCHAR DEFAULT ''"),
         ],
         "onboarding_plans": [
             ("details", "TEXT DEFAULT '{}'"),
@@ -138,6 +146,12 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE interview_rounds ADD COLUMN IF NOT EXISTS panel_feedback JSONB DEFAULT '[]'::jsonb",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS template_key VARCHAR DEFAULT ''",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS blocks JSONB DEFAULT '[]'::jsonb",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS personal_email VARCHAR DEFAULT ''",
+            "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMP",
+            "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS role_brief TEXT DEFAULT ''",
+            "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS team VARCHAR DEFAULT ''",
+            "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS department VARCHAR DEFAULT ''",
+            "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS role VARCHAR DEFAULT ''",
             "ALTER TABLE onboarding_plans ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb",
         ):
             conn.execute(text(stmt))

@@ -96,7 +96,14 @@ def job_description(hr: dict[str, Any]) -> tuple[str, str]:
         f'Use THIS for "company_description" (lightly edited to fit, do not invent other facts): '
         f'{settings.COMPANY_ABOUT}\n\n' if settings.COMPANY_ABOUT else ""
     )
-    user = f"""{company_ctx}Write a complete, modern job posting. Return JSON with this exact shape:
+    # The recruiter's own narrative for the role (if provided) is the PRIMARY context — it
+    # captures intent the structured fields can't, so the AI drafts a far more tailored JD.
+    brief = str(hr.get("role_brief") or "").strip()
+    brief_ctx = (
+        "Recruiter's brief for this role — treat this as the PRIMARY context and ground the "
+        f'job posting in it (do not contradict or ignore it):\n"""{brief}"""\n\n' if brief else ""
+    )
+    user = f"""{company_ctx}{brief_ctx}Write a complete, modern job posting. Return JSON with this exact shape:
 {{
   "title": "<clean role title>",
   "seo_title": "<search-optimized title>",

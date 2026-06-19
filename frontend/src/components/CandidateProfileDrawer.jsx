@@ -7,6 +7,7 @@ import { api } from '../api'
 import { Badge, Button, Spinner, Avatar, inputClass, stageTone, scoreTone, cx } from '../ui'
 import { useToast } from './Toast'
 import { useResumeFile } from '../hooks/useResumeFile'
+import { fmtComp } from './talent/TalentPoolTable'
 
 function Row({ icon: Icon, label, children }) {
   return (
@@ -99,7 +100,7 @@ export default function CandidateProfileDrawer({ candidateId, open, onClose, rol
                 </Row>
                 <Row icon={Banknote} label="Compensation">
                   {(p.current_ctc || p.salary_expectation)
-                    ? <>{p.current_ctc && <span>Current: {p.current_ctc}</span>}{p.current_ctc && p.salary_expectation && <br />}{p.salary_expectation && <span>Expected: {p.salary_expectation}</span>}</>
+                    ? <>{p.current_ctc && <span>Current: {fmtComp(p.current_ctc)}</span>}{p.current_ctc && p.salary_expectation && <br />}{p.salary_expectation && <span>Expected: {fmtComp(p.salary_expectation)}</span>}</>
                     : ''}
                 </Row>
                 <Row icon={Clock} label="Notice period">{p.notice_period}</Row>

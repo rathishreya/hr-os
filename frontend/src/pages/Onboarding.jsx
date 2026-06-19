@@ -1,10 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Rocket, CheckCircle2, Circle, Pencil, Check } from 'lucide-react'
+import { Rocket, CheckCircle2, Circle, Pencil, Check, ListChecks, Users, Clock } from 'lucide-react'
 import { api } from '../api'
 import { Card, Badge, Button, Spinner, EmptyState, PageHeader, Modal, Field, inputClass, cx } from '../ui'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useColumnFilters, ColumnFilter, distinctValues } from '../components/tableFilters'
+
+// Compensation is stored as free text (e.g. "20-28 LPA" / "1800000"). Normalise it for display so
+// it reads consistently with the JD/careers chip: collapse whitespace and, when the value is a bare
+// figure with no unit/currency, prefix ₹ and group digits. Values that already carry a unit (LPA,
+// lakh, ₹, etc.) are left as the recruiter typed them.
+const fmtComp = (v) => {
+  const s = (v || '').trim().replace(/\s+/g, ' ')
+  if (!s) return ''
+  const bare = s.replace(/[, ]/g, '')
+  if (/^\d{4,}$/.test(bare)) return `₹${Number(bare).toLocaleString('en-IN')}`
+  return s
+}
 
 // Onboarding status vocabulary (HR-set on the tracker).
 const ONBOARDING_STATUSES = [
@@ -113,9 +125,12 @@ function DetailsEditor({ plan, onSaved }) {
       ) : (
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-3">
           <div><dt className="text-[11px] uppercase tracking-wide text-slate-400">Entity</dt><dd className="text-slate-700">{d.entity || '—'}</dd></div>
-          {DETAIL_FIELDS.map((f) => (
-            <div key={f.key}><dt className="text-[11px] uppercase tracking-wide text-slate-400">{f.label}</dt><dd className="truncate text-slate-700">{d[f.key] || '—'}</dd></div>
-          ))}
+          {DETAIL_FIELDS.map((f) => {
+            const val = f.key === 'compensation' ? fmtComp(d.compensation) : d[f.key]
+            return (
+              <div key={f.key}><dt className="text-[11px] uppercase tracking-wide text-slate-400">{f.label}</dt><dd className="truncate text-slate-700" title={val || undefined}>{val || '—'}</dd></div>
+            )
+          })}
         </dl>
       )}
     </div>
@@ -137,6 +152,19 @@ export default function Onboarding() {
     () => Object.fromEntries(Object.entries(ONB_ACCESSORS).map(([k, acc]) => [k, distinctValues(plans || [], acc)])),
     [plans],
   )
+
+  // At-a-glance summary across all trackers — total hires, how many are still working through the
+  // 100-day journey, and how many have finished (status "Complete" or every task checked off).
+  const stats = useMemo(() => {
+    const list = plans || []
+    let complete = 0
+    for (const p of list) {
+      const { pct } = progress(p)
+      const status = (p.details && p.details.status) || ''
+      if (status === 'Complete' || (pct === 100 && (p.tasks || []).length > 0)) complete += 1
+    }
+    return { total: list.length, complete, inProgress: Math.max(0, list.length - complete) }
+  }, [plans])
   const onbFilter = (fkey) => (
     <ColumnFilter label={fkey} values={distinct[fkey] || []} excluded={filterCtl.filters[fkey] || []} onChange={(arr) => filterCtl.setFilter(fkey, arr)} />
   )
@@ -155,6 +183,7 @@ export default function Onboarding() {
   }
 
   const phases = view ? groupByPhase(view.tasks) : []
+  const viewProgress = view ? progress(view) : { done: 0, total: 0, pct: 0 }
 
   return (
     <div className="space-y-6">
@@ -172,7 +201,27 @@ export default function Onboarding() {
           description="Mark a candidate’s entry as “Move to onboarding” on the Offer & Docs page to start their tracker here."
         />
       ) : (
-        <Card className="overflow-hidden p-0">
+        <>
+          {/* Summary strip — clearer hierarchy: surface the portfolio at a glance above the table. */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'New hires', value: stats.total, icon: Users, tint: 'bg-brand-50 text-brand-600' },
+              { label: 'In progress', value: stats.inProgress, icon: Clock, tint: 'bg-sky-50 text-sky-600' },
+              { label: 'Complete', value: stats.complete, icon: CheckCircle2, tint: 'bg-emerald-50 text-emerald-600' },
+            ].map((s) => (
+              <Card key={s.label} className="flex items-center gap-3 p-4">
+                <div className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', s.tint)}>
+                  <s.icon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-2xl font-semibold leading-none tabular-nums text-slate-900">{s.value}</div>
+                  <div className="mt-1 text-xs text-slate-500">{s.label}</div>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -219,7 +268,8 @@ export default function Onboarding() {
               </tbody>
             </table>
           </div>
-        </Card>
+          </Card>
+        </>
       )}
 
       <Modal
@@ -232,13 +282,39 @@ export default function Onboarding() {
           <div className="space-y-4">
             <DetailsEditor key={view.id} plan={view} onSaved={mergePlan} />
 
-            {phases.map(({ phase, tasks }) => {
+            {/* Overall progress banner — surfaces completion at a glance above the phase list. */}
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                <ListChecks className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">100-day progress</span>
+                  <span className="text-xs tabular-nums text-slate-500">{viewProgress.done}/{viewProgress.total} tasks · {viewProgress.pct}%</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div className={cx('h-full rounded-full transition-[width] duration-300 ease-snappy', viewProgress.pct === 100 ? 'bg-emerald-500' : 'bg-brand-500')} style={{ width: `${viewProgress.pct}%` }} />
+                </div>
+              </div>
+            </div>
+
+            {phases.length === 0 ? (
+              <EmptyState
+                icon={ListChecks}
+                title="No tasks in this plan yet"
+                description="This onboarding tracker has no checklist tasks. They are seeded from the EZ Lab template when the plan is created."
+              />
+            ) : phases.map(({ phase, tasks }) => {
               const done = tasks.filter((t) => t.done).length
+              const pct = tasks.length ? Math.round((100 * done) / tasks.length) : 0
               return (
-                <div key={phase}>
-                  <div className="mb-1.5 flex items-center gap-2">
+                <div key={phase} className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className="mb-2 flex items-center gap-2">
                     <h4 className="text-xs font-semibold uppercase tracking-wide text-brand-700">{phase}</h4>
                     <span className="text-[11px] tabular-nums text-slate-400">{done}/{tasks.length}</span>
+                    <div className="ml-auto h-1.5 w-20 overflow-hidden rounded-full bg-slate-100">
+                      <div className={cx('h-full rounded-full', pct === 100 ? 'bg-emerald-500' : 'bg-brand-500')} style={{ width: `${pct}%` }} />
+                    </div>
                   </div>
                   <table className="w-full border-collapse text-sm">
                     <tbody>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, Download, FileText, SlidersHorizontal } from 'lucide-react'
+import { X, Download, FileText } from 'lucide-react'
 import { Badge, IconButton, Tabs, Button, Spinner, Field, inputClass, scoreTone, stageTone } from '../../ui'
 import { api } from '../../api'
 import { useToast } from '../Toast'
@@ -8,40 +8,42 @@ import AiReportTab, { verdictFor } from './AiReportTab'
 import InterviewPlanningPanel from './InterviewPlanningPanel'
 import EmailPanel from './EmailPanel'
 import FormattedResume from './FormattedResume'
-import DrawerCustomizeModal from './DrawerCustomizeModal'
+import { formatComp } from '../../utils/exportCsv'
 import {
-  useDrawerPreferences,
+  DRAWER_TAB_OPTIONS,
   WIDTH_CLASSES,
   OVERLAY_CLASSES,
 } from '../../hooks/useDrawerPreferences'
 
 const STAGES = ['applied', 'screening', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
 
+// Card customization was removed — the drawer now renders with these fixed defaults (all tabs,
+// medium width, light overlay, all overview sections, formatted resume first).
+const DRAWER_WIDTH = 'medium'
+const DRAWER_OVERLAY = 'light'
+const RESUME_DEFAULT_VIEW = 'formatted'
+
 export default function CandidateManageDrawer({ app, open, onClose, onRefresh }) {
   const { toast } = useToast()
-  const { prefs, updatePrefs, resetPrefs, visibleTabs } = useDrawerPreferences()
+  const visibleTabs = DRAWER_TAB_OPTIONS
   const [tab, setTab] = useState('overview')
   const [notesDraft, setNotesDraft] = useState('')
   const [busy, setBusy] = useState(false)
-  const [customizeOpen, setCustomizeOpen] = useState(false)
 
   const activeTab = visibleTabs.some((t) => t.id === tab) ? tab : (visibleTabs[0]?.id || 'overview')
 
   useEffect(() => {
     if (open && app) {
-      const defaultId = visibleTabs.some((t) => t.id === prefs.defaultTab)
-        ? prefs.defaultTab
-        : visibleTabs[0]?.id || 'overview'
-      setTab(defaultId)
+      setTab('overview')
       setNotesDraft(app.notes || '')
     }
-  }, [open, app?.id, prefs.defaultTab, visibleTabs])
+  }, [open, app?.id])
 
   if (!open || !app) return null
 
   const c = app.candidate || {}
   const meta = app.meta || {}
-  const ov = prefs.overview
+  const parsed = c.parsed || {}
 
   async function saveNotes() {
     setBusy(true)
@@ -74,10 +76,10 @@ export default function CandidateManageDrawer({ app, open, onClose, onRefresh })
       <button
         type="button"
         aria-label="Close"
-        className={`absolute inset-0 backdrop-blur-sm ${OVERLAY_CLASSES[prefs.overlay] || OVERLAY_CLASSES.light}`}
+        className={`absolute inset-0 backdrop-blur-sm ${OVERLAY_CLASSES[DRAWER_OVERLAY] || OVERLAY_CLASSES.light}`}
         onClick={onClose}
       />
-      <aside className={`relative z-10 flex h-[720px] max-h-[90vh] ${WIDTH_CLASSES[prefs.width] || WIDTH_CLASSES.medium} flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl`}>
+      <aside className={`relative z-10 flex h-[720px] max-h-[90vh] ${WIDTH_CLASSES[DRAWER_WIDTH] || WIDTH_CLASSES.medium} flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl`}>
         <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
           <div className="min-w-0 flex-1 pr-2">
             <h2 className="text-lg font-semibold text-slate-900">{c.name || 'Unnamed'}</h2>
@@ -94,9 +96,6 @@ export default function CandidateManageDrawer({ app, open, onClose, onRefresh })
             </div>
           </div>
           <div className="flex shrink-0 gap-1">
-            <IconButton onClick={() => setCustomizeOpen(true)} aria-label="Customize panel" title="Customize panel">
-              <SlidersHorizontal className="h-5 w-5" />
-            </IconButton>
             <IconButton onClick={onClose} aria-label="Close"><X className="h-5 w-5" /></IconButton>
           </div>
         </div>
@@ -110,46 +109,41 @@ export default function CandidateManageDrawer({ app, open, onClose, onRefresh })
         <div className="flex-1 overflow-y-auto p-5">
           {activeTab === 'overview' && (
             <div className="space-y-4 text-sm">
-              {ov.stage && (
-                <div className="flex gap-2">
-                  <select className={inputClass} value={app.stage} disabled={busy} onChange={(e) => moveStage(e.target.value)}>
-                    {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-              )}
-              {ov.liveStatus && (
-                <div className="rounded-xl bg-slate-50 p-4">
-                  <div className="mb-1 text-xs font-semibold uppercase text-slate-400">Live status</div>
-                  <p className="font-medium text-slate-800">{meta.activity || '—'}</p>
-                </div>
-              )}
-              {ov.aiSummary && c.ai_summary && (
+              <div className="flex gap-2">
+                <select className={inputClass} value={app.stage} disabled={busy} onChange={(e) => moveStage(e.target.value)}>
+                  {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <CandidateProfileCard parsed={parsed} email={c.email} />
+              <div className="rounded-xl bg-slate-50 p-4">
+                <div className="mb-1 text-xs font-semibold uppercase text-slate-400">Live status</div>
+                <p className="font-medium text-slate-800">{meta.activity || '—'}</p>
+              </div>
+              {c.ai_summary && (
                 <div>
                   <h4 className="mb-1 text-xs font-semibold uppercase text-slate-400">AI summary</h4>
                   <p className="text-slate-600">{c.ai_summary}</p>
                 </div>
               )}
-              {ov.screeningEmails && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border border-slate-100 p-3">
-                    <div className="text-xs text-slate-400">Screening</div>
-                    <div className="font-medium capitalize text-slate-800">{meta.screening_status || 'none'}</div>
-                    {meta.screening_score != null && <div className="text-xs text-slate-500">Score {meta.screening_score}</div>}
-                  </div>
-                  <div className="rounded-lg border border-slate-100 p-3">
-                    <div className="text-xs text-slate-400">Emails</div>
-                    <div className="font-medium text-slate-800">{meta.email_count || 0} sent</div>
-                    {meta.last_email_template && <div className="text-xs text-slate-500">{meta.last_email_template}</div>}
-                  </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-slate-100 p-3">
+                  <div className="text-xs text-slate-400">Screening</div>
+                  <div className="font-medium capitalize text-slate-800">{meta.screening_status || 'none'}</div>
+                  {meta.screening_score != null && <div className="text-xs text-slate-500">Score {meta.screening_score}</div>}
                 </div>
-              )}
-              {ov.interviewReport && meta.screening_summary && (
+                <div className="rounded-lg border border-slate-100 p-3">
+                  <div className="text-xs text-slate-400">Emails</div>
+                  <div className="font-medium text-slate-800">{meta.email_count || 0} sent</div>
+                  {meta.last_email_template && <div className="text-xs capitalize text-slate-500">{(meta.last_email_template || '').replace(/_/g, ' ')}{meta.last_email_status ? ` · ${meta.last_email_status}` : ''}</div>}
+                </div>
+              </div>
+              {meta.screening_summary && (
                 <div>
                   <h4 className="mb-1 text-xs font-semibold uppercase text-slate-400">Interview report</h4>
                   <p className="rounded-lg bg-brand-50 p-3 text-slate-700">{meta.screening_summary}</p>
                 </div>
               )}
-              {ov.comments && app.notes && (
+              {app.notes && (
                 <div>
                   <h4 className="mb-1 text-xs font-semibold uppercase text-slate-400">Comments</h4>
                   <p className="whitespace-pre-wrap text-slate-600">{app.notes}</p>
@@ -172,7 +166,7 @@ export default function CandidateManageDrawer({ app, open, onClose, onRefresh })
           )}
 
           {activeTab === 'resume' && (
-            <ResumePreview candidate={c} defaultView={prefs.resumeDefaultView} />
+            <ResumePreview candidate={c} defaultView={RESUME_DEFAULT_VIEW} />
           )}
 
           {activeTab === 'score' && <AiReportTab app={app} onRefresh={onRefresh} />}
@@ -189,14 +183,63 @@ export default function CandidateManageDrawer({ app, open, onClose, onRefresh })
           )}
         </div>
       </aside>
+    </div>
+  )
+}
 
-      <DrawerCustomizeModal
-        open={customizeOpen}
-        onClose={() => setCustomizeOpen(false)}
-        prefs={prefs}
-        onChange={updatePrefs}
-        onReset={resetPrefs}
-      />
+// Parsed candidate profile surfaced on the Overview tab: current role, experience, location,
+// compensation, notice period, top skills, and contact links. All optional — only rows with a
+// value render, and the whole card is hidden when nothing is parsed.
+function CandidateProfileCard({ parsed = {}, email }) {
+  const skills = (parsed.skills || []).filter(Boolean)
+  const links = [
+    parsed.linkedin && { label: 'LinkedIn', href: parsed.linkedin },
+    parsed.github && { label: 'GitHub', href: parsed.github },
+    parsed.portfolio && { label: 'Portfolio', href: parsed.portfolio },
+  ].filter(Boolean)
+  const rows = [
+    ['Current role', [parsed.current_title, parsed.current_company].filter(Boolean).join(' · ')],
+    ['Experience', parsed.total_yoe != null ? `${parsed.total_yoe} yrs` : ''],
+    ['Location', parsed.location],
+    ['Current CTC', parsed.current_ctc ? formatComp(parsed.current_ctc) : ''],
+    ['Expected CTC', parsed.salary_expectation ? formatComp(parsed.salary_expectation) : ''],
+    ['Notice period', parsed.notice_period],
+    ['Phone', parsed.phone],
+    ['Email', email],
+  ].filter(([, v]) => v)
+
+  if (rows.length === 0 && skills.length === 0 && links.length === 0) return null
+
+  return (
+    <div className="rounded-xl border border-slate-100 p-4">
+      <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Candidate profile</div>
+      {rows.length > 0 && (
+        <dl className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+          {rows.map(([label, value]) => (
+            <div key={label} className="flex justify-between gap-2 text-sm">
+              <dt className="text-slate-400">{label}</dt>
+              <dd className="text-right font-medium text-slate-700">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {skills.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">Top skills</div>
+          <div className="flex flex-wrap gap-1.5">
+            {skills.slice(0, 12).map((s) => (
+              <span key={s} className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{s}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      {links.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-3 text-xs">
+          {links.map((l) => (
+            <a key={l.label} href={l.href} target="_blank" rel="noreferrer" className="font-medium text-brand-600 hover:text-brand-700 hover:underline">{l.label}</a>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

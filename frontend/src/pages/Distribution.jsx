@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Megaphone, Globe, ExternalLink, CheckCircle2, AlertTriangle, Briefcase, Plug, Check, Loader, Zap } from 'lucide-react'
+import { Megaphone, Globe, ExternalLink, CheckCircle2, AlertTriangle, Briefcase, Plug, Check, Loader, Zap, Settings2, ChevronDown } from 'lucide-react'
 import { api } from '../api'
 import { Card, Button, Spinner, EmptyState, PageHeader, Badge } from '../ui'
 import { CopyBtn, DistributionDetails, LinkedinIcon } from '../components/distribution/DistributionPanel'
@@ -74,7 +74,7 @@ function RoleRow({ role, integrations, busyKey, onGoogle, onLinkedin }) {
   )
 }
 
-function IntegrationRow({ name, configured, hint }) {
+function IntegrationRow({ name, what, configured, hint, showSetup }) {
   return (
     <div className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-white p-3">
       <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${configured ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
@@ -83,9 +83,14 @@ function IntegrationRow({ name, configured, hint }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-slate-800">{name}</span>
-          <Badge tone={configured ? 'green' : 'gray'}>{configured ? 'Connected' : 'Setup needed'}</Badge>
+          <Badge tone={configured ? 'green' : 'gray'}>{configured ? 'Connected' : 'Not connected'}</Badge>
         </div>
-        {!configured && <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{hint}</p>}
+        {what && <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{what}</p>}
+        {/* The exact env-var names are setup-team detail — only show them when the
+            recruiter opens "Setup details", and only if the channel isn't connected. */}
+        {!configured && showSetup && hint && (
+          <p className="mt-1.5 rounded-md bg-slate-50 px-2 py-1.5 text-[11px] leading-relaxed text-slate-500">{hint}</p>
+        )}
       </div>
     </div>
   )
@@ -98,6 +103,7 @@ export default function Distribution() {
   const [integrations, setIntegrations] = useState(null)
   const [err, setErr] = useState('')
   const [busyKey, setBusyKey] = useState('')
+  const [showSetup, setShowSetup] = useState(false)
 
   const loadChannels = () => api.distributionChannels().then(setData).catch((e) => setErr(e.message))
 
@@ -157,13 +163,26 @@ export default function Distribution() {
 
       {data && data.published_count > 0 && (
         <>
+          {/* Plain-language intro: what this page is and how the three tiers below differ. */}
+          <Card className="p-5">
+            <p className="text-sm leading-relaxed text-slate-600">
+              Every role you publish goes onto your <strong className="text-slate-800">careers page</strong> and into a single
+              job feed. From there it reaches the wider job boards in three ways, sorted below by how much work each takes:
+            </p>
+            <ul className="mt-3 space-y-1.5 text-sm text-slate-600">
+              <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /><span><strong className="text-emerald-700">Automatic &amp; free</strong> — the sitemap, RSS/XML feed and Google for Jobs pick up new roles on their own. Nothing to do.</span></li>
+              <li className="flex items-start gap-2"><Zap className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" /><span><strong className="text-brand-700">One-click direct post</strong> — once connected, push a role straight to Google or your LinkedIn page using the buttons on each role.</span></li>
+              <li className="flex items-start gap-2"><Plug className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /><span><strong className="text-slate-700">Manual / partner boards</strong> — free boards you connect once by pasting your feed link; Indeed, Naukri and the like have no free auto-posting.</span></li>
+            </ul>
+          </Card>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Card className="p-4">
               <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400"><Briefcase className="h-4 w-4 text-brand-500" /> Published roles</div>
               <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{data.published_count}</div>
             </Card>
             <Card className="p-4">
-              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400"><Globe className="h-4 w-4 text-brand-500" /> Free channels</div>
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400"><Globe className="h-4 w-4 text-brand-500" /> Free boards reached</div>
               <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{data.channels.length}</div>
             </Card>
             <Card className="p-4">
@@ -174,36 +193,64 @@ export default function Distribution() {
             </Card>
           </div>
 
-          {/* Automated direct posting */}
+          {/* ── Tier 1 + 3: Automatic & free boards, plus the connect-once partner boards.
+                DistributionDetails groups these and keeps the feed-link copy step. ── */}
+          <Card className="p-5">
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><Globe className="h-4 w-4 text-brand-500" /> Where your jobs get posted</h3>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">All free. One feed covers every published role — the automatic boards pull it in by themselves, and you set up each connect-once board a single time.</p>
+            <DistributionDetails data={data} />
+          </Card>
+
+          {/* ── Tier 2: One-click direct post (Google for Jobs + LinkedIn page). ── */}
           {integrations && (
             <Card className="p-5">
-              <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><Zap className="h-4 w-4 text-brand-500" /> Automated direct posting</h3>
-              <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                Push each published role straight to Google for Jobs (via the Indexing API) and your LinkedIn company page. Connect once in the backend environment — then it fires automatically on publish, and you can re‑push any role below.
-              </p>
-              {!integrations.public_url_ok && (
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><Zap className="h-4 w-4 text-brand-500" /> One-click direct post</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                    Connect these once and you can post any role straight to Google for Jobs or your LinkedIn company page from the list below — it also fires automatically when you publish.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSetup((s) => !s)}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-500 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+                  aria-expanded={showSetup}
+                >
+                  <Settings2 className="h-3.5 w-3.5" /> Setup details
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ease-snappy ${showSetup ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+              {!integrations.public_url_ok && showSetup && (
                 <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>Set <code className="rounded bg-amber-100 px-1">PUBLIC_BASE_URL</code> to your deployed site — Google can&apos;t index <code>localhost</code>, and LinkedIn links need a public URL.</span>
                 </div>
               )}
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <IntegrationRow name="Google for Jobs" configured={integrations.google.configured} hint="Add a Google service-account key (GOOGLE_INDEXING_SA_JSON) and verify your careers domain in Search Console." />
-                <IntegrationRow name="LinkedIn company page" configured={integrations.linkedin.configured} hint="Add LINKEDIN_ACCESS_TOKEN + LINKEDIN_ORG_URN (you must be a page admin)." />
+                <IntegrationRow
+                  name="Google for Jobs"
+                  what="Tells Google to index a role so it can show in Google's jobs results."
+                  configured={integrations.google.configured}
+                  showSetup={showSetup}
+                  hint="Add a Google service-account key (GOOGLE_INDEXING_SA_JSON) and verify your careers domain in Search Console."
+                />
+                <IntegrationRow
+                  name="LinkedIn company page"
+                  what="Posts the role as an update on your LinkedIn company page."
+                  configured={integrations.linkedin.configured}
+                  showSetup={showSetup}
+                  hint="Add LINKEDIN_ACCESS_TOKEN + LINKEDIN_ORG_URN (you must be a page admin)."
+                />
               </div>
-              {!anyAuto && <p className="mt-3 text-[11px] text-slate-400">Until connected, use the free feed boards below and the manual LinkedIn share button on each role.</p>}
+              {!anyAuto && <p className="mt-3 text-[11px] text-slate-400">Not connected yet — until then, use the free feed boards above and the manual LinkedIn share button on each role.</p>}
             </Card>
           )}
 
-          <Card className="p-5">
-            <h3 className="text-sm font-semibold text-slate-800">Where your jobs get posted</h3>
-            <p className="mt-1 text-xs text-slate-500">All free, and one feed covers every published role. Set up the “connect once” boards a single time — after that, each job you publish appears on them automatically.</p>
-            <DistributionDetails data={data} />
-          </Card>
-
+          {/* The control panel: every published role, with its direct-post + share + copy actions. */}
           <Card className="overflow-hidden p-0">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <h3 className="text-sm font-semibold text-slate-800">Published roles in the feed ({data.roles.length})</h3>
+              <h3 className="text-sm font-semibold text-slate-800">Published roles ({data.roles.length})</h3>
               <CopyBtn value={data.feeds.xml} label="Copy XML feed" />
             </div>
             {data.roles.map((r) => (

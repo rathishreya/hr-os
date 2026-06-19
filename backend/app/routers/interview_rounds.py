@@ -33,7 +33,10 @@ def _send_interview_invite(
     hr = db.get(models.HiringRequest, app.hiring_request_id)
     role = hr.position if hr else "the role"
     start = calendar_invite.parse_local_dt(scheduled_at)
-    when = start.strftime("%A, %d %b %Y · %I:%M %p") if start else (scheduled_at or "To be confirmed")
+    # Times are scheduled in the recruiter's local zone (scheduled_at is a naive datetime-local
+    # string with no offset). Label it as local time and attach an .ics so the candidate's own
+    # calendar shows it in their zone — avoids a silent off-by-hours mismatch across timezones.
+    when = (start.strftime("%A, %d %b %Y · %I:%M %p") + " (local time — see attached calendar invite for your timezone)") if start else (scheduled_at or "To be confirmed")
     where = location_or_link.strip() or "Will be shared before the interview"
     subject = f"Interview scheduled — {role} at {settings.COMPANY_NAME}"
     body = (

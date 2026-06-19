@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Briefcase, Megaphone, Users, TrendingUp, Star, Percent, BarChart3 } from 'lucide-react'
+import { Briefcase, Users, TrendingUp, Star, Percent, BarChart3, CheckCircle2 } from 'lucide-react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
   PieChart, Pie, FunnelChart, Funnel, LabelList,
@@ -124,6 +124,20 @@ export default function Analytics() {
   const difficulty = data ? toArr(data.roles_by_difficulty) : []
   const topRoles = data?.top_roles || []
 
+  // Pipeline conversion by stage: how many applications reached at least each stage. Shown both as
+  // a bar (volume) and as a pass-through % vs the prior stage in the tooltip-friendly label.
+  const REACH_ORDER = ['applied', 'screening', 'shortlisted', 'interview', 'offer', 'hired']
+  const REACH_LABEL = { applied: 'Applied', screening: 'Screened', shortlisted: 'Shortlisted', interview: 'Interview', offer: 'Offer', hired: 'Hired' }
+  const reachData = data ? REACH_ORDER
+    .map((s, i, arr) => {
+      const value = data.stage_reached?.[s] || 0
+      const prev = i === 0 ? value : (data.stage_reached?.[arr[i - 1]] || 0)
+      const pct = prev > 0 ? Math.round((value / prev) * 100) : 0
+      return { name: REACH_LABEL[s], value, pct }
+    })
+    .filter((d, i) => i === 0 || d.value > 0 || (data.stage_reached?.[REACH_ORDER[0]] || 0) > 0) : []
+  const hasReach = reachData.some((d) => d.value > 0)
+
   return (
     <div className="space-y-6">
       <PageHeader title="Analytics" subtitle="Hiring performance across every role, candidate and AI decision." />
@@ -132,7 +146,7 @@ export default function Analytics() {
 
       {!data && !err && (
         <>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-6">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-24" />)}</div>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-24" />)}</div>
           <div className="grid gap-6 lg:grid-cols-2"><Skeleton className="h-72" /><Skeleton className="h-72" /></div>
         </>
       )}
@@ -148,12 +162,12 @@ export default function Analytics() {
       {data && !empty && (
         <>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-            <Kpi label="Open Jobs" value={data.total_roles} icon={Briefcase} from="#7c3aed" to="#d946ef" />
-            <Kpi label="Published" value={data.published_roles ?? 0} icon={Megaphone} from="#6366f1" to="#8b5cf6" />
-            <Kpi label="Candidates" value={data.total_candidates} icon={Users} from="#0ea5e9" to="#6366f1" />
+            <Kpi label="Open Roles" value={data.open_roles ?? data.published_roles ?? 0} icon={Briefcase} from="#7c3aed" to="#d946ef" />
+            <Kpi label="Active Candidates" value={data.active_candidates ?? data.total_candidates} icon={Users} from="#0ea5e9" to="#6366f1" />
             <Kpi label="Applications" value={data.total_applications} icon={TrendingUp} from="#a855f7" to="#7c3aed" />
             <Kpi label="Avg AI Score" value={data.avg_score} icon={Star} from="#f59e0b" to="#f97316" />
-            <Kpi label="Conversion" value={`${data.conversion_rate}%`} icon={Percent} from="#10b981" to="#14b8a6" />
+            <Kpi label="Offer Accept" value={`${data.offer_accept_rate ?? 0}%`} icon={CheckCircle2} from="#10b981" to="#14b8a6" />
+            <Kpi label="Hire Rate" value={`${data.conversion_rate}%`} icon={Percent} from="#6366f1" to="#8b5cf6" />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
@@ -167,6 +181,28 @@ export default function Analytics() {
                       <LabelList position="center" dataKey="value" stroke="none" fill="#fff" fontSize={13} fontWeight={700} />
                     </Funnel>
                   </FunnelChart>
+                </ResponsiveContainer>
+              ) : <Empty text="No applications in the pipeline yet." />}
+            </Panel>
+
+            <Panel title="Pipeline conversion by stage" hint={`Applications reaching each stage · Interview→Offer ${data.interview_to_offer_rate ?? 0}% · Offer→Hire ${data.offer_accept_rate ?? 0}%`}>
+              {hasReach ? (
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={reachData} margin={{ top: 18, right: 8, left: -16, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="barTeal" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#34d399" />
+                        <stop offset="100%" stopColor="#059669" />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} interval={0} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} width={32} />
+                    <Tooltip cursor={{ fill: 'rgba(16,185,129,.06)' }} content={<CardTip />} />
+                    <Bar dataKey="value" name="Reached" fill="url(#barTeal)" radius={[6, 6, 0, 0]} maxBarSize={48}>
+                      <LabelList dataKey="pct" position="top" formatter={(v) => `${v}%`} fontSize={11} fill="#475569" />
+                    </Bar>
+                  </BarChart>
                 </ResponsiveContainer>
               ) : <Empty text="No applications in the pipeline yet." />}
             </Panel>

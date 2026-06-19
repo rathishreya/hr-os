@@ -28,3 +28,28 @@ export const INTERVIEW_TYPES = [
 
 export const INTERVIEW_TYPE_LABEL = Object.fromEntries(INTERVIEW_TYPES.map((t) => [t.value, t.label]))
 
+// Currencies offered as the Budget / CTC prefix on the create/edit job form. INR is the
+// default. The composed budget_ctc string keeps the code (e.g. "INR 20-28 LPA") so the
+// backend salary parser (parse_budget_ctc) reads the figures and ignores the currency token.
+export const CURRENCIES = [
+  { code: 'INR', symbol: '₹' },
+  { code: 'USD', symbol: '$' },
+  { code: 'EUR', symbol: '€' },
+  { code: 'GBP', symbol: '£' },
+  { code: 'AED', symbol: 'د.إ' },
+  { code: 'SGD', symbol: 'S$' },
+]
+
+// Canonical seed values for the creatable Department / Location dropdowns. Existing roles'
+// values are merged in at runtime (see useFieldOptions), and recruiters can still type a
+// brand-new value (free-text add) — these are just a sensible starting set.
+export const DEPARTMENT_SEEDS = [
+  'Engineering', 'Product', 'Design', 'Data', 'Sales', 'Marketing',
+  'Customer Success', 'Operations', 'Finance', 'People / HR', 'Legal', 'IT',
+]
+
+export const LOCATION_SEEDS = [
+  'Bengaluru', 'Hyderabad', 'Pune', 'Mumbai', 'Delhi NCR', 'Chennai',
+  'Kolkata', 'Ahmedabad', 'Remote (India)', 'Remote',
+]
+

@@ -3,19 +3,22 @@ import { api } from '../../api'
 import { Modal, Button, Field, Spinner, inputClass } from '../../ui'
 import { useToast } from '../Toast'
 import MultiSelect from '../MultiSelect'
-import { SkillChecklist, ApplicationQuestionsBuilder, InterviewTypesPicker, useTeamOptions } from './jobFormParts'
+import { SkillChecklist, ApplicationQuestionsBuilder, InterviewTypesPicker, BudgetCtcField, ComboField, useFieldOptions, useTeamOptions } from './jobFormParts'
 
 // Edit an existing job's details. Mounted only while open (see call site) so state initializes
 // from the role without an effect. Saves via PATCH /api/hiring-requests/{id}.
 export default function EditJobModal({ role, onClose, onSaved }) {
   const { toast } = useToast()
   const teamOpts = useTeamOptions()
+  const deptOptions = useFieldOptions('department')
+  const locationOptions = useFieldOptions('location')
   const [busy, setBusy] = useState(false)
   const [f, setF] = useState(() => ({
     position: role.position || '',
     department: role.department || '',
     budget_ctc: role.budget_ctc || '',
     location: role.location || '',
+    role_brief: role.role_brief || '',
     yoe_min: role.yoe_min ?? 0,
     yoe_max: role.yoe_max ?? 0,
     priority: role.priority || 'medium',
@@ -35,18 +38,28 @@ export default function EditJobModal({ role, onClose, onSaved }) {
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }))
   const setKey = (k) => (next) => setF((p) => ({ ...p, [k]: next }))
 
+  // 'closed' is terminal — once a role is closed it can't be edited back open. We lock the status
+  // select on closed roles and route status changes through the lifecycle endpoint (not the plain
+  // PATCH) so the state-machine rules are enforced server-side.
+  const isClosed = role.status === 'closed'
+
   async function save() {
     if (!f.position.trim()) { toast('Position is required', 'error'); return }
     setBusy(true)
     try {
-      const { panelists, ...rest } = f
-      const updated = await api.updateRole(role.id, {
+      const { panelists, status, ...rest } = f
+      let updated = await api.updateRole(role.id, {
         ...rest,
         yoe_min: Number(f.yoe_min) || 0,
         yoe_max: Number(f.yoe_max) || 0,
         num_openings: Number(f.num_openings) || 1,
         interview_panel: panelists,
       })
+      // Apply a status change separately through the guarded lifecycle endpoint.
+      if (status && status !== role.status) {
+        updated = await api.changeRoleStatus(role.id, status)
+        if (updated.status !== status) toast(`Role parked as ${updated.status} (on hold over 3 months)`)
+      }
       toast('Job updated')
       onSaved(updated)
     } catch (e) {
@@ -66,15 +79,17 @@ export default function EditJobModal({ role, onClose, onSaved }) {
     >
       <div className="space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Position *"><input className={inputClass} value={f.position} onChange={set('position')} /></Field>
-          <Field label="Department"><input className={inputClass} value={f.department} onChange={set('department')} /></Field>
-          <Field label="Budget / CTC"><input className={inputClass} value={f.budget_ctc} onChange={set('budget_ctc')} /></Field>
-          <Field label="Location"><input className={inputClass} value={f.location} onChange={set('location')} /></Field>
+          <Field label="Role *"><input className={inputClass} value={f.position} onChange={set('position')} /></Field>
+          <ComboField label="Department" listId="edit-dept-options" value={f.department} onChange={setKey('department')} options={deptOptions} placeholder="Pick or type to add" />
+          <div className="sm:col-span-2">
+            <BudgetCtcField value={f.budget_ctc} onChange={setKey('budget_ctc')} />
+          </div>
+          <ComboField label="Location" listId="edit-location-options" value={f.location} onChange={setKey('location')} options={locationOptions} placeholder="Pick or type to add" />
           <Field label="Min YOE"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_min} onChange={set('yoe_min')} /></Field>
           <Field label="Max YOE"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_max} onChange={set('yoe_max')} /></Field>
           <Field label="Priority">
             <select className={inputClass} value={f.priority} onChange={set('priority')}>
-              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
+              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
             </select>
           </Field>
           <Field label="Work mode">
@@ -85,12 +100,18 @@ export default function EditJobModal({ role, onClose, onSaved }) {
           <Field label="Hiring deadline"><input type="date" className={inputClass} value={f.hiring_deadline} onChange={set('hiring_deadline')} /></Field>
           <Field label="Start hiring date"><input type="date" className={inputClass} value={f.start_hiring_date} onChange={set('start_hiring_date')} /></Field>
           <Field label="Openings"><input type="number" min="1" className={inputClass} value={f.num_openings} onChange={set('num_openings')} /></Field>
-          <Field label="Status">
-            <select className={inputClass} value={f.status} onChange={set('status')}>
+          <Field label="Status" hint={isClosed ? 'Closed roles are final and cannot be reopened' : undefined}>
+            <select className={inputClass} value={f.status} onChange={set('status')} disabled={isClosed}>
               <option value="open">Open</option><option value="on_hold">On hold</option><option value="closed">Closed</option><option value="draft">Draft</option>
+              {/* 'paused' is an auto-set lifecycle state; shown only when the role is already paused. */}
+              {f.status === 'paused' && <option value="paused">Paused</option>}
             </select>
           </Field>
         </div>
+
+        <Field label="Role description" hint="100–200 word brief the AI uses to draft a sharper JD on regenerate">
+          <textarea className={`${inputClass} h-24 resize-y`} value={f.role_brief} onChange={set('role_brief')} placeholder="What this role does, why it's open, what makes it unique…" />
+        </Field>
 
         <div className="space-y-3 rounded-xl border border-slate-200 p-4">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team</h3>

@@ -1,13 +1,134 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, Check } from 'lucide-react'
 import { Button, Field, Spinner, inputClass, cx } from '../../ui'
-import { INTERVIEW_TYPES } from '../../constants'
+import { CURRENCIES, DEPARTMENT_SEEDS, LOCATION_SEEDS, INTERVIEW_TYPES } from '../../constants'
 import { api } from '../../api'
 
 // Shared field components for the create + edit job forms (single source of truth).
 
 let _qSeq = 0
 export const newQuestionId = () => `q_${Date.now().toString(36)}_${_qSeq++}`
+
+// Distinct option list for Department / Location dropdowns. Sourced from existing roles
+// (so the org's own values surface) merged with a small canonical seed set, de-duped
+// case-insensitively. Used to back a creatable combobox (free text still allowed).
+export function useFieldOptions(kind) {
+  const [roles, setRoles] = useState([])
+  useEffect(() => { api.listRoles().then(setRoles).catch(() => setRoles([])) }, [])
+  return useMemo(() => {
+    const seeds = kind === 'department' ? DEPARTMENT_SEEDS : LOCATION_SEEDS
+    const fromRoles = roles.map((r) => (kind === 'department' ? r.department : r.location)).filter(Boolean)
+    const seen = new Set()
+    const out = []
+    for (const v of [...fromRoles, ...seeds]) {
+      const k = String(v).trim().toLowerCase()
+      if (k && !seen.has(k)) { seen.add(k); out.push(String(v).trim()) }
+    }
+    return out.sort((a, b) => a.localeCompare(b))
+  }, [roles, kind])
+}
+
+// A creatable combobox: a plain text input backed by a <datalist> of known options. The user
+// can pick a known value OR type a brand-new one (free-text add), so departments/locations stay
+// editable without a separate Settings master-list table.
+export function ComboField({ label, hint, value, onChange, options, placeholder, required, listId }) {
+  return (
+    <Field label={label} hint={hint}>
+      <input
+        className={inputClass}
+        list={listId}
+        value={value}
+        required={required}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete="off"
+      />
+      <datalist id={listId}>
+        {options.map((o) => <option key={o} value={o} />)}
+      </datalist>
+    </Field>
+  )
+}
+
+// ── Budget / CTC composite: currency prefix + min/max amount (grouped thousands) + unit ──
+// Serializes to the single free-text budget_ctc string the backend already parses, e.g.
+// "INR 20-28 LPA" or "USD 90,000-1,20,000 per year". Parsing back is best-effort for editing.
+const DEFAULT_UNIT = 'LPA'
+const BUDGET_UNITS = ['LPA', 'per month', 'per year']
+
+function groupThousands(raw) {
+  // Keep only digits, then group in the Indian style the rest of the app uses (en-IN).
+  const digits = String(raw).replace(/[^\d]/g, '')
+  if (!digits) return ''
+  return Number(digits).toLocaleString('en-IN')
+}
+
+export function parseBudgetCtc(str) {
+  const s = String(str || '').trim()
+  const cur = CURRENCIES.find((c) => new RegExp(`(^|\\b)(${c.code}|\\${c.symbol})`, 'i').test(s))
+  const unit = BUDGET_UNITS.find((u) => s.toLowerCase().includes(u.toLowerCase())) || DEFAULT_UNIT
+  const nums = s.replace(/,/g, '').match(/\d+(?:\.\d+)?/g) || []
+  return {
+    currency: cur?.code || 'INR',
+    min: nums[0] || '',
+    max: nums[1] || '',
+    unit,
+  }
+}
+
+export function composeBudgetCtc({ currency, min, max, unit }) {
+  const lo = String(min).replace(/[^\d]/g, '')
+  const hi = String(max).replace(/[^\d]/g, '')
+  if (!lo && !hi) return ''
+  const amount = lo && hi && lo !== hi
+    ? `${groupThousands(lo)}-${groupThousands(hi)}`
+    : groupThousands(lo || hi)
+  return `${currency} ${amount} ${unit}`.replace(/\s+/g, ' ').trim()
+}
+
+export function BudgetCtcField({ value, onChange, label = 'Budget / CTC', hint = 'Shown to candidates as the salary range' }) {
+  const parsed = useMemo(() => parseBudgetCtc(value), [value])
+  const emit = (patch) => onChange(composeBudgetCtc({ ...parsed, ...patch }))
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex items-stretch gap-1.5">
+        <select
+          className={`${inputClass} w-20 shrink-0`}
+          value={parsed.currency}
+          onChange={(e) => emit({ currency: e.target.value })}
+          aria-label="Currency"
+        >
+          {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>)}
+        </select>
+        <input
+          className={inputClass}
+          inputMode="numeric"
+          value={parsed.min ? groupThousands(parsed.min) : ''}
+          onChange={(e) => emit({ min: e.target.value })}
+          placeholder="Min"
+          aria-label="Minimum"
+        />
+        <span className="self-center text-slate-400">–</span>
+        <input
+          className={inputClass}
+          inputMode="numeric"
+          value={parsed.max ? groupThousands(parsed.max) : ''}
+          onChange={(e) => emit({ max: e.target.value })}
+          placeholder="Max"
+          aria-label="Maximum"
+        />
+        <select
+          className={`${inputClass} w-28 shrink-0`}
+          value={parsed.unit}
+          onChange={(e) => emit({ unit: e.target.value })}
+          aria-label="Unit"
+        >
+          {BUDGET_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+        </select>
+      </div>
+    </Field>
+  )
+}
 
 // Union two skill lists, case-insensitively de-duped, preserving order.
 export function mergeSkills(a, b) {

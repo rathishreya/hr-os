@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Search, Download, RefreshCw, Columns3, LayoutGrid, LayoutList,
-  UserPlus, Star, Pencil, X, ClipboardList, CalendarPlus, Check, Mail,
+  UserPlus, Star, Pencil, X, ClipboardList, CalendarPlus, Check, Mail, FileDown,
 } from 'lucide-react'
 import { Badge, Button, Modal, scoreTone, stageTone, cx, Spinner } from '../../ui'
+import { formatComp } from '../../utils/exportCsv'
 import { INTERVIEW_TYPES } from '../../constants'
 import { useJobAppColumns } from '../../hooks/useJobAppColumns'
 import JobColumnSettings from './JobColumnSettings'
@@ -53,6 +54,65 @@ function formatDate(d) {
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+// The viewer's local IANA timezone (e.g. "Asia/Kolkata") — surfaced next to scheduling inputs so
+// a chosen interview time is never ambiguous about which zone it's in.
+const LOCAL_TZ = (() => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || '' } catch { return '' }
+})()
+
+// Plain-English AI verdict shown beside the star rating. strong_yes/yes → Yes, maybe → Maybe, no → No.
+const AI_VERDICT = {
+  strong_yes: { label: 'Yes', tone: 'green' },
+  yes: { label: 'Yes', tone: 'green' },
+  maybe: { label: 'Maybe', tone: 'amber' },
+  no: { label: 'No', tone: 'rose' },
+}
+
+// Per-row "Download CV": the resume-file endpoint is auth-gated, so fetch it WITH the bearer
+// token as a blob (a plain <a href> would 401) and save it. Disabled for text-only candidates
+// (no original file on record → the endpoint 404s).
+function DownloadCvButton({ candidate }) {
+  const { toast } = useToast()
+  const [busy, setBusy] = useState(false)
+  const fname = candidate?.resume_filename || ''
+  const hasFile = !!(fname || candidate?.resume_mime)
+
+  async function download(e) {
+    e.stopPropagation()
+    if (!candidate?.id || busy) return
+    setBusy(true)
+    try {
+      const blob = await api.fetchResumeFile(candidate.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fname || `${(candidate.name || 'resume').replace(/\s+/g, '_')}`
+      a.style.display = 'none'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      toast('No original CV file on record for this candidate', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!hasFile) return <span className="text-slate-300" title="Added as text — no original file">—</span>
+  return (
+    <button
+      type="button"
+      onClick={download}
+      disabled={busy}
+      title={`Download ${fname || 'CV'}`}
+      className="rounded-md p-1 text-slate-400 transition-colors duration-150 ease-snappy hover:bg-white hover:text-brand-600 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:opacity-50"
+    >
+      {busy ? <Spinner className="h-3.5 w-3.5" /> : <FileDown className="h-3.5 w-3.5" />}
+    </button>
+  )
+}
+
 function profileOf(row) {
   return row.profile || {}
 }
@@ -76,7 +136,12 @@ const FILTER_ACCESSORS = {
   changed: (r) => formatDate(r.stage_changed_at),
   activity: (r) => r.meta?.activity || '',
   email: (r) => (r.meta?.email_count ? String(r.meta.email_count) : ''),
-  ai: (r) => (r.recommendation || '').replace('_', ' '),
+  last_email: (r) => {
+    const m = r.meta || {}
+    if (!m.last_email_at) return 'No email'
+    return `${(m.last_email_template || 'email').replace(/_/g, ' ')} · ${m.last_email_status || 'sent'}`
+  },
+  ai: (r) => (AI_VERDICT[r.recommendation]?.label || '—'),
   interview: (r) => {
     const m = r.meta || {}
     if (m.interview_rounds_scheduled > 0) return `R${m.interview_next_round || '?'}`
@@ -170,6 +235,7 @@ function BulkRoundsModal({ onClose, allIds, selectedIds, defaultTypes, onDone })
           <label className="block">
             <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">Date &amp; time</span>
             <input type="datetime-local" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
+            <span className="mt-1 block text-[11px] text-slate-400">{LOCAL_TZ ? `Times are in your timezone (${LOCAL_TZ})` : 'Times use your local timezone'}</span>
           </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">Duration</span>
@@ -199,6 +265,7 @@ export default function JobApplicationsWorkspace({
   onRefresh,
   summary,
   workspaceTab = 'applications',
+  initialStage = '',
   addModalOpen = false,
   onAddModalClose,
 }) {
@@ -232,8 +299,11 @@ export default function JobApplicationsWorkspace({
     let list = [...(board || [])]
     if (workspaceTab === 'shortlisted') list = list.filter((r) => r.stage === 'shortlisted')
     else if (workspaceTab === 'positions') list = list.filter((r) => ['offer', 'hired'].includes(r.stage))
+    // Deep-link from the Jobs-list stage columns (e.g. ?view=applications&stage=interview) narrows
+    // the all-applications tab to that one stage.
+    else if (initialStage) list = list.filter((r) => r.stage === initialStage)
     return list
-  }, [board, workspaceTab])
+  }, [board, workspaceTab, initialStage])
 
   const filterCtl = useColumnFilters()
 
@@ -267,6 +337,8 @@ export default function JobApplicationsWorkspace({
     exp: (r) => Number(profileOf(r).total_yoe) || 0,
     applied: (r) => new Date(r.created_at).getTime(),
     changed: (r) => new Date(r.stage_changed_at || r.created_at).getTime(),
+    last_email: (r) => (r.meta?.last_email_at ? new Date(r.meta.last_email_at).getTime() : 0),
+    ai: (r) => ({ strong_yes: 4, yes: 3, maybe: 2, no: 1 }[r.recommendation] || 0),
     score: (r) => r.score_overall || 0,
   }
 
@@ -407,8 +479,8 @@ export default function JobApplicationsWorkspace({
       case 'comp':
         return (
           <div className="min-w-[110px] text-[11px] leading-relaxed">
-            {p.current_ctc && <div><span className="text-slate-400">Cur </span>{p.current_ctc}</div>}
-            {p.salary_expectation && <div><span className="text-slate-400">Exp </span>{p.salary_expectation}</div>}
+            {p.current_ctc && <div><span className="text-slate-400">Cur </span>{formatComp(p.current_ctc)}</div>}
+            {p.salary_expectation && <div><span className="text-slate-400">Exp </span>{formatComp(p.salary_expectation)}</div>}
             {!p.current_ctc && !p.salary_expectation && <span className="text-slate-300">—</span>}
           </div>
         )
@@ -437,14 +509,30 @@ export default function JobApplicationsWorkspace({
         if (m.screening_status === 'in_progress') return <Badge tone="violet">Live</Badge>
         if (m.screening_status === 'completed') return <span className="text-xs text-slate-600">{m.screening_score ?? '✓'}</span>
         return <span className="text-slate-300">—</span>
+      case 'last_email': {
+        if (!m.last_email_at) return <span className="text-slate-300">—</span>
+        const tmpl = (m.last_email_template || 'email').replace(/_/g, ' ')
+        const st = m.last_email_status || 'sent'
+        const tone = { sent: 'green', logged: 'blue', failed: 'rose' }[st] || 'gray'
+        return (
+          <div className="min-w-[120px] text-[11px] leading-tight">
+            <div className="flex items-center gap-1.5">
+              <Badge tone={tone}>{st}</Badge>
+              <span className="truncate capitalize text-slate-600" title={tmpl}>{tmpl}</span>
+            </div>
+            <div className="mt-0.5 text-slate-400">{formatDate(m.last_email_at)}</div>
+          </div>
+        )
+      }
       case 'email':
         return m.email_count ? <span className="text-xs font-medium text-slate-600">{m.email_count}</span> : <span className="text-slate-300">—</span>
-      case 'ai':
-        return (
-          <Badge tone={{ strong_yes: 'green', yes: 'green', maybe: 'amber', no: 'rose' }[row.recommendation] || 'gray'}>
-            {(row.recommendation || '—').replace('_', ' ')}
-          </Badge>
-        )
+      case 'ai': {
+        const v = AI_VERDICT[row.recommendation]
+        if (!v) return <Badge tone="gray">—</Badge>
+        return <Badge tone={v.tone}>{v.label}</Badge>
+      }
+      case 'cv':
+        return <DownloadCvButton candidate={c} />
       default:
         return null
     }
@@ -513,9 +601,18 @@ export default function JobApplicationsWorkspace({
             </div>
             <button type="button" className={iconBtn} onClick={onRefresh} title="Refresh"><RefreshCw className="h-3.5 w-3.5" /></button>
             <button type="button" className={iconBtn} onClick={() => setColumnsOpen(true)} title="Columns"><Columns3 className="h-3.5 w-3.5" /></button>
-            {colFiltered.length > 0 && (
-              <button type="button" className={iconBtn} onClick={() => { exportPipelineCsv(colFiltered, roleTitle); toast('Exported') }} title="Export"><Download className="h-3.5 w-3.5" /></button>
-            )}
+            <button
+              type="button"
+              className={cx(iconBtn, colFiltered.length === 0 && 'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-slate-500 hover:ring-slate-200/80')}
+              disabled={colFiltered.length === 0}
+              onClick={() => {
+                const ok = exportPipelineCsv(colFiltered, roleTitle)
+                toast(ok ? `Exported ${colFiltered.length} candidate${colFiltered.length !== 1 ? 's' : ''}` : 'Export failed — your browser blocked the download', ok ? 'success' : 'error')
+              }}
+              title={colFiltered.length === 0 ? 'No rows to export' : `Export ${colFiltered.length} to CSV`}
+            >
+              <Download className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
 
@@ -547,14 +644,39 @@ export default function JobApplicationsWorkspace({
                 {sorted.map((row) => {
                   const c = row.candidate || {}
                   const p = profileOf(row)
+                  const m = row.meta || {}
+                  const v = AI_VERDICT[row.recommendation]
+                  const company = (p.current_company || '').trim()
+                  const title = (p.current_title || '').trim()
+                  const subtitle = [title, company].filter(Boolean).join(' · ') || c.email || ''
+                  const facts = [
+                    p.total_yoe != null && `${p.total_yoe} yrs`,
+                    p.location,
+                    p.current_ctc && `Cur ${formatComp(p.current_ctc)}`,
+                    p.notice_period && `${p.notice_period} notice`,
+                  ].filter(Boolean)
                   return (
                     <button key={row.id} type="button" onClick={() => openRow(row)} className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 text-left transition duration-150 ease-snappy hover:border-brand-200 hover:bg-white hover:shadow-md active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
                       <div className="flex justify-between gap-2">
-                        <div className="font-semibold text-brand-600">{c.name || 'Unnamed'}</div>
-                        <Badge tone={scoreTone(row.score_overall)}>{Math.round(row.score_overall || 0)}</Badge>
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold text-brand-600">{c.name || 'Unnamed'}</div>
+                          {subtitle && <p className="mt-0.5 truncate text-xs text-slate-500">{subtitle}</p>}
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <Badge tone={scoreTone(row.score_overall)} title="AI overall match score / 100">{Math.round(row.score_overall || 0)}</Badge>
+                          {v && <Badge tone={v.tone}>{v.label}</Badge>}
+                        </div>
                       </div>
-                      <p className="mt-1 truncate text-xs text-slate-500">{p.current_title || c.email}</p>
-                      <Badge tone={stageTone[row.stage]} className="mt-2">{STAGE_LABELS[row.stage]}</Badge>
+                      {facts.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                          {facts.map((f, i) => <span key={i}>{f}</span>)}
+                        </div>
+                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge tone={stageTone[row.stage]}>{STAGE_LABELS[row.stage]}</Badge>
+                        {m.interview_rounds_scheduled > 0 && <Badge tone="blue">R{m.interview_next_round || '?'}</Badge>}
+                        {m.last_email_at && <span className="text-[10px] uppercase tracking-wide text-slate-400">Emailed {formatDate(m.last_email_at)}</span>}
+                      </div>
                     </button>
                   )
                 })}

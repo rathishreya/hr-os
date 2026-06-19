@@ -8,8 +8,28 @@ import { api } from '../../api'
 import { useToast } from '../Toast'
 import { useColumnFilters, ColumnFilter, distinctValues } from '../tableFilters'
 
+// Deterministic, human-readable costing code derived from the role (no DB column needed):
+// EZ-{first 3 letters of department, A-Z padded}-{zero-padded id}. Stable for a given row,
+// so finance can reference the same charge code every time the list is rendered.
+function chargeCode(r) {
+  const dept = String(r.department || '')
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '')
+    .padEnd(3, 'X')
+    .slice(0, 3) || 'GEN'
+  return `EZ-${dept}-${String(r.id).padStart(4, '0')}`
+}
+
+function fmtDate(d) {
+  if (!d) return '—'
+  const t = new Date(d)
+  if (Number.isNaN(t.getTime())) return '—'
+  return t.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 const JOBS_ACCESSORS = {
   id: (r) => String(r.id),
+  charge_code: (r) => chargeCode(r),
   status: (r) => r.status || '',
   position: (r) => r.position || '',
   department: (r) => r.department || '',
@@ -23,7 +43,8 @@ const JOBS_ACCESSORS = {
   recruiter: (r) => r.recruiter || '',
   employment_type: (r) => r.employment_type || '',
   hire_type: (r) => r.hire_type || '',
-  created: (r) => new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+  start: (r) => fmtDate(r.start_hiring_date),
+  created: (r) => fmtDate(r.created_at),
 }
 
 function formatSalary(n) {
@@ -32,8 +53,16 @@ function formatSalary(n) {
   return n.toLocaleString('en-IN')
 }
 
-function PipelinePill({ count, roleId, stage, onNavigate }) {
-  const to = stage ? `/roles/${roleId}?stage=${stage}` : `/roles/${roleId}`
+// Land each pill on the candidate list filtered to its stage. We carry BOTH the destination
+// tab (view) and the stage so the candidate workspace can filter to exactly that stage —
+// shortlisted → Shortlisted tab, offer → Positions tab, applied/interview → Applications tab
+// with the stage filter applied. `title` names the stage so the link target is unambiguous.
+function PipelinePill({ count, roleId, stage, view, title, onNavigate }) {
+  const params = new URLSearchParams()
+  if (view) params.set('view', view)
+  if (stage) params.set('stage', stage)
+  const qs = params.toString()
+  const to = qs ? `/roles/${roleId}?${qs}` : `/roles/${roleId}`
   return (
     <Link
       to={to}
@@ -44,7 +73,7 @@ function PipelinePill({ count, roleId, stage, onNavigate }) {
           ? 'border-brand-200 bg-brand-50 text-brand-800 hover:bg-brand-100'
           : 'border-slate-200 bg-slate-50 text-slate-400 hover:border-slate-300',
       )}
-      title="View candidates in this stage"
+      title={title || 'View candidates in this stage'}
     >
       <Users className="h-3 w-3" />
       {count}
@@ -52,6 +81,9 @@ function PipelinePill({ count, roleId, stage, onNavigate }) {
   )
 }
 
+// 'paused' is an auto-set lifecycle state (a stale on-hold role) — it's shown when a row is
+// already paused but isn't a manually selectable target. 'closed' is terminal: once closed, a
+// role can't be reopened, so the dropdown locks.
 const STATUS_OPTIONS = ['open', 'closed', 'on_hold', 'draft']
 
 export default function JobsListTable({ rows, onStatusChange }) {
@@ -88,6 +120,15 @@ export default function JobsListTable({ rows, onStatusChange }) {
         av = new Date(a.created_at).getTime()
         bv = new Date(b.created_at).getTime()
       }
+      if (key === 'charge_code') {
+        av = chargeCode(a)
+        bv = chargeCode(b)
+      }
+      if (key === 'start_hiring_date') {
+        // ISO 'YYYY-MM-DD' strings sort lexically; blanks sort to the end.
+        av = a.start_hiring_date || '~'
+        bv = b.start_hiring_date || '~'
+      }
       if (key === 'funnel') {
         av = a.funnel?.total || 0
         bv = b.funnel?.total || 0
@@ -113,9 +154,13 @@ export default function JobsListTable({ rows, onStatusChange }) {
     if (status === row.status) return
     setUpdatingId(row.id)
     try {
-      await api.updateRole(row.id, { status })
+      // Route through the lifecycle endpoint so the state-machine (closed = terminal, stale
+      // on-hold → paused) is enforced server-side, not just by hiding options.
+      const updated = await api.changeRoleStatus(row.id, status)
       onStatusChange?.()
-      toast(`Job #${row.id} marked ${status}`)
+      toast(updated.status === status
+        ? `Job #${row.id} marked ${status}`
+        : `Job #${row.id} parked as ${updated.status} (on hold over 3 months)`)
     } catch (err) {
       toast(err.message, 'error')
     } finally {
@@ -147,12 +192,15 @@ export default function JobsListTable({ rows, onStatusChange }) {
           <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-sm">
             <tr className="border-b border-slate-200">
               <SortHead label="Job ID" col="id" filterKey="id" />
+              <SortHead label="Charge code" col="charge_code" filterKey="charge_code" />
               <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500">JD</th>
               <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Status {colFilter('status')}</span></th>
-              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500">OK</th>
+              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500" title="AI-validation OK — a green check means the JD is generated and the AI raised no flags; an empty circle means no JD yet or open AI flags to review.">
+                <span className="inline-flex cursor-help items-center gap-1">OK</span>
+              </th>
               <SortHead label="Job Title" col="position" filterKey="position" />
               <SortHead label="Department" col="department" filterKey="department" />
-              <SortHead label="Level" col="level_label" filterKey="level_label" />
+              <SortHead label="Experience" col="level_label" filterKey="level_label" />
               <SortHead label="Location" col="location" filterKey="location" />
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Application</th>
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Shortlisted</th>
@@ -167,6 +215,7 @@ export default function JobsListTable({ rows, onStatusChange }) {
               <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Type {colFilter('employment_type')}</span></th>
               <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">New/Repl {colFilter('hire_type')}</span></th>
               <SortHead label="Created" col="created_at" filterKey="created" />
+              <SortHead label="Start date" col="start_hiring_date" filterKey="start" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -179,9 +228,10 @@ export default function JobsListTable({ rows, onStatusChange }) {
                   className="cursor-pointer transition hover:bg-brand-50/50"
                 >
                   <td className="whitespace-nowrap px-3 py-2.5 font-medium text-brand-600">{row.id}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-slate-500" title="Charge code for costing — EZ-{department}-{job id}">{chargeCode(row)}</td>
                   <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                     <Link
-                      to={`/roles/${row.id}`}
+                      to={`/roles/${row.id}?view=jd`}
                       className={cx(
                         'inline-flex rounded-lg p-1.5 transition',
                         row.has_jd ? 'text-brand-600 hover:bg-brand-50' : 'text-slate-300',
@@ -193,12 +243,15 @@ export default function JobsListTable({ rows, onStatusChange }) {
                   </td>
                   <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
                     <select
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs capitalize"
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs capitalize disabled:cursor-not-allowed disabled:opacity-60"
                       value={row.status}
-                      disabled={updatingId === row.id}
+                      disabled={updatingId === row.id || row.status === 'closed'}
+                      title={row.status === 'closed' ? 'Closed roles are final and cannot be reopened' : undefined}
                       onChange={(e) => changeStatus(row, e.target.value, e)}
                     >
-                      {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                      {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                      {/* A current 'paused'/'closed' value isn't a manual target but must show as the selected option. */}
+                      {!STATUS_OPTIONS.includes(row.status) && <option value={row.status}>{row.status.replace('_', ' ')}</option>}
                     </select>
                   </td>
                   <td className="px-2 py-2.5 text-center">
@@ -215,16 +268,16 @@ export default function JobsListTable({ rows, onStatusChange }) {
                   <td className="px-2 py-2.5 text-center">
                     {/* Total applications received — the headline "how many applied" count, which
                         stays accurate even after candidates progress past the applied stage. */}
-                    <PipelinePill count={f.total || 0} roleId={row.id} stage="" />
+                    <PipelinePill count={f.total || 0} roleId={row.id} view="applications" stage="" title="View all applications" />
                   </td>
                   <td className="px-2 py-2.5 text-center">
-                    <PipelinePill count={f.shortlisted || 0} roleId={row.id} stage="shortlisted" />
+                    <PipelinePill count={f.shortlisted || 0} roleId={row.id} view="shortlisted" stage="shortlisted" title="View shortlisted candidates" />
                   </td>
                   <td className="px-2 py-2.5 text-center">
-                    <PipelinePill count={f.interview || 0} roleId={row.id} stage="interview" />
+                    <PipelinePill count={f.interview || 0} roleId={row.id} view="applications" stage="interview" title="View candidates in the interview stage" />
                   </td>
                   <td className="px-2 py-2.5 text-center">
-                    <PipelinePill count={f.pre_offer || 0} roleId={row.id} stage="offer" />
+                    <PipelinePill count={f.pre_offer || 0} roleId={row.id} view="positions" stage="offer" title="View pre-offer candidates" />
                   </td>
                   <td className="whitespace-nowrap px-2 py-2.5 text-center tabular-nums text-slate-600">
                     {row.yoe_min || row.yoe_max ? `${row.yoe_min || 0}–${row.yoe_max || '—'}` : '—'}
@@ -239,13 +292,16 @@ export default function JobsListTable({ rows, onStatusChange }) {
                   <td className="whitespace-nowrap px-2 py-2.5 text-xs text-slate-600">{row.employment_type || '—'}</td>
                   <td className="whitespace-nowrap px-2 py-2.5 text-xs text-slate-600">{row.hire_type || '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-xs text-slate-500">
-                    {new Date(row.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    {fmtDate(row.created_at)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-xs text-slate-500" title="When hiring actually started">
+                    {fmtDate(row.start_hiring_date)}
                   </td>
                 </tr>
               )
             })}
             {!sorted.length && (
-              <tr><td colSpan={21} className="px-4 py-10 text-center text-sm text-slate-400">No jobs match your filters.</td></tr>
+              <tr><td colSpan={23} className="px-4 py-10 text-center text-sm text-slate-400">No jobs match your filters.</td></tr>
             )}
           </tbody>
         </table>

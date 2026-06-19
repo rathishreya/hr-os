@@ -36,10 +36,50 @@ _KNOWN_SOURCES = {
     "google", "adzuna", "twitter", "facebook", "instagram",
 }
 
+# When True, salary/CTC is never exposed on any PUBLIC surface — the careers page chip + body,
+# schema.org baseSalary, and the job-board feeds — even if a Budget/CTC is set. Internal recruiter
+# views still show it. ("Hide salary while posting anywhere on all the links.")
+HIDE_PUBLIC_SALARY = True
+
 
 def _norm_source(src: str) -> str:
     s = (src or "").strip().lower()
     return s if s in _KNOWN_SOURCES else "careers"
+
+
+# Applicant-entered compensation is free text ("12 LPA", "₹18", "1200000"). Stamp a ₹/LPA
+# label on it so the Talent Pool / profile cards show a consistent currency for typed values,
+# matching how the résumé extractor (_norm_money) formats parsed figures. India-centric: a
+# single currency (INR ₹). Anything already carrying a currency token is left as-is.
+_CTC_NUM_RE = re.compile(
+    r"^\s*(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)\s*(lpa|lac|lakh|lakhs|cr|crore|l)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _norm_applicant_ctc(raw: str) -> str:
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    # Already has an explicit currency token → trust the applicant's formatting.
+    if re.search(r"₹|\brs\b|\binr\b", s, re.IGNORECASE):
+        return s
+    m = _CTC_NUM_RE.match(s)
+    if not m:
+        return s
+    try:
+        val = float(m.group(1).replace(",", ""))
+    except ValueError:
+        return s
+    unit = (m.group(2) or "").lower()
+    if unit in ("cr", "crore"):
+        return f"₹{val:g} Cr"
+    if unit in ("lpa", "lac", "lakh", "lakhs", "l"):
+        return f"₹{val:g} LPA"
+    # No unit: small numbers read as lakhs/annum, large absolute figures as plain ₹.
+    if val >= 100000:
+        return f"₹{val:,.0f}"
+    return f"₹{val:g} LPA"
 
 
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB cap on public résumé uploads
@@ -164,7 +204,8 @@ def _description_html(job: models.Job) -> str:
     # figure the AI baked into the body so it can never contradict the chip (or strip it when
     # no budget is set). Non-salary numbers (years, head-counts, %) are left untouched.
     hr = job.hiring_request
-    budget = (hr.budget_ctc or "").strip() if hr else ""
+    # Passing an empty budget makes canonicalize_salary strip any salary figure from the copy.
+    budget = "" if HIDE_PUBLIC_SALARY else ((hr.budget_ctc or "").strip() if hr else "")
     parts: list[str] = []
     if job.description:
         parts.append(_markdown_block(canonicalize_salary(job.description, budget)))
@@ -218,7 +259,7 @@ def _job_posting_ld(job: models.Job) -> dict:
         # so Google for Jobs can't index a salary that differs from the visible page. Omitted
         # entirely when no budget is set (no fabricated figure).
         lo, hi = parse_budget_ctc(hr.budget_ctc or "")
-        if lo:
+        if lo and not HIDE_PUBLIC_SALARY:
             value: dict = {
                 "@type": "QuantitativeValue",
                 "minValue": lo,
@@ -345,7 +386,7 @@ def career_structured_data(job_id: int, db: Session = Depends(get_db)):
 def _salary_text(hr: models.HiringRequest | None) -> str:
     # Job-board feeds get the SAME salary as the page chip — the recruiter's budget_ctc — so an
     # aggregator never advertises a different figure. (The AI suggested_salary is advisory only.)
-    if not hr:
+    if not hr or HIDE_PUBLIC_SALARY:
         return ""
     return (hr.budget_ctc or "").strip()
 
@@ -540,6 +581,7 @@ def distribution_channels(request: Request, db: Session = Depends(get_db)):
         "published_count": len(jobs),
         "feeds": {
             "careers": f"{base}/careers",
+            "apply": f"{base}/careers/apply",
             "xml": f"{base}/careers/feed.xml",
             "rss": f"{base}/careers/rss.xml",
             "sitemap": f"{base}/careers/sitemap.xml",
@@ -723,8 +765,8 @@ async def submit_application(
         # pool / pipeline read (reassign so SQLAlchemy detects the JSON change).
         cand.parsed = {
             **(cand.parsed or {}),
-            "current_ctc": current_ctc.strip(),
-            "salary_expectation": expected_ctc.strip(),
+            "current_ctc": _norm_applicant_ctc(current_ctc),
+            "salary_expectation": _norm_applicant_ctc(expected_ctc),
             "notice_period": notice_period.strip(),
         }
         # "Applied by" for a public application = the channel they came through (Careers,
@@ -754,8 +796,135 @@ async def submit_application(
     return HTMLResponse(_page(f"Application received — {settings.COMPANY_NAME}", thanks))
 
 
+# ──────────────── General (non-role) talent-pool application form ────────────
+# A public form NOT tied to any job: it builds the talent pool directly. Submitting
+# creates a Candidate (source="careers") with NO Application — recruiters then match
+# them to roles from the portal. The same form is meant to live on the EZ careers page.
+# Declared BEFORE the /careers/{job_id} int catch-all so "apply" isn't parsed as a job id
+# (mirrors how /careers/{job_id}/apply is a separate two-segment route).
+def _general_apply_form(*, values: dict | None = None, error: str = "", src: str = "") -> str:
+    v = values or {}
+    err_html = f'<div class="err">{_e(error)}</div>' if error else ""
+    norm_src = _norm_source(src)
+    src_field = f'<input type="hidden" name="src" value="{_e(norm_src)}">' if norm_src != "careers" else ""
+    body = (
+        f'<a class="back" href="/careers">&larr; Back to open roles</a>'
+        f'<div class="card"><h1>Join our talent pool</h1>'
+        f'<p class="sub">Not seeing the right role at {_e(settings.COMPANY_NAME)}? Share your details and résumé and '
+        f'our team will reach out when something matches.</p>{err_html}'
+        f'<form method="post" action="/careers/apply" enctype="multipart/form-data">{src_field}'
+        f'<div class="field"><label class="lbl">Full name <span class="req">*</span></label>'
+        f'<input class="inp" name="name" value="{_e(v.get("name"))}" required></div>'
+        f'<div class="field"><label class="lbl">Email <span class="req">*</span></label>'
+        f'<input class="inp" type="email" name="email" value="{_e(v.get("email"))}" required></div>'
+        f'<div class="field"><label class="lbl">Phone</label>'
+        f'<input class="inp" name="phone" value="{_e(v.get("phone"))}"></div>'
+        f'<div class="field"><label class="lbl">Current Annual Total Compensation</label>'
+        f'<input class="inp" name="current_ctc" value="{_e(v.get("current_ctc"))}" placeholder="e.g. 12 LPA"></div>'
+        f'<div class="field"><label class="lbl">Expected Annual Total Compensation</label>'
+        f'<input class="inp" name="expected_ctc" value="{_e(v.get("expected_ctc"))}" placeholder="e.g. 18 LPA"></div>'
+        f'<div class="field"><label class="lbl">Notice Period (Days)</label>'
+        f'<input class="inp" type="number" min="0" name="notice_period" value="{_e(v.get("notice_period"))}" placeholder="e.g. 30"></div>'
+        f'<div class="field"><label class="lbl">Résumé <span class="req">*</span></label>'
+        f'<input class="inp" type="file" name="file" accept=".pdf,.docx,.doc,.txt">'
+        f'<p class="hint">PDF, DOCX or TXT — we parse it automatically so recruiters can match you to open roles.</p></div>'
+        f'<div class="field"><label class="lbl">Or paste your résumé / a short note</label>'
+        f'<textarea class="inp" name="resume_text" rows="6">{_e(v.get("resume_text"))}</textarea></div>'
+        f'<div class="field" style="flex-direction:row;align-items:flex-start;gap:8px">'
+        f'<input type="checkbox" name="consent" id="consent" required style="margin-top:4px">'
+        f'<label for="consent" class="hint" style="margin:0">I consent to {_e(settings.COMPANY_NAME)} storing and reviewing my application '
+        f'and résumé, and to my data being processed by AI tools for screening. *</label></div>'
+        f'<button class="apply" type="submit">Join talent pool</button>'
+        f'</form></div>'
+    )
+    return _page(f"Join our talent pool — {settings.COMPANY_NAME}", body)
+
+
+@router.get("/careers/apply", response_class=HTMLResponse)
+def general_apply_form(src: str = ""):
+    return HTMLResponse(_general_apply_form(src=src))
+
+
+@router.post("/careers/apply", response_class=HTMLResponse)
+async def submit_general_application(
+    request: Request,
+    name: str = Form(""),
+    email: str = Form(""),
+    phone: str = Form(""),
+    resume_text: str = Form(""),
+    current_ctc: str = Form(""),
+    expected_ctc: str = Form(""),
+    notice_period: str = Form(""),
+    src: str = Form(""),
+    file: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+):
+    values = {
+        "name": name, "email": email, "phone": phone, "resume_text": resume_text,
+        "current_ctc": current_ctc, "expected_ctc": expected_ctc,
+        "notice_period": notice_period,
+    }
+    if not name.strip() or not email.strip():
+        return HTMLResponse(_general_apply_form(values=values, error="Please enter your name and email.", src=src), status_code=400)
+
+    file_bytes = None
+    filename = mime = ""
+    text = resume_text or ""
+    if file is not None and file.filename:
+        # Public, unauthenticated endpoint — bound the read so an oversized upload can't
+        # exhaust memory. Read one byte past the cap to detect (without loading) overflow.
+        file_bytes = file.file.read(_MAX_UPLOAD_BYTES + 1)
+        if len(file_bytes) > _MAX_UPLOAD_BYTES:
+            return HTMLResponse(
+                _general_apply_form(values=values, error="Résumé file is too large (max 10 MB).", src=src),
+                status_code=400,
+            )
+        filename = file.filename
+        mime = file.content_type or ""
+        extracted = resume_parser.extract_text(filename, file_bytes)
+        if extracted.strip():
+            text = extracted
+
+    if not text.strip() and not (file is not None and file.filename):
+        return HTMLResponse(
+            _general_apply_form(values=values, error="Please attach a résumé or paste your details so we can match you to roles.", src=src),
+            status_code=400,
+        )
+
+    # Talent-pool entrants are not tied to a role: create the Candidate, skip apply_candidate.
+    try:
+        cand = recruitment.ingest_candidate(
+            db, name=name.strip(), email=email.strip(), phone=phone.strip(),
+            source="careers", resume_text=text,
+            file_bytes=file_bytes, filename=filename, mime=mime,
+        )
+        cand.parsed = {
+            **(cand.parsed or {}),
+            "current_ctc": _norm_applicant_ctc(current_ctc),
+            "salary_expectation": _norm_applicant_ctc(expected_ctc),
+            "notice_period": notice_period.strip(),
+            "sub_source": _norm_source(src),
+        }
+        db.commit()
+    except Exception:
+        db.rollback()
+        return HTMLResponse(
+            _general_apply_form(values=values, error="Something went wrong submitting your details — please try again.", src=src),
+            status_code=500,
+        )
+
+    thanks = (
+        '<div class="card"><div class="success">&#10003;</div>'
+        '<h1>You&rsquo;re in our talent pool</h1>'
+        f'<p class="sub">Thanks, {_e(name.strip())} — your details have been added to {_e(settings.COMPANY_NAME)}&rsquo;s talent pool.</p>'
+        f'<p class="muted">Our team will reach out at {_e(email.strip())} when a role matches your profile.</p>'
+        '<a class="apply" href="/careers">View open roles</a></div>'
+    )
+    return HTMLResponse(_page(f"Talent pool — {settings.COMPANY_NAME}", thanks))
+
+
 # Declared LAST: this int catch-all must come after the literal /careers/* routes
-# (feed.xml, rss.xml, sitemap.xml, {job_id}.json) so they aren't parsed as a job id.
+# (feed.xml, rss.xml, sitemap.xml, {job_id}.json, apply) so they aren't parsed as a job id.
 @router.get("/careers/{job_id}", response_class=HTMLResponse)
 def career_page(job_id: int, src: str = "", db: Session = Depends(get_db)):
     job = db.get(models.Job, job_id)
@@ -784,7 +953,8 @@ def career_page(job_id: int, src: str = "", db: Session = Depends(get_db)):
             chips.append(f'<span class="chip alt">{_e(hr.department)}</span>')
         # Salary chip = ONLY the recruiter's stated Budget/CTC (the live, editable value).
         # No AI-suggested fallback — that was a static estimate that didn't track edits.
-        if (hr.budget_ctc or "").strip():
+        # Suppressed entirely on public pages when HIDE_PUBLIC_SALARY is on.
+        if not HIDE_PUBLIC_SALARY and (hr.budget_ctc or "").strip():
             chips.append(f'<span class="chip alt">{_e(hr.budget_ctc.strip())}</span>')
     body = (
         f'<div class="card"><h1>{_e(title)}</h1>'

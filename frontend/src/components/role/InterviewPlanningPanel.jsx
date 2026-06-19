@@ -20,6 +20,24 @@ const STATUSES = [
 
 const DURATIONS = [30, 45, 60, 90, 120, 180]
 
+// Short, plain-English definition of what each round type is for — shown under the type picker
+// so a round is clearly defined, not just a label. Keys mirror constants.js INTERVIEW_TYPES;
+// legacy/back-compat types fall back to a generic line.
+const TYPE_DESCRIPTIONS = {
+  screening: 'Recruiter screen — confirm basics, motivation, notice period and comp expectations.',
+  assessment: 'Take-home or timed test of role-specific skills. Pick the assessment to email below.',
+  technical: 'Deep technical / problem-solving round with the hiring team.',
+  ai_interview: 'Async AI video interview — candidate records answers to set questions; AI evaluates.',
+  round_1: 'First interview round in the sequence.',
+  round_2: 'Second interview round in the sequence.',
+  round_3: 'Third interview round in the sequence.',
+  round_4: 'Fourth interview round in the sequence.',
+  final: 'Final / decision round — usually with the hiring manager or leadership.',
+}
+function typeDescription(v) {
+  return TYPE_DESCRIPTIONS[v] || 'Interview round.'
+}
+
 const EMPTY_ROUND = {
   round_number: 1,
   interview_type: 'technical',
@@ -42,11 +60,18 @@ function statusMeta(v) {
   return STATUSES.find((s) => s.value === v) || STATUSES[1]
 }
 
+// The viewer's local IANA timezone (e.g. "Asia/Kolkata") — shown so a scheduled time is never
+// ambiguous about which zone it's in.
+const LOCAL_TZ = (() => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || '' } catch { return '' }
+})()
+
 function formatSlot(iso) {
   if (!iso) return 'Slot not set'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  // timeZoneName:'short' appends the resolved zone (e.g. "GMT+5:30") so times are unambiguous.
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZoneName: 'short' })
 }
 
 function PanelistInput({ panelists, suggestions, onChange }) {
@@ -121,7 +146,7 @@ function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, busy, is
             onChange={(e) => setForm({ ...form, round_number: Number(e.target.value) || 1 })}
           />
         </Field>
-        <Field label="Interview type">
+        <Field label="Interview type" hint={typeDescription(form.interview_type)}>
           <select className={inputClass} value={form.interview_type} onChange={(e) => setForm({ ...form, interview_type: e.target.value })}>
             {INTERVIEW_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
@@ -141,7 +166,7 @@ function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, busy, is
           </select>
         </Field>
         <div className="sm:col-span-2">
-          <Field label="Date & time">
+          <Field label="Date & time" hint={LOCAL_TZ ? `Times are in your timezone (${LOCAL_TZ})` : 'Times use your local timezone'}>
             <input
               type="datetime-local"
               className={inputClass}
@@ -338,7 +363,28 @@ function RoundCard({ round, panelSuggestions, onUpdated, onDeleted, app }) {
                   <p className="whitespace-pre-wrap text-slate-600">{round.notes}</p>
                 </div>
               )}
-              {round.feedback && (
+              {Array.isArray(round.panel_feedback) && round.panel_feedback.length > 0 ? (
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold uppercase text-slate-400">Panel feedback</div>
+                  <div className="space-y-2">
+                    {round.panel_feedback.map((f, i) => {
+                      const rec = (f.recommendation || '').toLowerCase()
+                      const recTone = rec.includes('advance') || rec.includes('yes') || rec.includes('hire')
+                        ? 'green' : rec.includes('reject') || rec.includes('no') ? 'rose' : rec ? 'amber' : 'gray'
+                      return (
+                        <div key={i} className="rounded-lg border border-slate-100 bg-slate-50/60 p-2.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-medium text-slate-700">{f.panelist || 'Panelist'}</span>
+                            {f.recommendation && <Badge tone={recTone}>{f.recommendation}</Badge>}
+                            {f.rating ? <span className="inline-flex items-center gap-0.5 text-xs font-medium text-amber-600">{'★'.repeat(Math.max(0, Math.min(5, Number(f.rating) || 0)))}<span className="text-slate-400">{Number(f.rating)}/5</span></span> : null}
+                          </div>
+                          {f.feedback && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600">{f.feedback}</p>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : round.feedback && (
                 <div>
                   <div className="text-xs font-semibold uppercase text-slate-400">Feedback</div>
                   <p className="whitespace-pre-wrap text-slate-600">{round.feedback}</p>

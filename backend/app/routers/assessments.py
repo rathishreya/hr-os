@@ -40,9 +40,6 @@ def _default_body(a: "models.Assessment", role: str, company: str, link: str) ->
     )
 
 
-_PLACEHOLDER = re.compile(r"\{(name|role|company|assessment|link)\}")
-
-
 def _fill(text: str, mapping: dict) -> str:
     # Single pass so a value that itself contains a placeholder token isn't re-expanded.
     return _PLACEHOLDER.sub(lambda m: str(mapping.get(m.group(1), m.group(0))), text or "")
@@ -63,13 +60,20 @@ async def create_assessment(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     name = str(form.get("name") or "").strip()
     description = str(form.get("description") or "").strip()
+    # Optional scoping: which team / department / role this assessment is for. `department`
+    # lets a job auto-suggest matching assessments when it's created.
+    team = str(form.get("team") or "").strip()
+    department = str(form.get("department") or "").strip()
+    role = str(form.get("role") or "").strip()
     if not name:
         raise HTTPException(422, "Assessment name is required")
     uploads = [v for _, v in form.multi_items() if hasattr(v, "filename") and v.filename]
     if not uploads:
         raise HTTPException(422, "Please attach at least one file")
 
-    a = models.Assessment(name=name, description=description)
+    a = models.Assessment(
+        name=name, description=description, team=team, department=department, role=role,
+    )
     db.add(a)
     db.flush()
     first_data: bytes | None = None
@@ -95,6 +99,60 @@ async def create_assessment(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(422, "Please attach at least one non-empty file")
     db.flush()
     log(db, "assessment.created", "assessment", a.id, {"name": a.name, "files": len(a.files)})
+    db.commit()
+    db.refresh(a)
+    return a
+
+
+@router.post("/{assessment_id}", response_model=schemas.AssessmentOut)
+async def update_assessment(assessment_id: int, request: Request, db: Session = Depends(get_db)):
+    """Update an assessment's metadata and/or append more files.
+
+    Reads the multipart form directly (same lenient handling as create): updates name /
+    description / team / department / role when those fields are present, and appends EVERY
+    uploaded file (regardless of field name) as a new AssessmentFile. Files are additive — none
+    are removed here. Mirrors the primary file into the legacy columns when it's the very first.
+    """
+    a = db.get(models.Assessment, assessment_id)
+    if not a:
+        raise HTTPException(404, "Assessment not found")
+    form = await request.form()
+    # Only overwrite a field when the caller actually sent it (so a metadata-only edit that
+    # omits, say, `team` doesn't wipe it).
+    if "name" in form:
+        name = str(form.get("name") or "").strip()
+        if not name:
+            raise HTTPException(422, "Assessment name is required")
+        a.name = name
+    if "description" in form:
+        a.description = str(form.get("description") or "").strip()
+    if "team" in form:
+        a.team = str(form.get("team") or "").strip()
+    if "department" in form:
+        a.department = str(form.get("department") or "").strip()
+    if "role" in form:
+        a.role = str(form.get("role") or "").strip()
+
+    uploads = [v for _, v in form.multi_items() if hasattr(v, "filename") and v.filename]
+    for up in uploads:
+        data = await up.read(_MAX_ASSESSMENT_BYTES + 1)
+        if len(data) > _MAX_ASSESSMENT_BYTES:
+            raise HTTPException(413, f"'{up.filename}' is too large (max 25 MB per file)")
+        if not data:
+            continue
+        af = models.AssessmentFile(
+            assessment_id=a.id,
+            filename=up.filename or "assessment",
+            mime=up.content_type or "application/octet-stream",
+            size=len(data),
+            file=data,
+        )
+        db.add(af)
+        if a.file is None:
+            # No primary file yet → mirror this one into the legacy columns.
+            a.filename, a.mime, a.size, a.file = af.filename, af.mime, af.size, data
+    db.flush()
+    log(db, "assessment.updated", "assessment", a.id, {"name": a.name, "files": len(a.files)})
     db.commit()
     db.refresh(a)
     return a

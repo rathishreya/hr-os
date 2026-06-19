@@ -20,6 +20,40 @@ def _actor_label(user: models.User | None) -> str:
     return (user.name or user.email) if user else ""
 
 
+# Extensions the app can actually turn into text. Legacy binary .doc has no extractor, so it's
+# rejected explicitly rather than silently text-decoded into garbage (which then 422s as "no text").
+_SUPPORTED_RESUME_EXTS = (".pdf", ".docx", ".txt")
+
+
+def _resume_extract_error(filename: str) -> str | None:
+    """Return a precise, actionable error for an upload that won't extract — or None if the
+    file type is fine. Distinguishes (a) an unsupported type from (b) a PDF/DOCX whose optional
+    extractor library isn't installed on this instance (the usual cause of "upload not working":
+    requirements-prod.txt has pdfplumber/python-docx but the plain requirements.txt does not)."""
+    name = (filename or "").lower()
+    if name.endswith(".doc") and not name.endswith(".docx"):
+        return ("Legacy .doc files aren't supported. Please re-save the resume as PDF or DOCX "
+                "(or paste the resume text instead).")
+    if not name.endswith(_SUPPORTED_RESUME_EXTS):
+        return ("Unsupported file type. Upload a PDF, DOCX, or TXT file "
+                "(or paste the resume text instead).")
+    if name.endswith(".pdf"):
+        try:
+            import pdfplumber  # noqa: F401
+        except Exception:
+            return ("PDF text extraction isn't available on this server (the 'pdfplumber' library "
+                    "is not installed). Paste the resume text, upload a TXT, or install "
+                    "requirements-optional.txt / requirements-prod.txt.")
+    if name.endswith(".docx"):
+        try:
+            import docx  # noqa: F401
+        except Exception:
+            return ("DOCX text extraction isn't available on this server (the 'python-docx' library "
+                    "is not installed). Paste the resume text, upload a TXT, or install "
+                    "requirements-optional.txt / requirements-prod.txt.")
+    return None
+
+
 def _maybe_apply(db: Session, cand: models.Candidate, hiring_request_id: int | None, applied_by: str = "") -> None:
     if hiring_request_id:
         hr = db.get(models.HiringRequest, hiring_request_id)
@@ -58,9 +92,18 @@ def upload_candidate(
     content = file.file.read(_MAX_RESUME_BYTES + 1)
     if len(content) > _MAX_RESUME_BYTES:
         raise HTTPException(413, "Resume file is too large (max 25 MB).")
+    # Reject unsupported types / surface a missing-extractor situation with a clear message
+    # BEFORE attempting extraction (so a real PDF/DOCX never silently text-decodes to garbage).
+    type_error = _resume_extract_error(file.filename or "")
+    if type_error:
+        raise HTTPException(422, type_error)
     text = resume_parser.extract_text(file.filename or "", content)
     if not text.strip():
-        raise HTTPException(422, "Could not extract text from the uploaded file.")
+        raise HTTPException(
+            422,
+            "No text could be read from this file. If it's a scanned or image-only PDF, "
+            "paste the resume text instead — OCR isn't supported.",
+        )
     cand = recruitment.ingest_candidate(
         db,
         name=name, email=email, phone=phone, source=source, resume_text=text,
@@ -146,6 +189,8 @@ def list_candidates(q: str = "", table: bool = False, limit: int = 500, db: Sess
         return [schemas.CandidateOut.model_validate(c) for c in rows]
     # Embed every role once so the "suggested role" column is one batch, not N×roles calls.
     role_vecs = recruitment.build_role_vectors(db)
+    pos_by_hr = {hr.id: hr.position for hr in db.scalars(select(models.HiringRequest)).all()}
+    _stage_rank = {"applied": 1, "screening": 2, "shortlisted": 3, "interview": 4, "offer": 5, "hired": 6}
     out = []
     for c in rows:
         apps = db.scalars(
@@ -155,6 +200,12 @@ def list_candidates(q: str = "", table: bool = False, limit: int = 500, db: Sess
         ).all()
         stages = [a.stage for a in apps]
         active = [s for s in stages if s not in ("hired", "rejected")]
+        # "Primary" application = most-advanced (active preferred), tie-broken by score — so the
+        # Pipeline column's stage + score + role all describe ONE application, never a mix.
+        primary = None
+        if apps:
+            pool = [a for a in apps if a.stage != "rejected"] or apps
+            primary = max(pool, key=lambda a: (_stage_rank.get(a.stage, 0), a.score_overall or 0))
         parsed = resume_extract.enrich_from_resume(
             c.parsed, c.resume_text, name=c.name, email=c.email, phone=c.phone, source=c.source,
         )
@@ -166,6 +217,11 @@ def list_candidates(q: str = "", table: bool = False, limit: int = 500, db: Sess
             "active_applications": len(active),
             "latest_stage": apps[0].stage if apps else "",
             "top_score": max((a.score_overall for a in apps), default=0),
+            "primary_stage": primary.stage if primary else "",
+            "primary_role": pos_by_hr.get(primary.hiring_request_id, "") if primary else "",
+            "primary_score": round((primary.score_overall or 0), 1) if primary else 0,
+            "applied_by": primary.applied_by if primary else "",
+            "sub_source": ((primary.applied_by if primary else "") or c.source or ""),
             "suggested_role": suggestion["position"] if suggestion else "",
             "suggested_role_id": suggestion["hiring_request_id"] if suggestion else None,
             "suggested_role_score": suggestion["score"] if suggestion else None,

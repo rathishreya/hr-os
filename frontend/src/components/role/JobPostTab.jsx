@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Copy, Check, Globe, ExternalLink, Megaphone, GraduationCap, Video, Trash2, Plus, Pencil } from 'lucide-react'
+import { Copy, Check, Globe, ExternalLink, Megaphone, GraduationCap, Video, Trash2, Plus, Pencil, Download } from 'lucide-react'
 import { api } from '../../api'
 import { Card, Button, Field, Spinner, Modal, inputClass } from '../../ui'
 import { useToast } from '../Toast'
@@ -9,6 +9,41 @@ import { POST_PLATFORMS } from '../../constants'
 import RichTextField from '../RichTextField'
 import { richToHtml, richListToHtml } from '../../utils/richText'
 import { canonicalizeSalary, canonicalizeSalaryList } from '../../utils/salary'
+import { printDocument } from '../docs/printDocument'
+
+// Build the JD into the shared EZ-letterhead document model (printDocument) so HR can save it
+// as a branded PDF. Salary figures the AI baked into the body are canonicalized to the
+// recruiter's budget (the displayed truth) so the letterhead matches the careers page.
+function jdToPrintDoc(jd, company, budgetCtc) {
+  const blocks = []
+  blocks.push({ type: 'heading', level: 1, text: jd.title || 'Job Description' })
+  if (jd.description) {
+    for (const para of canonicalizeSalary(jd.description, budgetCtc).split(/\n{2,}/)) {
+      const t = para.trim()
+      if (t) blocks.push({ type: 'para', text: t })
+    }
+  }
+  const listSection = (label, items) => {
+    const clean = canonicalizeSalaryList(items || [], budgetCtc).map((s) => s.trim()).filter(Boolean)
+    if (clean.length) {
+      blocks.push({ type: 'heading', level: 2, text: label })
+      blocks.push({ type: 'list', items: clean })
+    }
+  }
+  listSection('Responsibilities', jd.responsibilities)
+  listSection('Requirements', jd.requirements)
+  listSection('Benefits', jd.benefits)
+  const about = company?.about || jd.company_description
+  if (about) {
+    blocks.push({ type: 'heading', level: 2, text: `About ${company?.name || 'the company'}` })
+    blocks.push({ type: 'para', text: about })
+  }
+  if (jd.culture) {
+    blocks.push({ type: 'heading', level: 2, text: 'Culture' })
+    blocks.push({ type: 'para', text: jd.culture })
+  }
+  return { title: jd.title || 'Job Description', entity: 'EZ', blocks }
+}
 
 // Styling for rendered rich text (bold/italic/underline + nested bullets).
 const RICH = 'text-pretty text-sm leading-relaxed text-slate-700 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ul_ul]:mt-1 [&_ul_ul]:list-[circle] [&_strong]:font-semibold [&_em]:italic [&_u]:underline'
@@ -369,7 +404,14 @@ export default function JobPostTab({ roleId, jd, onGenerated, budgetCtc = '' }) 
     try {
       const next = await api.generateJD(roleId)
       onGenerated(next)
-      toast('Job description generated')
+      // The AI layer silently falls back to a deterministic mock when the configured provider
+      // errors (missing/invalid key, quota, non-JSON) — which is why "Regenerate does nothing"
+      // happens: every run yields the same generic draft. Surface that instead of swallowing it.
+      if (next?.ai_provider === 'mock') {
+        toast('JD drafted with the built-in fallback — connect an AI provider in Settings for a tailored JD', 'error')
+      } else {
+        toast('Job description generated')
+      }
     } catch (e) {
       toast(e.message, 'error')
     } finally {
@@ -389,6 +431,13 @@ export default function JobPostTab({ roleId, jd, onGenerated, budgetCtc = '' }) 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap justify-end gap-2">
+        <Button
+          variant="ghost"
+          onClick={() => { if (!printDocument(jdToPrintDoc(jd, company, budgetCtc))) toast('Allow pop-ups to download the JD', 'error') }}
+          title="Open a print-ready JD on the company letterhead (save as PDF)"
+        >
+          <Download className="h-4 w-4" /> Download JD
+        </Button>
         <Button variant="ghost" onClick={generate} disabled={genBusy}>{genBusy ? <Spinner /> : 'Regenerate'}</Button>
         {jd.status !== 'published' ? (
           <Button onClick={() => setPostOpen(true)}><Megaphone className="h-4 w-4" /> Publish &amp; post</Button>
@@ -403,10 +452,16 @@ export default function JobPostTab({ roleId, jd, onGenerated, budgetCtc = '' }) 
       <DistributeCard jd={jd} />
       <EditableJDCard jd={jd} company={company} onSaved={onGenerated} budgetCtc={budgetCtc} />
       <VideoQuestionsCard jd={jd} />
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <CopyBlock title="LinkedIn" text={canonicalizeSalary(jd.linkedin_copy, budgetCtc)} />
-        <CopyBlock title="Naukri / Indeed" text={canonicalizeSalary(jd.naukri_copy, budgetCtc)} />
-        <CopyBlock title="Social hook" text={canonicalizeSalary(jd.social_copy, budgetCtc)} />
+      {/* External channel copy — salary is STRIPPED here (canonicalize with an empty budget
+          removes any figure) so it never goes out on a public post. Internal budget stays
+          visible on the JD card above and on the recruiter views. */}
+      <div>
+        <p className="mb-2 text-xs text-slate-400">Copy for external channels — salary is hidden on these public posts.</p>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <CopyBlock title="LinkedIn" text={canonicalizeSalary(jd.linkedin_copy, '')} />
+          <CopyBlock title="Naukri / Indeed" text={canonicalizeSalary(jd.naukri_copy, '')} />
+          <CopyBlock title="Social hook" text={canonicalizeSalary(jd.social_copy, '')} />
+        </div>
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {jd.screening_questions?.length > 0 && (

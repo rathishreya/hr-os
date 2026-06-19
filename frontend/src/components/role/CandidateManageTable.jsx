@@ -373,7 +373,7 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
             <UserPlus className="h-4 w-4" /> Pool
           </Button>
           {filtered.length > 0 && (
-            <Button variant="ghost" className="text-xs" onClick={() => { exportPipelineCsv(filtered, roleTitle); toast('Exported all filtered rows') }}>
+            <Button variant="ghost" className="text-xs" onClick={() => { const ok = exportPipelineCsv(filtered, roleTitle); toast(ok ? `Exported ${filtered.length} rows` : 'Export failed — your browser blocked the download', ok ? 'success' : 'error') }}>
               <Download className="h-4 w-4" /> Export {filtered.length}
             </Button>
           )}

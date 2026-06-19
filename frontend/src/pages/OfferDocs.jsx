@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { FileText, Check, Copy, Eye, Sparkles, Pencil, Plus, Printer, Upload, ArrowRightCircle, ChevronRight, Rocket } from 'lucide-react'
+import { FileText, Check, Copy, Eye, Pencil, FilePlus2, RefreshCw, Printer, Upload, ArrowRightCircle, ChevronRight, Rocket, Lock } from 'lucide-react'
 import { api } from '../api'
 import { Card, Badge, Button, Spinner, EmptyState, PageHeader, Modal, Field, inputClass, cx } from '../ui'
 import { useToast } from '../components/Toast'
@@ -88,20 +88,34 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
     }
   }
 
+  const isNew = mode === 'new'
   return (
     <Modal
       open
       onClose={onClose}
       size="lg"
-      title={mode === 'new' ? 'Generate a document' : 'Edit & regenerate document'}
+      title={isNew ? 'Generate a new document' : 'Edit & regenerate this document'}
       footer={(
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button onClick={save} disabled={busy}>{busy ? <Spinner /> : <><Sparkles className="h-4 w-4" /> {mode === 'new' ? 'Generate' : 'Regenerate'}</>}</Button>
+          <Button onClick={save} disabled={busy} variant={isNew ? 'primary' : 'ghost'}>
+            {busy ? <Spinner /> : isNew ? <><FilePlus2 className="h-4 w-4" /> Generate document</> : <><RefreshCw className="h-4 w-4" /> Regenerate in place</>}
+          </Button>
         </>
       )}
     >
       <div className="space-y-3">
+        <div className={cx(
+          'flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs leading-relaxed',
+          isNew ? 'border-brand-200 bg-brand-50/60 text-brand-800' : 'border-amber-200 bg-amber-50/60 text-amber-800',
+        )}>
+          {isNew ? <FilePlus2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /> : <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />}
+          <span>
+            {isNew
+              ? <>This creates an <strong>additional</strong> document for {doc.candidate_name || 'this candidate'} — your existing documents are kept. The template starts at Offer letter; change it below.</>
+              : <>This <strong>replaces</strong> the current draft of this document in place with your edits. Only drafts can be regenerated; approved documents are locked.</>}
+          </span>
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Entity">
             <select className={inputClass} value={entity} onChange={(e) => setEntity(e.target.value)}>
@@ -165,8 +179,97 @@ function groupByCandidate(docs) {
 // Uniform 32px icon-button styles so every row action lines up and reads as one set.
 const ROW_ICON = 'inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 ring-1 ring-slate-200 transition duration-150 ease-snappy hover:bg-brand-50/60 hover:text-brand-600 hover:ring-brand-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-40'
 const ROW_ICON_GREEN = 'inline-flex h-8 w-8 items-center justify-center rounded-lg text-emerald-600 ring-1 ring-emerald-200 transition duration-150 ease-snappy hover:bg-emerald-50 active:scale-95'
+// "Generate a new document" is an additive action — give it a distinct brand-filled affordance so
+// it never reads the same as the neutral "Edit (regenerate in place)" pencil.
+const ROW_ICON_BRAND = 'inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white ring-1 ring-brand-600 transition duration-150 ease-snappy hover:bg-brand-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-40'
 
-// Upload / preview a recruiter-supplied file (e.g. signed PDF) — uniform icon buttons.
+// A small offer-administration status, derived from the system state (no separate offer-lifecycle
+// column exists yet). Reflects the document's progress: Draft → Approved → Signed copy on file →
+// Onboarding.
+function docStatus(d) {
+  if (d.move_to_onboarding) return { label: 'In onboarding', tone: 'green' }
+  if (d.has_upload) return { label: 'Signed copy on file', tone: 'blue' }
+  if (d.status === 'approved') return { label: 'Approved', tone: 'green' }
+  return { label: 'Draft', tone: 'amber' }
+}
+
+// Inline, save-on-blur text cell for an offer-administration field (personal email / joining date).
+// Locked (read-only) once the candidate has moved to onboarding — the doc is effectively issued.
+function InlineText({ doc, field, value, type = 'text', placeholder, onSaved, locked }) {
+  const { toast } = useToast()
+  const [val, setVal] = useState(value || '')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { setVal(value || '') }, [value])
+
+  async function commit() {
+    const next = val.trim()
+    if (next === (value || '')) return
+    setBusy(true)
+    try {
+      const up = await api.updateDocumentFields(doc.id, { [field]: next })
+      onSaved(up)
+    } catch (e) {
+      setVal(value || '')
+      toast(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (locked) {
+    return <span className="inline-flex items-center gap-1 text-slate-500">{value || '—'}<Lock className="h-3 w-3 text-slate-300" /></span>
+  }
+  return (
+    <input
+      type={type}
+      value={val}
+      placeholder={placeholder}
+      disabled={busy}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+      className="w-full min-w-[8rem] rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none transition-colors duration-150 ease-snappy placeholder:text-slate-300 hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50"
+    />
+  )
+}
+
+// Inline Entity selector (EZ / AEZ) — persists via the lightweight fields PATCH, no re-render.
+function InlineEntity({ doc, value, onSaved, locked }) {
+  const { toast } = useToast()
+  const [busy, setBusy] = useState(false)
+  async function onChange(e) {
+    const entity = e.target.value
+    setBusy(true)
+    try {
+      const up = await api.updateDocumentFields(doc.id, { entity })
+      onSaved(up)
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (locked) {
+    return <span className="inline-flex items-center gap-1 text-slate-500">{value || 'EZ'}<Lock className="h-3 w-3 text-slate-300" /></span>
+  }
+  return (
+    <select
+      value={value || 'EZ'}
+      disabled={busy}
+      onClick={(e) => e.stopPropagation()}
+      onChange={onChange}
+      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none transition-colors duration-150 ease-snappy hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50"
+    >
+      <option value="EZ">EZ</option>
+      <option value="AEZ">AEZ</option>
+    </select>
+  )
+}
+
+// Upload / preview the signed & countersigned copy of this document. The single upload_* slot on
+// the model holds the executed PDF (uploading a new one replaces it). has_upload drives the green
+// "view" link so HR can see at a glance which documents have a signed copy on file.
 function UploadCell({ doc, onUploaded }) {
   const { toast } = useToast()
   const ref = useRef(null)
@@ -179,7 +282,7 @@ function UploadCell({ doc, onUploaded }) {
       const fd = new FormData()
       fd.append('file', file)
       const up = await api.uploadDocumentFile(doc.id, fd)
-      toast('File uploaded')
+      toast('Countersigned copy uploaded')
       onUploaded(up)
     } catch (err) {
       toast(err.message, 'error')
@@ -195,13 +298,14 @@ function UploadCell({ doc, onUploaded }) {
           href={api.documentUploadUrl(doc.id)}
           target="_blank"
           rel="noreferrer"
-          title={`View ${doc.upload_filename || 'uploaded file'}`}
+          title={`View countersigned copy (${doc.upload_filename || 'uploaded file'})`}
+          aria-label="View countersigned copy"
           className={ROW_ICON_GREEN}
         >
           <FileText className="h-4 w-4" />
         </a>
       )}
-      <label title={doc.has_upload ? 'Replace file' : 'Upload signed PDF'} className={cx(ROW_ICON, 'cursor-pointer')}>
+      <label title={doc.has_upload ? 'Replace countersigned copy' : 'Upload countersigned copy (signed PDF)'} className={cx(ROW_ICON, 'cursor-pointer')}>
         {busy ? <Spinner /> : <Upload className="h-4 w-4" />}
         <input ref={ref} type="file" accept="application/pdf,.pdf" className="hidden" onChange={onFile} />
       </label>
@@ -209,28 +313,41 @@ function UploadCell({ doc, onUploaded }) {
   )
 }
 
-// Move this candidate into Onboarding — the only path into the Onboarding page (F12).
-function MoveCell({ doc, onMoved }) {
+// Send this candidate to Onboarding — a top-level (per-candidate) row action, the only path into
+// the Onboarding page (F12). Moving any one of the candidate's documents is sufficient:
+// _ensure_onboarding_plan is keyed by application and idempotent. Lives OUTSIDE the per-document
+// detail box now (in the master row's Onboarding column).
+function SendToOnboarding({ group, anyMoved, onMoved }) {
   const { toast } = useToast()
   const [busy, setBusy] = useState(false)
-  async function move() {
+  // Pick a representative document that actually has an application to move on.
+  const target = group.docs.find((d) => d.application_id)
+  async function send(e) {
+    e.stopPropagation()
+    if (!target) return
     setBusy(true)
     try {
-      const up = await api.moveDocumentToOnboarding(doc.id, true)
-      toast('Moved to onboarding')
+      const up = await api.moveDocumentToOnboarding(target.id, true)
+      toast('Sent to onboarding')
       onMoved(up)
-    } catch (e) {
-      toast(e.message, 'error')
+    } catch (err) {
+      toast(err.message, 'error')
     } finally {
       setBusy(false)
     }
   }
-  if (doc.move_to_onboarding) return <span title="In onboarding" className={cx(ROW_ICON_GREEN, 'cursor-default')}><Rocket className="h-4 w-4" /></span>
-  if (!doc.application_id) return null
+  if (anyMoved) return <Badge tone="green"><Rocket className="mr-1 h-3 w-3" /> In onboarding</Badge>
+  if (!target) return <span className="text-xs text-slate-300">—</span>
   return (
-    <button type="button" onClick={move} disabled={busy} title="Move to onboarding" className={ROW_ICON}>
-      {busy ? <Spinner /> : <ArrowRightCircle className="h-4 w-4" />}
-    </button>
+    <Button
+      variant="ghost"
+      onClick={send}
+      disabled={busy}
+      className="px-2.5 py-1 text-xs"
+      title="Create this candidate's onboarding tracker"
+    >
+      {busy ? <Spinner /> : <ArrowRightCircle className="h-3.5 w-3.5" />} Send to onboarding
+    </Button>
   )
 }
 
@@ -362,7 +479,7 @@ export default function OfferDocs() {
                           </span>
                         </td>
                         <td className="px-3 py-3 align-middle">
-                          {anyMoved ? <Badge tone="green">In onboarding</Badge> : <span className="text-xs text-slate-300">—</span>}
+                          <SendToOnboarding group={g} anyMoved={anyMoved} onMoved={mergeDoc} />
                         </td>
                       </tr>
                       {isOpen && (
@@ -374,38 +491,49 @@ export default function OfferDocs() {
                                   <tr className="border-b border-slate-100 bg-slate-50/70 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                                     <th className="px-3 py-2 font-semibold">Document</th>
                                     <th className="px-3 py-2 font-semibold">Status</th>
-                                    <th className="px-3 py-2 font-semibold">Compensation</th>
-                                    <th className="px-3 py-2 font-semibold">Location</th>
-                                    <th className="px-3 py-2 font-semibold">Joining</th>
+                                    <th className="px-3 py-2 font-semibold">Personal email</th>
+                                    <th className="px-3 py-2 font-semibold">Joining date</th>
+                                    <th className="px-3 py-2 font-semibold">Entity</th>
                                     <th className="px-3 py-2 text-right font-semibold">Actions</th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {g.docs.map((d) => (
+                                  {g.docs.map((d) => {
+                                    const st = docStatus(d)
+                                    const locked = !!d.move_to_onboarding
+                                    return (
                                     <tr key={d.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
                                       <td className="px-3 py-2.5 align-middle">
                                         <div className="font-medium text-slate-800">{DOC_LABEL[d.doc_type] || d.doc_type}</div>
-                                        <div className="text-[11px] text-slate-400">{d.entity || 'EZ'}{d.department ? ` · ${d.department}` : ''}</div>
+                                        <div className="text-[11px] text-slate-400">{d.department || '—'}</div>
                                       </td>
-                                      <td className="px-3 py-2.5 align-middle"><Badge tone={d.status === 'approved' ? 'green' : 'amber'}>{d.status}</Badge></td>
-                                      <td className="px-3 py-2.5 align-middle text-slate-600">{d.compensation || '—'}</td>
-                                      <td className="px-3 py-2.5 align-middle text-slate-600">{d.location || '—'}</td>
-                                      <td className="px-3 py-2.5 align-middle text-slate-600">{d.joining_date || '—'}</td>
+                                      <td className="px-3 py-2.5 align-middle"><Badge tone={st.tone}>{st.label}</Badge></td>
+                                      <td className="px-3 py-2.5 align-middle">
+                                        <InlineText doc={d} field="personal_email" type="email" value={d.personal_email}
+                                          placeholder="personal@email.com" locked={locked} onSaved={mergeDoc} />
+                                      </td>
+                                      <td className="px-3 py-2.5 align-middle">
+                                        <InlineText doc={d} field="joining_date" value={d.joining_date}
+                                          placeholder="1 July 2026" locked={locked} onSaved={mergeDoc} />
+                                      </td>
+                                      <td className="px-3 py-2.5 align-middle">
+                                        <InlineEntity doc={d} value={d.entity} locked={locked} onSaved={mergeDoc} />
+                                      </td>
                                       <td className="px-3 py-2.5 align-middle">
                                         <div className="flex items-center justify-end gap-1.5">
                                           <UploadCell doc={d} onUploaded={mergeDoc} />
-                                          <MoveCell doc={d} onMoved={mergeDoc} />
                                           {d.application_id && (
-                                            <button type="button" onClick={() => setForm({ doc: d, mode: 'new' })} title="Generate another document" className={ROW_ICON}><Plus className="h-4 w-4" /></button>
+                                            <button type="button" onClick={() => setForm({ doc: d, mode: 'new' })} title="Generate a new document" aria-label="Generate a new document" className={ROW_ICON_BRAND}><FilePlus2 className="h-4 w-4" /></button>
                                           )}
                                           {d.status !== 'approved' && d.application_id && (
-                                            <button type="button" onClick={() => setForm({ doc: d, mode: 'edit' })} title="Edit" className={ROW_ICON}><Pencil className="h-4 w-4" /></button>
+                                            <button type="button" onClick={() => setForm({ doc: d, mode: 'edit' })} title="Edit & regenerate this document" aria-label="Edit document" className={ROW_ICON}><Pencil className="h-4 w-4" /></button>
                                           )}
-                                          <button type="button" onClick={() => setView(d)} title="Preview" className={ROW_ICON}><Eye className="h-4 w-4" /></button>
+                                          <button type="button" onClick={() => setView(d)} title="Preview" aria-label="Preview document" className={ROW_ICON}><Eye className="h-4 w-4" /></button>
                                         </div>
                                       </td>
                                     </tr>
-                                  ))}
+                                    )
+                                  })}
                                 </tbody>
                               </table>
                             </div>

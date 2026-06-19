@@ -1,15 +1,17 @@
 """Hiring request intake + AI validation + JD generation."""
 from __future__ import annotations
 
+import json
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..config import settings
 from ..database import get_db
+from ..services import resume_parser
 from ..services.ai import ai
 from ..services.jobs_table import row_from_hiring_request
 from ..services.recruitment import hr_to_dict, log
@@ -115,6 +117,65 @@ def suggest_skills(payload: schemas.SuggestSkillsIn):
     )
 
 
+def _parse_jd_text(text: str) -> dict:
+    """Best-effort structuring of a JD's text into create-form fields. Uses the AI when available;
+    always falls back to putting the raw text in role_brief so an upload is never a dead end."""
+    text = (text or "").strip()
+    data: dict = {}
+    if text:
+        system = "You extract structured fields from a job description. Return ONLY a JSON object, no prose."
+        user = (
+            "Job description:\n" + text[:6000] + "\n\n"
+            "Return JSON with keys: position (string), department (string), location (string), "
+            "yoe_min (number), yoe_max (number), mandatory_skills (array of short strings), "
+            "preferred_skills (array of short strings), role_brief (a 120-180 word plain summary)."
+        )
+        try:
+            raw = ai.provider.generate(system, user, want_json=True)
+            parsed = json.loads(raw) if isinstance(raw, str) else (raw or {})
+            if isinstance(parsed, dict):
+                data = parsed
+        except Exception:
+            data = {}
+
+    def _num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _list(v):
+        return [str(s).strip() for s in v if str(s).strip()] if isinstance(v, list) else []
+
+    first_line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+    return {
+        "position": str(data.get("position") or first_line)[:200],
+        "department": str(data.get("department") or "")[:120],
+        "location": str(data.get("location") or "")[:160],
+        "yoe_min": _num(data.get("yoe_min")),
+        "yoe_max": _num(data.get("yoe_max")),
+        "mandatory_skills": _list(data.get("mandatory_skills")),
+        "preferred_skills": _list(data.get("preferred_skills")),
+        "role_brief": str(data.get("role_brief") or text[:1500]),
+    }
+
+
+@router.post("/parse-jd")
+async def parse_jd(file: UploadFile = File(...)):
+    """Upload a JD file (PDF/DOCX/TXT) → extract its text → return structured fields the create-job
+    form can prefill. Nothing is persisted; the recruiter reviews everything before creating."""
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded file was empty.")
+    try:
+        text = resume_parser.extract_text(file.filename or "jd.txt", content)
+    except Exception:
+        text = ""
+    if not (text or "").strip():
+        raise HTTPException(status_code=400, detail="Couldn't read text from that file. Try a PDF, DOCX, or TXT.")
+    return _parse_jd_text(text)
+
+
 @router.get("")
 def list_hiring_requests(
     table: bool = False,
@@ -124,6 +185,8 @@ def list_hiring_requests(
 ):
     rows = db.scalars(select(models.HiringRequest).order_by(models.HiringRequest.created_at.desc())).all()
     _auto_close_expired(db, rows)  # past-deadline open roles → closed before filtering/returning
+    from .jobs import auto_pause_stale_on_hold  # local import avoids a router import cycle
+    auto_pause_stale_on_hold(db, rows)  # on-hold roles parked > 3 months → paused (lazy sweep)
     if status.strip():
         rows = [r for r in rows if r.status == status.strip()]
     if q.strip():

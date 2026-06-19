@@ -19,6 +19,13 @@ export default function AddCandidate({ roleId, onAdded }) {
     try {
       if (mode === 'upload') {
         if (!file) { setErr('Choose a PDF, DOCX, or TXT file.'); setBusy(false); return }
+        const okExt = /\.(pdf|docx|txt)$/i.test(file.name)
+        if (!okExt) {
+          setErr(/\.doc$/i.test(file.name)
+            ? 'Legacy .doc files aren’t supported — re-save as PDF or DOCX, or paste the resume text.'
+            : 'Unsupported file type. Upload a PDF, DOCX, or TXT, or paste the resume text.')
+          setBusy(false); return
+        }
         const fd = new FormData()
         fd.append('file', file)
         fd.append('name', f.name)
@@ -65,7 +72,7 @@ export default function AddCandidate({ roleId, onAdded }) {
             <textarea className={`${inputClass} h-28 resize-y`} value={f.resume_text} onChange={set('resume_text')} required placeholder="Paste full resume text here…" />
           </Field>
         ) : (
-          <Field label="Resume file" hint="PDF / DOCX / TXT">
+          <Field label="Resume file" hint="PDF / DOCX / TXT — legacy .doc not supported; paste text if extraction fails">
             <input type="file" accept=".pdf,.docx,.txt" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100" />
           </Field>
         )}

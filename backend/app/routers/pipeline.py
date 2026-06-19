@@ -408,11 +408,14 @@ def analytics_overview(db: Session = Depends(get_db)):
         if a.recommendation:
             recs[a.recommendation] = recs.get(a.recommendation, 0) + 1
 
-    # Top roles by applicant volume
+    # Top roles by applicant volume + per-role funnel breakdown.
     counts: dict[int, int] = {}
     hired_by_role: dict[int, int] = {}
+    funnel_by_role: dict[int, dict[str, int]] = {}
     for a in apps:
         counts[a.hiring_request_id] = counts.get(a.hiring_request_id, 0) + 1
+        rf = funnel_by_role.setdefault(a.hiring_request_id, {s: 0 for s in STAGES})
+        rf[a.stage] = rf.get(a.stage, 0) + 1
         if a.stage == "hired":
             hired_by_role[a.hiring_request_id] = hired_by_role.get(a.hiring_request_id, 0) + 1
     role_pos = {r.id: r.position for r in roles}
@@ -424,15 +427,59 @@ def analytics_overview(db: Session = Depends(get_db)):
         key=lambda x: x["applicants"],
         reverse=True,
     )[:6]
+    # Per-role funnel list the dashboard's role selector iterates; ordered by applicant volume so
+    # the most active roles surface first. Only roles that actually have applications are included.
+    funnel_roles = [
+        {"role_id": rid, "position": role_pos.get(rid, f"Role #{rid}"), "funnel": funnel_by_role[rid]}
+        for rid, _ in sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+    ]
+
+    # ── Decision-grade KPIs (Analytics page) ─────────────────────────────────
+    # Open roles = roles actively taking applicants (published/open), not every row ever created.
+    open_roles = sum(1 for r in roles if (r.status or "draft") in ("published", "open"))
+    # Avg AI score over SCORED applications only (score_overall > 0) — matches the score-distribution
+    # chart, which skips unscored rows, instead of being diluted by not-yet-scored zeros.
+    scored = [a for a in apps if (a.score_overall or 0) > 0]
+    avg_score = round(sum(a.score_overall for a in scored) / len(scored), 1) if scored else 0
+    # Active candidates = people with at least one application still in a non-terminal stage.
+    active_app_cand_ids = {a.candidate_id for a in apps if a.stage not in ("hired", "rejected")}
+    active_candidates = len(active_app_cand_ids)
+    # Stage pass-through: how many applications reached at least each stage (cumulative on the funnel
+    # order). Lets the UI show applied→screen→interview→offer→hire conversion, not just current-stage.
+    stage_seq = ["applied", "screening", "shortlisted", "interview", "offer", "hired"]
+    reached = {s: 0 for s in stage_seq}
+    for a in apps:
+        if a.stage == "rejected":
+            # Rejected apps still counted as "applied" (they entered the pipeline) but not beyond.
+            reached["applied"] += 1
+            continue
+        try:
+            idx = stage_seq.index(a.stage)
+        except ValueError:
+            idx = 0
+        for i in range(idx + 1):
+            reached[stage_seq[i]] += 1
+    offers = reached.get("offer", 0)
+    # Offer-accept rate = hires / offers reached (how many offers turned into hires).
+    offer_accept_rate = round(100 * hired / offers, 1) if offers else 0
+    interview_to_offer = round(100 * offers / reached["interview"], 1) if reached.get("interview") else 0
 
     return {
         "total_roles": len(roles),
+        "open_roles": open_roles,
+        "active_candidates": active_candidates,
         "total_candidates": len(candidates),
         "total_applications": total,
         "published_roles": by_status.get("published", 0),
         "funnel": funnel,
+        "funnel_by_role": funnel_roles,
+        "stage_reached": reached,
         "conversion_rate": round(100 * hired / total, 1) if total else 0,
-        "avg_score": round(sum(a.score_overall for a in apps) / total, 1) if total else 0,
+        "offer_accept_rate": offer_accept_rate,
+        "interview_to_offer_rate": interview_to_offer,
+        "total_hired": hired,
+        "total_offers": offers,
+        "avg_score": avg_score,
         "avg_time_to_hire": round(sum(tth) / len(tth)) if tth else 0,
         "sources": sources,
         "score_distribution": buckets,

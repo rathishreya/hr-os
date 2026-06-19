@@ -110,6 +110,14 @@ export const api = {
   updateRole: (id, body) => req(`/hiring-requests/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   duplicateRole: (id) => req(`/hiring-requests/${id}/duplicate`, { method: 'POST' }),
   deleteRole: (id) => req(`/hiring-requests/${id}`, { method: 'DELETE' }),
+  // Lifecycle-guarded status change (closed = locked; on-hold older than 3 months → paused).
+  changeRoleStatus: (hrId, status) => req(`/jobs/lifecycle/${hrId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+  // Upload a JD file (PDF/DOCX/TXT) → structured fields to prefill the create-job form.
+  parseJd: (formData) =>
+    fetch(BASE + '/hiring-requests/parse-jd', { method: 'POST', headers: authHeaders(), body: formData }).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Could not read that JD')
+      return r.json()
+    }),
   generateJD: (id) => req(`/hiring-requests/${id}/generate-jd`, { method: 'POST' }),
   getJD: (id) => req(`/hiring-requests/${id}/job`),
   updateJob: (jobId, body) => req(`/jobs/${jobId}`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -187,6 +195,8 @@ export const api = {
     }),
   documentUploadUrl: (id) => `${BASE}/documents/${id}/upload-file`,
   moveDocumentToOnboarding: (id, move = true) => req(`/documents/${id}/move-to-onboarding`, { method: 'POST', body: JSON.stringify({ move }) }),
+  // Edit the recruiter-fillable doc fields (personal email, joining date, entity) — stays editable until onboarding.
+  updateDocumentFields: (id, fields) => req(`/documents/${id}/fields`, { method: 'PATCH', body: JSON.stringify(fields) }),
 
   // Assessments (uploaded files sent to candidates)
   listAssessments: () => req('/assessments'),
@@ -195,9 +205,25 @@ export const api = {
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Upload failed')
       return r.json()
     }),
+  updateAssessment: (id, formData) =>
+    fetch(BASE + `/assessments/${id}`, { method: 'POST', headers: authHeaders(), body: formData }).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Update failed')
+      return r.json()
+    }),
   deleteAssessment: (id) => req(`/assessments/${id}`, { method: 'DELETE' }),
   assessmentFileUrl: (id) => `${BASE}/assessments/${id}/file`,
   assessmentFileByIdUrl: (id, fileId) => `${BASE}/assessments/${id}/files/${fileId}`,
+  // Auth-gated file fetch (Bearer header) → Blob the caller can open/download.
+  fetchAssessmentFile: async (id) => {
+    const r = await fetch(BASE + `/assessments/${id}/file`, { headers: authHeaders() })
+    if (!r.ok) { if (r.status === 401) onUnauthorized(`/assessments/${id}/file`); throw new Error('Could not load assessment file') }
+    return r.blob()
+  },
+  fetchAssessmentFileById: async (id, fileId) => {
+    const r = await fetch(BASE + `/assessments/${id}/files/${fileId}`, { headers: authHeaders() })
+    if (!r.ok) { if (r.status === 401) onUnauthorized(`/assessments/${id}/files/${fileId}`); throw new Error('Could not load assessment file') }
+    return r.blob()
+  },
   draftAssessmentEmail: (id, body) => req(`/assessments/${id}/draft-email`, { method: 'POST', body: JSON.stringify(body) }),
   sendAssessment: (id, body) => req(`/assessments/${id}/send`, { method: 'POST', body: JSON.stringify(body) }),
 

@@ -8,6 +8,7 @@ export const JOB_APP_COLUMNS = [
   { id: 'edit', label: '', locked: true },
   { id: 'name', label: 'Name', locked: true },
   { id: 'rating', label: 'Rating' },
+  { id: 'ai', label: 'AI verdict' },
   { id: 'status', label: 'Status', locked: true },
   { id: 'role', label: 'Current company' },
   { id: 'education', label: 'Education' },
@@ -22,15 +23,16 @@ export const JOB_APP_COLUMNS = [
   { id: 'changed', label: 'Status changed' },
   { id: 'activity', label: 'Activity' },
   { id: 'interview', label: 'Interview' },
-  { id: 'email', label: 'Email' },
-  { id: 'ai', label: 'AI' },
+  { id: 'last_email', label: 'Last email' },
+  { id: 'email', label: 'Emails' },
+  { id: 'cv', label: 'CV' },
 ]
 
 const DEFAULT_VISIBLE = {
-  select: true, idx: true, edit: true, name: true, rating: true, status: true,
+  select: true, idx: true, edit: true, name: true, rating: true, ai: true, status: true,
   role: true, education: true, comp: true, exp: true, location: true, notice: true,
   source: true, sub_source: false, applied: true, applied_by: true, changed: true, activity: false,
-  interview: true, email: false, ai: true,
+  interview: true, last_email: true, email: false, cv: true,
 }
 
 function loadVisible() {

@@ -88,7 +88,7 @@ export default function RoleDetail() {
 
   async function closeRole() {
     try {
-      const updated = await api.updateRole(id, { status: 'closed' })
+      const updated = await api.changeRoleStatus(id, 'closed')
       setRole(updated)
       toast('Role closed')
     } catch (e) {
@@ -98,11 +98,13 @@ export default function RoleDetail() {
 
   async function reopenRole() {
     try {
-      const updated = await api.updateRole(id, { status: 'open' })
+      const updated = await api.changeRoleStatus(id, 'open')
       setRole(updated)
-      toast('Role reopened')
+      toast(updated.status === 'paused'
+        ? 'Reopened — auto-paused (on hold over 3 months)'
+        : 'Role reopened')
     } catch (e) {
-      toast(e.message, 'error')
+      toast(e.message, 'error')  // e.g. "A closed role can't be reopened"
     }
   }
 
@@ -173,6 +175,7 @@ export default function RoleDetail() {
             onRefresh={loadBoard}
             summary={summary}
             workspaceTab={view}
+            initialStage={stageFromUrl}
             addModalOpen={addModalOpen}
             onAddModalClose={() => setAddModalOpen(false)}
           />

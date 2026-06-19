@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
-  Pencil, Globe, Phone, Mail, MapPin, Download, Columns3, LayoutList, LayoutGrid,
+  Pencil, Globe, Phone, Mail, MapPin, Download, Columns3, LayoutList, LayoutGrid, Sparkles,
 } from 'lucide-react'
 import { Badge, Button, Avatar, scoreTone, stageTone, cx } from '../../ui'
 import { useTalentPoolColumns } from '../../hooks/useTalentPoolColumns'
@@ -28,6 +29,26 @@ function ContactIcon({ href, title, icon: Icon, external }) {
       <Icon className="h-3.5 w-3.5" />
     </a>
   )
+}
+
+// Talent-pool compensation values come from two paths: résumé-parsed figures already carry
+// '₹…LPA' (backend _norm_money), but applicant-typed values pre-fix were stored raw ("12",
+// "18 LPA"). Stamp a ₹/LPA label on any value that still lacks a currency token so the column
+// is consistent (India-centric: single currency, INR ₹). Mirrors backend _norm_applicant_ctc.
+const CTC_NUM_RE = /^\s*([\d,]+(?:\.\d+)?)\s*(lpa|lac|lakh|lakhs|cr|crore|l)?\s*$/i
+export function fmtComp(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return ''
+  if (/₹|\brs\b|\binr\b|\$|€|£/i.test(s)) return s
+  const m = s.match(CTC_NUM_RE)
+  if (!m) return s
+  const val = Number(m[1].replace(/,/g, ''))
+  if (!isFinite(val)) return s
+  const unit = (m[2] || '').toLowerCase()
+  if (unit === 'cr' || unit === 'crore') return `₹${val} Cr`
+  if (unit) return `₹${val} LPA`
+  if (val >= 100000) return `₹${val.toLocaleString('en-IN')}`
+  return `₹${val} LPA`
 }
 
 function TwoLine({ primary, secondary }) {
@@ -70,7 +91,7 @@ const FILTER_ACCESSORS = {
   sub_source: (r) => r.sub_source || '',
   location: (r) => r.location || '',
   suggested_role: (r) => r.suggested_role || '',
-  pipeline: (r) => `${r.latest_stage || ''} ${r.top_score || ''}`,
+  pipeline: (r) => `${r.primary_stage || r.latest_stage || ''} ${r.primary_role || ''} ${r.primary_score ?? r.top_score ?? ''}`,
 }
 
 const SCORE_PILL = {
@@ -114,7 +135,7 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
     sub_source: (r) => (r.sub_source || '').toLowerCase(),
     location: (r) => (r.location || '').toLowerCase(),
     suggested_role: (r) => (r.suggested_role || '').toLowerCase(),
-    pipeline: (r) => r.top_score || 0,
+    pipeline: (r) => (r.primary_score != null ? r.primary_score : r.top_score) || 0,
     added: (r) => new Date(r.created_at).getTime(),
   }
 
@@ -213,10 +234,10 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
         return (
           <div className="space-y-0.5 text-xs">
             {row.current_ctc && (
-              <div><span className="text-slate-500">Current:</span>{' '}<span className="font-semibold text-slate-800">{row.current_ctc}</span></div>
+              <div><span className="text-slate-500">Current:</span>{' '}<span className="font-semibold text-slate-800">{fmtComp(row.current_ctc)}</span></div>
             )}
             {row.salary_expectation && (
-              <div><span className="text-slate-500">Expected:</span>{' '}<span className="font-semibold text-emerald-700">{row.salary_expectation}</span></div>
+              <div><span className="text-slate-500">Expected:</span>{' '}<span className="font-semibold text-emerald-700">{fmtComp(row.salary_expectation)}</span></div>
             )}
           </div>
         )
@@ -225,41 +246,82 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
           ? <span className="tabular-nums text-sm font-medium text-slate-800">{row.total_yoe} <span className="font-normal text-slate-400">yrs</span></span>
           : <span className="text-slate-300">—</span>
       case 'source':
-        return <Badge tone="gray" className="capitalize">{row.source || '—'}</Badge>
-      case 'sub_source':
-        return <span className="text-sm capitalize text-slate-600">{row.sub_source || '—'}</span>
+        // Source = the candidate's acquisition channel (Candidate.source).
+        return <Badge tone="gray" className="capitalize" title="Acquisition channel (where this candidate came from)">{row.source || '—'}</Badge>
+      case 'sub_source': {
+        // Sub-source = a finer attribution. Use the distinct sub_source when set; otherwise
+        // fall back to who/what applied them (Application.applied_by). Avoid just echoing Source.
+        const sub = (row.sub_source && row.sub_source !== row.source) ? row.sub_source : (row.applied_by || '')
+        return sub
+          ? <span className="text-sm capitalize text-slate-600" title="Finer attribution (e.g. who referred or which channel sub-tag)">{sub}</span>
+          : <span className="text-slate-300">—</span>
+      }
       case 'location':
         return row.location
           ? <span className="inline-flex max-w-[140px] items-center gap-1 truncate text-sm text-slate-700"><MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />{row.location}</span>
           : <span className="text-slate-300">—</span>
-      case 'suggested_role':
+      case 'suggested_role': {
         if (!row.suggested_role) return <span className="text-slate-300">—</span>
-        return (
-          <span
-            className="inline-flex max-w-[160px] items-center gap-1 truncate text-sm text-slate-700"
-            title={`Best-fit role: ${row.suggested_role}${row.suggested_role_score != null ? ` · ${row.suggested_role_score}% match` : ''}`}
-          >
-            {row.suggested_role}
+        const tip = `AI best-fit role: ${row.suggested_role}${row.suggested_role_score != null ? ` · ${row.suggested_role_score}% match` : ''}`
+        const inner = (
+          <>
+            <Sparkles className="h-3 w-3 shrink-0 text-brand-400" />
+            <span className="truncate">{row.suggested_role}</span>
             {row.suggested_role_score != null && <span className="shrink-0 text-xs text-slate-400">{row.suggested_role_score}%</span>}
+          </>
+        )
+        // Link straight to the matched role when we have its id.
+        return row.suggested_role_id ? (
+          <Link
+            to={`/roles/${row.suggested_role_id}`}
+            onClick={(e) => e.stopPropagation()}
+            title={tip}
+            className="inline-flex max-w-[160px] items-center gap-1 truncate text-sm text-brand-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+          >
+            {inner}
+          </Link>
+        ) : (
+          <span className="inline-flex max-w-[160px] items-center gap-1 truncate text-sm text-slate-700" title={tip}>
+            {inner}
           </span>
         )
-      case 'pipeline':
+      }
+      case 'pipeline': {
         if (!row.application_count) return <span className="text-xs text-slate-400">Not applied</span>
+        // Show ONE application's stage + ITS score together (the candidate's primary/active
+        // application) so the score and stage can never come from different roles. Prefer the
+        // backend-matched primary_* fields; fall back to the most-recent stage + best score.
+        const stage = row.primary_stage || row.latest_stage
+        const score = row.primary_score != null ? row.primary_score : row.top_score
+        const roleTitle = row.primary_role || ''
+        const more = Math.max(0, (row.application_count || 0) - 1)
         return (
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            {row.top_score > 0 && (
-              <span className={cx('inline-flex h-5 items-center rounded-full px-2 text-xs font-semibold tabular-nums', SCORE_PILL[scoreTone(row.top_score)])}>
-                {Math.round(row.top_score)}
-              </span>
-            )}
-            {row.latest_stage && (
-              <span className="inline-flex items-center gap-1.5 text-sm capitalize text-slate-700">
-                <span className={cx('h-1.5 w-1.5 rounded-full', STAGE_DOT[stageTone[row.latest_stage]] || 'bg-slate-400')} />
-                {row.latest_stage}
-              </span>
-            )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 whitespace-nowrap">
+              {score > 0 && (
+                <span
+                  className={cx('inline-flex h-5 items-center rounded-full px-2 text-xs font-semibold tabular-nums', SCORE_PILL[scoreTone(score)])}
+                  title="Match score for this application"
+                >
+                  {Math.round(score)}
+                </span>
+              )}
+              {stage && (
+                <span className="inline-flex items-center gap-1.5 text-sm capitalize text-slate-700">
+                  <span className={cx('h-1.5 w-1.5 rounded-full', STAGE_DOT[stageTone[stage]] || 'bg-slate-400')} />
+                  {stage}
+                </span>
+              )}
+              {more > 0 && (
+                <span className="rounded-full bg-slate-100 px-1.5 text-[11px] font-medium text-slate-500" title={`${more} more application${more === 1 ? '' : 's'}`}>
+                  +{more}
+                </span>
+              )}
+            </div>
+            {roleTitle && <div className="mt-0.5 max-w-[150px] truncate text-[11px] text-slate-400" title={roleTitle}>{roleTitle}</div>}
           </div>
         )
+      }
       case 'added':
         return (
           <span className="whitespace-nowrap text-sm text-slate-600">

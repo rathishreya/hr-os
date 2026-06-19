@@ -52,7 +52,6 @@ DEFAULT_QUESTIONS = [
     "What are you looking for in your next role, and where do you want to grow?",
 ]
 
-
 def _transcribe_gemini(data: bytes, mime: str) -> tuple[str, str]:
     """Server-side transcription via Gemini (uses the configured key). Returns
     (transcript, error_message). Never raises."""
@@ -89,7 +88,7 @@ def _transcribe_gemini(data: bytes, mime: str) -> tuple[str, str]:
         return (txt, "") if txt else ("", "No speech detected in the recording.")
     except Exception as e:
         return "", f"Transcription failed: {e}"
-
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
 
 def _role_context(db: Session, vi: models.VideoInterview) -> dict:
     """Role/JD context so the AI can judge technical depth and fit, not just communication."""
@@ -107,7 +106,6 @@ def _role_context(db: Session, vi: models.VideoInterview) -> dict:
             "requirements": list(job.requirements or []),
         }
     return role
-
 
 def _normalize_evaluation(result: dict, questions: list[str]) -> dict:
     """Coerce the model's evaluation into a stable shape: exactly one per-question entry per

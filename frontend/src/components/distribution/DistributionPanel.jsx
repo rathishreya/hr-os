@@ -88,23 +88,23 @@ export function DistributionDetails({ data }) {
       )}
 
       <p className="mt-3 text-xs leading-relaxed text-slate-500">
-        When you publish a job it lists on the free boards below. <strong className="text-emerald-700">Automatic</strong> ones
-        pick it up on their own. <strong className="text-brand-700">Connect-once</strong> ones need a one-time setup — copy
+        When you publish a job it lists on the free boards below. <strong className="text-emerald-700">Automatic &amp; free</strong> ones
+        pick it up on their own. <strong className="text-brand-700">Manual / partner</strong> ones need a one-time setup — copy
         your feed link and paste it on each board; after that, every job you publish syncs by itself.
       </p>
 
-      {/* Automatic */}
+      {/* Tier 1: Automatic & free — nothing to do */}
       {auto.length > 0 && (
         <div className="mt-4">
-          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Automatic — nothing to do</h4>
+          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Automatic &amp; free — nothing to do</h4>
           <div className="space-y-2">{auto.map((ch) => <AutoRow key={ch.key} ch={ch} />)}</div>
         </div>
       )}
 
-      {/* Connect once */}
+      {/* Tier 3: Manual / partner — connect once by pasting the feed link */}
       {manual.length > 0 && (
         <div className="mt-5">
-          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-700"><Plug className="h-3.5 w-3.5" /> Connect once (free)</h4>
+          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-700"><Plug className="h-3.5 w-3.5" /> Manual / partner — connect once (free)</h4>
           <div className="mb-2.5 rounded-xl border border-brand-200 bg-brand-50/60 p-3">
             <div className="text-xs font-semibold text-brand-900"><span className="mr-1 rounded bg-brand-200 px-1.5 py-0.5 text-[10px]">STEP 1</span> Copy your job feed link</div>
             <div className="mt-2 flex items-center gap-2">

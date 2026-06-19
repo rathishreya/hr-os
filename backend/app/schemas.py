@@ -30,6 +30,7 @@ class HiringRequestCreate(BaseModel):
     start_hiring_date: str = ""
     application_questions: list[dict[str, Any]] = Field(default_factory=list)
     interview_types: list[str] = Field(default_factory=list)
+    role_brief: str = ""
 
 
 class SuggestSkillsIn(BaseModel):
@@ -187,6 +188,7 @@ class HiringRequestUpdate(BaseModel):
     start_hiring_date: str | None = None
     application_questions: list[dict[str, Any]] | None = None
     interview_types: list[str] | None = None
+    role_brief: str | None = None
 
 
 # ---------- Publish / distribution ----------
@@ -525,6 +527,7 @@ class DocumentOut(BaseModel):
     candidate_id: int
     doc_type: str
     template_key: str = ""
+    personal_email: str = ""
     title: str
     content: str
     blocks: list[Any] = Field(default_factory=list)
@@ -582,6 +585,9 @@ class AssessmentOut(BaseModel):
     id: int
     name: str
     description: str
+    team: str = ""
+    department: str = ""
+    role: str = ""
     filename: str          # first file (back-compat)
     mime: str
     size: int

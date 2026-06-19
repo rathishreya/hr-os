@@ -38,6 +38,9 @@ class HiringRequest(Base):
     recruiter: Mapped[str] = mapped_column(String(160), default="")
     num_openings: Mapped[int] = mapped_column(Integer, default=1)
     status: Mapped[str] = mapped_column(String(30), default="draft")
+    # When `status` last changed — drives the lifecycle rule: an on-hold role can be reopened
+    # within 3 months, after which it is auto-paused. NULL on legacy rows.
+    status_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Date the team intends to start actively hiring for this role (free-form ISO date string).
     start_hiring_date: Mapped[str] = mapped_column(String(40), default="")
@@ -46,6 +49,8 @@ class HiringRequest(Base):
     application_questions: Mapped[list] = mapped_column(JSON, default=list)
     # Job-level interview plan: the interview types this role runs, bulk-appliable to candidates.
     interview_types: Mapped[list] = mapped_column(JSON, default=list)
+    # Recruiter's quick 100-200 word brief describing the role — seeds the AI job-description draft.
+    role_brief: Mapped[str] = mapped_column(Text, default="")
 
     # --- AI-generated intelligence ---
     ai_summary: Mapped[str] = mapped_column(Text, default="")
@@ -253,6 +258,8 @@ class Document(Base):
 
     doc_type: Mapped[str] = mapped_column(String(40))  # offer_letter|employment_contract|traineeship_offer|nda|...
     template_key: Mapped[str] = mapped_column(String(60), default="")  # which EZ Lab template drafted it
+    # Candidate's personal email (offers go here, not the work email). Editable until they join.
+    personal_email: Mapped[str] = mapped_column(String(200), default="")
     title: Mapped[str] = mapped_column(String(200), default="")
     content: Mapped[str] = mapped_column(Text, default="")  # plain-text rendering (copy/email)
     blocks: Mapped[list] = mapped_column(JSON, default=list)  # structured doc: headings, paras, tables, signatures
@@ -358,6 +365,11 @@ class Assessment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200), default="")
     description: Mapped[str] = mapped_column(Text, default="")
+    # Scope: which team / department / role this assessment is meant for. `department` lets a job
+    # auto-suggest matching assessments when it's created.
+    team: Mapped[str] = mapped_column(String(120), default="")
+    department: Mapped[str] = mapped_column(String(120), default="")
+    role: Mapped[str] = mapped_column(String(200), default="")
     filename: Mapped[str] = mapped_column(String(255), default="")
     mime: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
     size: Mapped[int] = mapped_column(Integer, default=0)

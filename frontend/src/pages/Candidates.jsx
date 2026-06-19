@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/auth'
 import { usePageTitle } from '../hooks/usePageTitle'
 import CandidateProfileModal from '../components/CandidateProfileModal'
 import TalentPoolTable from '../components/talent/TalentPoolTable'
+import { CopyBtn } from '../components/distribution/DistributionPanel'
 
 export default function Candidates() {
   usePageTitle('Talent Pool')
@@ -19,6 +20,8 @@ export default function Candidates() {
   const [rescoring, setRescoring] = useState(false)
   const [roles, setRoles] = useState([])
   const [openId, setOpenId] = useState(null)
+  // Public general talent-pool application link (no role) — for the EZ careers page / sharing.
+  const [applyUrl, setApplyUrl] = useState('')
 
   const load = (q = search) => api.listCandidatesTable(q).then(setRows).catch(() => []).finally(() => setLoading(false))
 
@@ -28,6 +31,11 @@ export default function Candidates() {
   }, [search])
 
   useEffect(() => { api.listRoles().then(setRoles).catch(() => []) }, [])
+  useEffect(() => {
+    api.distributionChannels()
+      .then((d) => setApplyUrl(d?.feeds?.apply || (d?.base_url ? `${d.base_url}/careers/apply` : '')))
+      .catch(() => {})
+  }, [])
 
   async function syncFromResumes() {
     setSyncing(true)
@@ -62,6 +70,13 @@ export default function Candidates() {
         subtitle="Columns are filled from each candidate's resume — role, education, compensation, location, and more."
         actions={(
           <>
+            {applyUrl && (
+              <CopyBtn
+                value={applyUrl}
+                label="Copy application link"
+                className="!px-3 !py-2"
+              />
+            )}
             {hasRole('admin', 'manager') && (
               <Button variant="ghost" className="text-xs" onClick={rescoreAll} disabled={rescoring || loading} title="Re-score every application with the latest skill matcher">
                 {rescoring ? <Spinner /> : <Sparkles className="h-4 w-4" />}

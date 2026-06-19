@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -55,6 +56,21 @@ def _ensure_onboarding_plan(db: Session, application_id: int) -> None:
 # fall back to the AI/mock free-text generator.
 AI_DOC_TYPES = {"employment_agreement", "contractor_agreement"}
 DOC_TYPES = set(DOC_TYPE_TEMPLATE) | AI_DOC_TYPES
+
+# Allowed legal entities for the inline Entity edit (mirrors render.ENTITIES / the generate form).
+_ENTITY_CHOICES = {"EZ", "AEZ"}
+
+
+class DocumentFieldsRequest(BaseModel):
+    """Lightweight inline edits to the offer-administration fields shown in the docs list.
+    personal_email is stored on the document column; joining_date (terms['start_date']) and
+    entity (terms['entity']) are persisted into the document's terms dict WITHOUT re-rendering
+    the legal text. All fields are optional — only the keys provided are updated.
+    """
+
+    personal_email: str | None = None
+    joining_date: str | None = None
+    entity: str | None = None
 
 
 def _context(app: models.Application, terms: dict) -> dict:
@@ -117,6 +133,7 @@ def _enrich_doc(db: Session, d: models.Document) -> None:
     d.reporting_manager = t.get("manager") or ""
     d.approving_manager = t.get("approving_manager") or ""
     d.has_upload = bool(d.upload_file)
+    # personal_email is a real column on the model; DocumentOut reads it directly.
 
 
 @router.get("/templates", response_model=list[schemas.DocumentTemplateOut])
@@ -276,6 +293,39 @@ def move_to_onboarding(doc_id: int, body: schemas.MoveToOnboardingRequest, db: S
     if doc.move_to_onboarding and doc.application_id:
         _ensure_onboarding_plan(db, doc.application_id)
     log(db, "document.move_to_onboarding", "document", doc.id, {"move": doc.move_to_onboarding})
+    db.commit()
+    db.refresh(doc)
+    _enrich_doc(db, doc)
+    return doc
+
+
+@router.patch("/{doc_id}/fields", response_model=schemas.DocumentOut)
+def update_document_fields(doc_id: int, body: DocumentFieldsRequest, db: Session = Depends(get_db)):
+    """Inline-edit the offer-administration fields (personal email, joining date, entity) without
+    re-rendering the legal text. These stay editable until the candidate is moved to onboarding —
+    once `move_to_onboarding` is set they're locked, since the document is in effect issued."""
+    doc = db.get(models.Document, doc_id)
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if doc.move_to_onboarding:
+        raise HTTPException(409, "Fields are locked once the candidate has moved to onboarding")
+
+    if body.personal_email is not None:
+        doc.personal_email = body.personal_email.strip()
+
+    terms = dict(doc.terms or {})  # copy so SQLAlchemy detects the JSON change on reassignment
+    if body.joining_date is not None:
+        terms["start_date"] = body.joining_date.strip()
+    if body.entity is not None:
+        ent = (body.entity or "").strip().upper()
+        if ent and ent not in _ENTITY_CHOICES:
+            raise HTTPException(422, f"entity must be one of {sorted(_ENTITY_CHOICES)}")
+        terms["entity"] = ent or "EZ"
+    doc.terms = terms
+
+    log(db, "document.fields_updated", "document", doc.id, {
+        "personal_email": doc.personal_email, "start_date": terms.get("start_date"), "entity": terms.get("entity"),
+    })
     db.commit()
     db.refresh(doc)
     _enrich_doc(db, doc)

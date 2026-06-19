@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  X, Mail, Phone, Globe, MapPin, Download, ExternalLink, Send, FileText, Bot, Trash2,
+  X, Mail, Phone, Globe, MapPin, Download, ExternalLink, Send, FileText, Bot, Briefcase, CalendarClock,
 } from 'lucide-react'
 import { api } from '../api'
 import {
   Badge, Button, Spinner, Avatar, Tabs, inputClass, stageTone, scoreTone, cx,
 } from '../ui'
 import { useToast } from './Toast'
-import { useAuth } from '../contexts/auth'
 import { useResumeFile } from '../hooks/useResumeFile'
 import FormattedResume from './role/FormattedResume'
+import { fmtComp } from './talent/TalentPoolTable'
 
 const ROUND_TONE = { draft: 'gray', scheduled: 'blue', completed: 'green', cancelled: 'rose', no_show: 'amber' }
 const EMAIL_TONE = { sent: 'green', logged: 'blue', failed: 'rose' }
@@ -98,9 +98,8 @@ function DataTable({ columns, rows, empty }) {
   )
 }
 
-export default function CandidateProfileModal({ candidateId, open, onClose, roles = [], onApplied, onDeleted }) {
+export default function CandidateProfileModal({ candidateId, open, onClose, roles = [], onApplied }) {
   const { toast } = useToast()
-  const { hasRole } = useAuth()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('resume')
@@ -164,6 +163,36 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
   // Auth-gated file → fetch as a blob URL (an <iframe>/<a> can't send the bearer token).
   const { url: fileUrl, state: fileState } = useResumeFile(candidateId, open && hasFile)
 
+  // Unified, date-sorted activity timeline: applications + interview rounds + emails/AI screens
+  // in one chronological feed (newest first), so the candidate's journey reads top-to-bottom.
+  const timeline = useMemo(() => {
+    const apps = data?.applications || []
+    const items = []
+    for (const a of apps) {
+      items.push({
+        id: `app-${a.application_id}`, kind: 'application', at: a.created_at,
+        title: `Applied — ${a.position || `Role #${a.hiring_request_id}`}`,
+        meta: a.department || '', stage: a.stage, score: a.score_overall,
+      })
+    }
+    for (const r of hist.rounds || []) {
+      items.push({
+        id: `round-${r.id}`, kind: 'interview', at: r.scheduled_at || r.created_at,
+        title: `${r._position || 'Interview'} — Round ${r.round_number} (${(r.interview_type || 'other').replace(/_/g, ' ')})`,
+        meta: (r.panelists || []).join(', '), status: r.status,
+      })
+    }
+    for (const m of hist.convos || []) {
+      items.push({
+        id: m.id, kind: m.kind, at: m.at, title: m.title, meta: m.position || '',
+        status: m.status, ai: m.ai,
+      })
+    }
+    return items
+      .filter((i) => i.at)
+      .sort((x, y) => new Date(y.at) - new Date(x.at))
+  }, [data, hist])
+
   if (!open) return null
 
   const c = data?.candidate || {}
@@ -198,22 +227,6 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
     }
   }
 
-  async function remove() {
-    if (!window.confirm(
-      `Delete ${c.name || 'this candidate'} and ALL their data (applications, interviews, emails)?\n\nThis cannot be undone.`,
-    )) return
-    setBusy(true)
-    try {
-      await api.deleteCandidate(candidateId)
-      toast('Candidate deleted')
-      onClose()
-      ;(onDeleted || onApplied)?.()
-    } catch (e) {
-      toast(e.message, 'error')
-      setBusy(false)
-    }
-  }
-
   const historyColumns = [
     {
       key: 'job_id',
@@ -230,7 +243,7 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
       label: 'Department',
       render: (row) => row.department || roleById[row.hiring_request_id]?.department || '—',
     },
-    { key: 'source', label: 'Source', render: () => <span className="capitalize">{c.source || '—'}</span> },
+    { key: 'created_at', label: 'Applied on', render: (row) => row.created_at ? fmtDate(row.created_at) : '—' },
     {
       key: 'stage',
       label: 'Status',
@@ -382,8 +395,8 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
                     <div>
                       <div className="text-xs font-semibold uppercase text-slate-400">Compensation</div>
                       <div className="mt-1 text-sm text-slate-800">
-                        {p.current_ctc && <div>Current: {p.current_ctc}</div>}
-                        {p.salary_expectation && <div>Expected: {p.salary_expectation}</div>}
+                        {p.current_ctc && <div>Current: {fmtComp(p.current_ctc)}</div>}
+                        {p.salary_expectation && <div>Expected: {fmtComp(p.salary_expectation)}</div>}
                         {!p.current_ctc && !p.salary_expectation && '—'}
                       </div>
                     </div>
@@ -430,12 +443,53 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
               {tab === 'history' && (
                 <div className="space-y-8">
                   <div>
+                    <SectionTitle>Activity Timeline</SectionTitle>
+                    {hist.loading && timeline.length === 0 ? (
+                      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500"><Spinner /> Loading…</div>
+                    ) : timeline.length === 0 ? (
+                      <div className="rounded-lg border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400">
+                        No activity yet.
+                      </div>
+                    ) : (
+                      <ol className="relative ml-2 space-y-4 border-l border-slate-200 pl-6">
+                        {timeline.map((t) => {
+                          const Icon = t.kind === 'application' ? Briefcase
+                            : t.kind === 'interview' ? CalendarClock
+                            : t.kind === 'email' ? Mail
+                            : Bot
+                          const dot = t.kind === 'application' ? 'bg-brand-100 text-brand-600'
+                            : t.kind === 'interview' ? 'bg-amber-100 text-amber-600'
+                            : t.kind === 'email' ? 'bg-sky-100 text-sky-600'
+                            : 'bg-brand-100 text-brand-600'
+                          return (
+                            <li key={t.id} className="relative">
+                              <span className={cx('absolute -left-[2.1rem] flex h-7 w-7 items-center justify-center rounded-full ring-4 ring-slate-50', dot)}>
+                                <Icon className="h-3.5 w-3.5" />
+                              </span>
+                              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-medium text-slate-800">{t.title}</span>
+                                  {t.ai && <Badge tone="violet">AI</Badge>}
+                                  {t.stage && <Badge tone={stageTone[t.stage] || 'gray'}>{t.stage}</Badge>}
+                                  {t.score > 0 && <Badge tone={scoreTone(t.score)}>{Math.round(t.score)}</Badge>}
+                                  {t.status && <Badge tone={ROUND_TONE[t.status] || EMAIL_TONE[t.status] || 'gray'}>{t.status}</Badge>}
+                                  <span className="ml-auto text-xs text-slate-400">{fmtDate(t.at)}</span>
+                                </div>
+                                {t.meta && <div className="mt-0.5 text-xs text-slate-500">{t.meta}</div>}
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ol>
+                    )}
+                  </div>
+                  <div>
                     <SectionTitle>Interview History</SectionTitle>
                     <DataTable
                       columns={[
                         { key: 'job', label: 'Job Title', render: (r) => r._position || `#${r.application_id}` },
                         { key: 'round', label: 'Round', render: (r) => `${r.round_number}. ${(r.interview_type || 'other').replace(/_/g, ' ')}` },
-                        { key: 'when', label: 'When', render: (r) => r.scheduled_at || '—' },
+                        { key: 'when', label: 'When', render: (r) => r.scheduled_at ? fmtDate(r.scheduled_at) : '—' },
                         { key: 'panel', label: 'Panel', render: (r) => (r.panelists || []).join(', ') || '—' },
                         { key: 'status', label: 'Status', render: (r) => <Badge tone={ROUND_TONE[r.status] || 'gray'}>{r.status}</Badge> },
                       ]}
@@ -516,11 +570,6 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
             </div>
 
             <div className="flex shrink-0 items-center gap-2 border-t border-slate-200 bg-white px-6 py-3">
-              {hasRole('admin', 'manager') && (
-                <Button variant="danger" onClick={remove} disabled={busy} title="Delete candidate and all their data">
-                  <Trash2 className="h-4 w-4" /> <span className="hidden sm:inline">Delete</span>
-                </Button>
-              )}
               <select className={`${inputClass} ml-auto max-w-md flex-1`} value={applyRole} onChange={(e) => setApplyRole(e.target.value)}>
                 <option value="">Apply to a job…</option>
                 {roles.filter((r) => r.status === 'open').map((r) => (

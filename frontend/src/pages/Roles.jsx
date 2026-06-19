@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, AlertTriangle, Briefcase, LayoutGrid, List, Sparkles } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Plus, Search, AlertTriangle, Briefcase, LayoutGrid, List, Sparkles, Upload } from 'lucide-react'
 import { api } from '../api'
 import { Card, Badge, Button, Field, Spinner, Skeleton, PageHeader, EmptyState, inputClass, cx } from '../ui'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import JobsListTable from '../components/jobs/JobsListTable'
 import MultiSelect from '../components/MultiSelect'
-import { SkillChecklist, ApplicationQuestionsBuilder, InterviewTypesPicker, mergeSkills, useTeamOptions } from '../components/role/jobFormParts'
+import { SkillChecklist, ApplicationQuestionsBuilder, InterviewTypesPicker, BudgetCtcField, ComboField, useFieldOptions, mergeSkills, useTeamOptions } from '../components/role/jobFormParts'
 
 const VIEW_KEY = 'hr-os-jobs-view'
 
@@ -16,21 +16,139 @@ const EMPTY = {
   mandatory_skills: [], preferred_skills: [], priority: 'medium',
   hiring_deadline: '', location: '', work_mode: 'hybrid', num_openings: 1,
   start_hiring_date: '', application_questions: [], interview_types: [],
-  hiring_manager: '', recruiter: '', panelists: [],
+  hiring_manager: '', recruiter: '', panelists: [], role_brief: '',
 }
 
 // Priority as a leading dot, not a colored side-stripe (side-stripes read as templated).
 const PRIORITY_DOT = { urgent: 'bg-rose-500', high: 'bg-amber-500', medium: 'bg-sky-500', low: 'bg-slate-300' }
+
+// Cards view is grouped into labelled status sections (Open / Hold / Draft / Closed) with a
+// divider per group. 'paused' (lifecycle auto-pause) groups under Hold. Order is fixed so the
+// most actionable roles sit first regardless of the Newest/Priority/Difficulty sort, which
+// still orders the cards WITHIN each group.
+const CARD_STATUS_GROUPS = [
+  { key: 'open', label: 'Open', statuses: ['open'], dot: 'bg-emerald-500' },
+  { key: 'on_hold', label: 'Hold', statuses: ['on_hold', 'paused'], dot: 'bg-amber-500' },
+  { key: 'draft', label: 'Draft', statuses: ['draft'], dot: 'bg-slate-400' },
+  { key: 'closed', label: 'Closed', statuses: ['closed'], dot: 'bg-slate-300' },
+]
+
+// A short recruiter narrative (100-200 words) that seeds a more tailored AI-drafted JD in the
+// next step. Optional, but the live word count nudges toward the recommended length.
+function RoleBriefField({ value, onChange }) {
+  const words = (value || '').trim() ? value.trim().split(/\s+/).length : 0
+  const inRange = words >= 100 && words <= 200
+  return (
+    <div className="space-y-2 rounded-xl border border-slate-200 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <Sparkles className="h-3.5 w-3.5 text-brand-500" /> Role description
+        </h3>
+        <span className={cx('text-xs tabular-nums', inRange ? 'text-emerald-600' : 'text-slate-400')}>{words} / 100–200 words</span>
+      </div>
+      <p className="text-xs text-slate-400">Optional. A quick 100–200 word brief — what the role does, why it&apos;s open, what makes it unique. The AI uses this to draft a sharper job description in the next step.</p>
+      <textarea
+        className={`${inputClass} h-28 resize-y`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="e.g. We're hiring a senior backend engineer to lead our payments platform rewrite. You'll own service reliability end-to-end, mentor two mid-level engineers, and partner closely with product…"
+      />
+    </div>
+  )
+}
+
+// "Start from an existing job" — pick a previous role and copy its fields into the create form
+// (client-side prefill, so the recruiter reviews/tweaks before creating). Distinct from the
+// server-side Duplicate action, which clones a role straight into a new open requisition.
+function DuplicateFromPicker({ onPick }) {
+  const [roles, setRoles] = useState([])
+  useEffect(() => { api.listRoles().then(setRoles).catch(() => setRoles([])) }, [])
+  if (!roles.length) return null
+  return (
+    <div className="flex flex-col gap-1.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-3 sm:flex-row sm:items-center sm:gap-3">
+      <span className="text-xs font-medium text-slate-500">Prefill from an existing job</span>
+      <select
+        className={`${inputClass} sm:max-w-xs`}
+        defaultValue=""
+        onChange={(e) => { const r = roles.find((x) => String(x.id) === e.target.value); if (r) onPick(r); e.target.value = '' }}
+      >
+        <option value="">Start from a previous job…</option>
+        {roles.map((r) => <option key={r.id} value={r.id}>#{r.id} · {r.position}{r.department ? ` · ${r.department}` : ''}</option>)}
+      </select>
+    </div>
+  )
+}
 
 function NewRoleForm({ onCreated, onCancel }) {
   const { toast } = useToast()
   const [f, setF] = useState(EMPTY)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [jdBusy, setJdBusy] = useState(false)
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }))
+
+  // Copy a previous role's fields into the form (the recruiter then edits + creates).
+  const prefillFrom = (r) => {
+    touched.current = true  // user picked a skill set deliberately — stop auto-suggest clobbering it
+    setF((p) => ({
+      ...p,
+      position: r.position || '',
+      department: r.department || '',
+      budget_ctc: r.budget_ctc || '',
+      location: r.location || '',
+      work_mode: r.work_mode || 'hybrid',
+      priority: r.priority === 'urgent' ? 'high' : (r.priority || 'medium'),
+      yoe_min: r.yoe_min ?? 0,
+      yoe_max: r.yoe_max ?? 0,
+      num_openings: r.num_openings ?? 1,
+      mandatory_skills: r.mandatory_skills || [],
+      preferred_skills: r.preferred_skills || [],
+      application_questions: r.application_questions || [],
+      interview_types: r.interview_types || [],
+      hiring_manager: r.hiring_manager || '',
+      recruiter: r.recruiter || '',
+      panelists: r.interview_panel || [],
+    }))
+    setMandSug(r.mandatory_skills || [])
+    setPrefSug(r.preferred_skills || [])
+    toast(`Prefilled from #${r.id} · ${r.position} — review and create`)
+  }
+
+  // Upload a JD file → backend extracts + AI-structures it → prefill the form for review.
+  const prefillFromJd = async (file) => {
+    if (!file) return
+    setJdBusy(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const d = await api.parseJd(fd)
+      touched.current = true
+      setF((p) => ({
+        ...p,
+        position: d.position || p.position,
+        department: d.department || p.department,
+        location: d.location || p.location,
+        yoe_min: d.yoe_min ?? p.yoe_min,
+        yoe_max: d.yoe_max ?? p.yoe_max,
+        mandatory_skills: d.mandatory_skills?.length ? d.mandatory_skills : p.mandatory_skills,
+        preferred_skills: d.preferred_skills?.length ? d.preferred_skills : p.preferred_skills,
+        role_brief: d.role_brief || p.role_brief,
+      }))
+      if (d.mandatory_skills?.length) setMandSug(d.mandatory_skills)
+      if (d.preferred_skills?.length) setPrefSug(d.preferred_skills)
+      toast('Prefilled from the uploaded JD — review and create')
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setJdBusy(false)
+    }
+  }
 
   // Team dropdowns are mapped from people in Settings → Users & roles.
   const teamOpts = useTeamOptions()
+  // Department / Location options for the creatable comboboxes (existing roles + seeds).
+  const deptOptions = useFieldOptions('department')
+  const locationOptions = useFieldOptions('location')
 
   // Skill suggestions — auto-filled from position/department/experience; the user edits the checklist.
   const [mandSug, setMandSug] = useState([])
@@ -113,16 +231,40 @@ function NewRoleForm({ onCreated, onCancel }) {
   return (
     <Card className="p-6">
       <form onSubmit={submit} className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <DuplicateFromPicker onPick={prefillFrom} />
+          <label className={cx('inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50', jdBusy && 'pointer-events-none opacity-60')}>
+            {jdBusy ? <Spinner /> : <Upload className="h-3.5 w-3.5" />} Upload a JD to prefill
+            <input type="file" accept=".pdf,.docx,.txt,.doc" className="hidden" disabled={jdBusy}
+              onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; prefillFromJd(file) }} />
+          </label>
+        </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Position *"><input required className={inputClass} value={f.position} onChange={set('position')} placeholder="Senior Backend Engineer" /></Field>
-          <Field label="Department"><input className={inputClass} value={f.department} onChange={set('department')} placeholder="Engineering" /></Field>
-          <Field label="Budget / CTC"><input className={inputClass} value={f.budget_ctc} onChange={set('budget_ctc')} placeholder="20-28 LPA" /></Field>
-          <Field label="Location"><input className={inputClass} value={f.location} onChange={set('location')} placeholder="Bengaluru" /></Field>
+          <Field label="Role *"><input required className={inputClass} value={f.position} onChange={set('position')} placeholder="Senior Backend Engineer" /></Field>
+          <ComboField
+            label="Department"
+            listId="dept-options"
+            value={f.department}
+            onChange={(v) => setF((p) => ({ ...p, department: v }))}
+            options={deptOptions}
+            placeholder="Engineering — pick or type to add"
+          />
+          <div className="sm:col-span-2">
+            <BudgetCtcField value={f.budget_ctc} onChange={(v) => setF((p) => ({ ...p, budget_ctc: v }))} />
+          </div>
+          <ComboField
+            label="Location"
+            listId="location-options"
+            value={f.location}
+            onChange={(v) => setF((p) => ({ ...p, location: v }))}
+            options={locationOptions}
+            placeholder="Bengaluru — pick or type to add"
+          />
           <Field label="Min YOE"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_min} onChange={set('yoe_min')} /></Field>
           <Field label="Max YOE"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_max} onChange={set('yoe_max')} /></Field>
           <Field label="Priority">
             <select className={inputClass} value={f.priority} onChange={set('priority')}>
-              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
+              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
             </select>
           </Field>
           <Field label="Work mode">
@@ -131,9 +273,11 @@ function NewRoleForm({ onCreated, onCancel }) {
             </select>
           </Field>
           <Field label="Hiring deadline"><input type="date" className={inputClass} value={f.hiring_deadline} onChange={set('hiring_deadline')} /></Field>
-          <Field label="Start hiring date" hint="When the team begins actively hiring"><input type="date" className={inputClass} value={f.start_hiring_date} onChange={set('start_hiring_date')} /></Field>
+          <Field label="Hiring start date" hint="When the team begins actively sourcing candidates"><input type="date" className={inputClass} value={f.start_hiring_date} onChange={set('start_hiring_date')} /></Field>
           <Field label="Openings"><input type="number" min="1" className={inputClass} value={f.num_openings} onChange={set('num_openings')} /></Field>
         </div>
+
+        <RoleBriefField value={f.role_brief} onChange={(v) => setF((p) => ({ ...p, role_brief: v }))} />
 
         <div className="space-y-3 rounded-xl border border-slate-200 p-4">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team</h3>
@@ -168,7 +312,7 @@ function NewRoleForm({ onCreated, onCancel }) {
               <Sparkles className="h-3.5 w-3.5 text-brand-500" /> Skills
             </h3>
             <Button type="button" variant="ghost" className="text-xs" disabled={!f.position.trim() || suggesting} onClick={() => fetchSuggestions(true)}>
-              {suggesting ? <Spinner /> : <><Sparkles className="h-3.5 w-3.5" /> Suggest from role</>}
+              {suggesting ? <Spinner /> : <><Sparkles className="h-3.5 w-3.5" /> Suggest skills with AI</>}
             </Button>
           </div>
           <p className="text-xs text-slate-400">Auto-suggested from the position, department &amp; experience — tick the ones that apply, untick the rest, or add your own.</p>
@@ -245,7 +389,6 @@ function RoleCard({ r }) {
           </div>
           <Badge tone={{ urgent: 'rose', high: 'amber', medium: 'blue', low: 'gray' }[r.priority]}>{r.priority}</Badge>
         </div>
-        {r.ai_summary && <p className="mt-3 line-clamp-2 text-sm text-slate-500">{r.ai_summary}</p>}
         <div className="mt-4 flex flex-wrap gap-2">
           <Badge tone={r.status === 'open' ? 'green' : 'gray'}>{r.status}</Badge>
           {total != null && <Badge tone="violet">{total} candidate{total === 1 ? '' : 's'}</Badge>}
@@ -272,10 +415,12 @@ export default function Roles() {
   usePageTitle('Jobs')
   const { toast } = useToast()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [view, setView] = useState(() => localStorage.getItem(VIEW_KEY) || 'cards')
   const [roles, setRoles] = useState([])
   const [tableRows, setTableRows] = useState([])
-  const [creating, setCreating] = useState(false)
+  // Open the create-job form straight away when arriving from "Post a job" (Dashboard → /roles?new=1).
+  const [creating, setCreating] = useState(() => Boolean(searchParams.get('new')))
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [cardSort, setCardSort] = useState('newest')
@@ -317,6 +462,16 @@ export default function Roles() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  // Strip the ?new= param from the URL once consumed (cosmetic — `creating` was already
+  // seeded from it above, so this only tidies the address bar and doesn't reopen the form).
+  useEffect(() => {
+    if (searchParams.get('new')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('new')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
 
   function setViewMode(mode) {
     setView(mode)
@@ -430,8 +585,26 @@ export default function Roles() {
       ) : view === 'list' ? (
         <JobsListTable rows={listFiltered} onStatusChange={load} />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {cardFiltered.map((r) => <RoleCard key={r.id} r={r} />)}
+        <div className="space-y-8">
+          {CARD_STATUS_GROUPS.map((g) => {
+            const items = cardFiltered.filter((r) => g.statuses.includes(r.status))
+            if (items.length === 0) return null
+            return (
+              <section key={g.key}>
+                <div className="mb-3 flex items-center gap-3">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <span className={`h-2 w-2 rounded-full ${g.dot}`} />
+                    {g.label}
+                    <span className="text-xs font-normal tabular-nums text-slate-400">{items.length}</span>
+                  </h3>
+                  <div className="h-px flex-1 bg-slate-200" />
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {items.map((r) => <RoleCard key={r.id} r={r} />)}
+                </div>
+              </section>
+            )
+          })}
         </div>
       )}
     </div>

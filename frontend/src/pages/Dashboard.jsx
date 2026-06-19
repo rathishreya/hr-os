@@ -8,11 +8,10 @@ import BarList from '../components/BarList'
 import { usePageTitle } from '../hooks/usePageTitle'
 
 const STEPS = [
-  { icon: FileText, title: 'Post a job', desc: 'Fill a short form. AI checks it and estimates difficulty.' },
-  { icon: Sparkles, title: 'AI writes the JD', desc: 'One click for a full description + LinkedIn/Naukri posts.' },
-  { icon: UserPlus, title: 'Add candidates', desc: 'Paste a resume or upload a PDF/DOCX — AI parses it.' },
-  { icon: Star, title: 'AI screens & ranks', desc: 'Scores every candidate and runs interviews.' },
-  { icon: Mail, title: 'Decide & email', desc: 'You pick. Send the candidate an email in one click.' },
+  { icon: FileText, title: 'Post a role', desc: 'Fill a short form — AI validates it, estimates difficulty and writes the full JD with LinkedIn/Naukri posts.' },
+  { icon: UserPlus, title: 'Bring in candidates', desc: 'Paste a résumé or upload a PDF/DOCX in bulk — AI parses and de-dupes every profile into your talent pool.' },
+  { icon: Star, title: 'AI screens & ranks', desc: 'Every applicant is scored against the role and interviewed, so the strongest fits rise to the top.' },
+  { icon: Mail, title: 'You decide & act', desc: 'Review the shortlist, override the AI when you disagree, and email candidates or send offers in one click.' },
 ]
 
 const DIFF_TONE = { 'very hard': 'rose', hard: 'amber', moderate: 'blue', easy: 'green' }
@@ -37,6 +36,7 @@ export default function Dashboard() {
   const [roles, setRoles] = useState([])
   const [company, setCompany] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [funnelRole, setFunnelRole] = useState('all') // 'all' = global funnel, else a role id
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -50,6 +50,12 @@ export default function Dashboard() {
   const hour = new Date().getHours()
   const greeting = `Good ${hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'}`
   const companyName = company?.name || 'EZ Works'
+
+  // Per-role funnel: 'all' shows the global funnel; otherwise pull the selected role's stage counts.
+  const funnelByRole = data?.funnel_by_role || []
+  const activeFunnel = funnelRole === 'all'
+    ? data?.funnel
+    : funnelByRole.find((r) => String(r.role_id) === String(funnelRole))?.funnel
 
   return (
     <div className="space-y-8">
@@ -68,7 +74,7 @@ export default function Dashboard() {
             you stay in control of every decision.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button className="!bg-white !text-brand-700 shadow-lg shadow-brand-900/20 hover:!bg-brand-50" onClick={() => navigate('/roles')}>
+            <Button className="!bg-white !text-brand-700 shadow-lg shadow-brand-900/20 hover:!bg-brand-50" onClick={() => navigate('/roles?new=1')}>
               <Plus className="h-4 w-4" /> Post a job
             </Button>
             {roles.length > 0 && (
@@ -77,6 +83,26 @@ export default function Dashboard() {
               </Button>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* How it works — the core loop, surfaced right under the hero so new users see the flow first */}
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-slate-800">How it works</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {STEPS.map((s, i) => {
+            const Icon = s.icon
+            return (
+              <div key={i} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-fuchsia-500 text-xs font-bold text-white">{i + 1}</span>
+                  <Icon className="h-4 w-4 text-brand-500" />
+                </div>
+                <div className="mt-2.5 text-sm font-semibold text-slate-800">{s.title}</div>
+                <div className="mt-1 text-xs leading-relaxed text-slate-500">{s.desc}</div>
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -94,18 +120,34 @@ export default function Dashboard() {
       )}
 
       {/* Charts */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="p-5">
-          <h2 className="mb-4 text-sm font-semibold text-slate-800">Hiring funnel</h2>
-          {loading ? <Skeleton className="h-32" /> : <FunnelChart funnel={data?.funnel} />}
-        </Card>
-        <Card className="p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-800">Candidate sources</h2>
-            <Link to="/analytics" className="inline-flex items-center gap-0.5 text-xs font-medium text-brand-600 hover:text-brand-700">Full analytics <ArrowRight className="h-3 w-3" /></Link>
-          </div>
-          {loading ? <Skeleton className="h-32" /> : <BarList data={data?.sources} colorFor={() => 'blue'} emptyText="No candidates yet." />}
-        </Card>
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-800">Overview</h2>
+          <Link to="/analytics" className="inline-flex items-center gap-0.5 text-xs font-medium text-brand-600 hover:text-brand-700">Full analytics <ArrowRight className="h-3 w-3" /></Link>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className="p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-slate-800">Hiring funnel</h2>
+              <select
+                value={funnelRole}
+                onChange={(e) => setFunnelRole(e.target.value)}
+                aria-label="Filter funnel by role"
+                className="max-w-[55%] truncate rounded-lg border border-slate-200 bg-white py-1 pl-2.5 pr-7 text-xs font-medium text-slate-600 outline-none transition-colors hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25"
+              >
+                <option value="all">All roles</option>
+                {funnelByRole.map((r) => (
+                  <option key={r.role_id} value={r.role_id}>{r.position}</option>
+                ))}
+              </select>
+            </div>
+            {loading ? <Skeleton className="h-32" /> : <FunnelChart funnel={activeFunnel} />}
+          </Card>
+          <Card className="p-5">
+            <h2 className="mb-4 text-sm font-semibold text-slate-800">Candidate sources</h2>
+            {loading ? <Skeleton className="h-32" /> : <BarList data={data?.sources} colorFor={() => 'blue'} emptyText="No candidates yet." />}
+          </Card>
+        </div>
       </div>
 
       {/* Your jobs */}
@@ -120,7 +162,7 @@ export default function Dashboard() {
           <Card className="p-10 text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600"><Briefcase className="h-6 w-6" /></div>
             <p className="text-sm text-slate-500">No jobs yet — post your first role to get started.</p>
-            <Button className="mt-4" onClick={() => navigate('/roles')}><Plus className="h-4 w-4" /> Post your first job</Button>
+            <Button className="mt-4" onClick={() => navigate('/roles?new=1')}><Plus className="h-4 w-4" /> Post your first job</Button>
           </Card>
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
@@ -144,26 +186,6 @@ export default function Dashboard() {
             ))}
           </div>
         )}
-      </div>
-
-      {/* How it works — light help section */}
-      <div className="rounded-2xl border border-slate-200/70 bg-slate-50/60 p-5">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">How it works</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {STEPS.map((s, i) => {
-            const Icon = s.icon
-            return (
-              <div key={i} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-fuchsia-500 text-xs font-bold text-white">{i + 1}</span>
-                  <Icon className="h-4 w-4 text-brand-500" />
-                </div>
-                <div className="mt-2 text-sm font-semibold text-slate-800">{s.title}</div>
-                <div className="mt-1 text-xs leading-relaxed text-slate-500">{s.desc}</div>
-              </div>
-            )
-          })}
-        </div>
       </div>
     </div>
   )
