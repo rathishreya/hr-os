@@ -60,15 +60,16 @@ def generate(req: schemas.GenerateOnboardingRequest, db: Session = Depends(get_d
         _enrich_plan(db, existing)
         return existing
     hr = app.hiring_request
+    seeded = _seed_details(app)
     plan = models.OnboardingPlan(
         application_id=app.id,
         candidate_id=app.candidate_id,
         role_position=hr.position if hr else "",
-        tasks=onboarding_template.build_tasks(),
+        tasks=onboarding_template.build_tasks(seeded.get("joining_date", "")),
         induction=[],
         tools=[],
         buddy="",
-        details=_seed_details(app),
+        details=seeded,
         ai_provider="template",
     )
     db.add(plan)
@@ -116,13 +117,82 @@ def toggle_task(plan_id: int, body: schemas.ToggleTaskRequest, db: Session = Dep
     return plan
 
 
-@router.patch("/{plan_id}/details", response_model=schemas.OnboardingOut)
-def update_details(plan_id: int, body: schemas.UpdateOnboardingDetailsRequest, db: Session = Depends(get_db)):
-    """Update the HR-filled hire details shown on the tracker (entity, compensation, managers, ...)."""
+@router.patch("/{plan_id}/step", response_model=schemas.OnboardingOut)
+def update_step(plan_id: int, body: schemas.OnboardingStepUpdate, db: Session = Depends(get_db)):
+    """Update one step's status / value / date / comments / attendance, or reschedule it (day).
+    Powers the checklist controls and the Sessions view's reschedule / shift."""
     plan = db.get(models.OnboardingPlan, plan_id)
     if not plan:
         raise HTTPException(404, "Onboarding plan not found")
-    plan.details = {**(plan.details or {}), **(body.details or {})}
+    joining = (plan.details or {}).get("joining_date", "")
+    tasks = [dict(t) for t in (plan.tasks or [])]
+    for t in tasks:
+        if t.get("id") != body.step_id:
+            continue
+        if body.status is not None:
+            t["status"] = body.status
+            t["done"] = body.status == "done"
+        if body.value is not None:
+            t["value"] = body.value
+        if body.comments is not None:
+            t["comments"] = body.comments
+        if body.attendance is not None:
+            t["attendance"] = body.attendance
+        if body.day is not None:  # reschedule off the joining date (clears any manual override)
+            t["day"] = body.day
+            t["date"] = onboarding_template.schedule_for(joining, body.day)
+            t["date_overridden"] = False
+        if body.date is not None:  # explicit manual date — sticks across joining-date reschedules
+            t["date"] = body.date
+            t["date_overridden"] = True
+        break
+    plan.tasks = tasks  # reassign so SQLAlchemy detects the JSON change
+    db.commit()
+    db.refresh(plan)
+    _enrich_plan(db, plan)
+    return plan
+
+
+@router.post("/{plan_id}/reset", response_model=schemas.OnboardingOut)
+def reset_plan(plan_id: int, db: Session = Depends(get_db)):
+    """Rebuild the step list from the current 100-day template — for plans created before a template
+    change. Preserves any status/value/comments already set (matched by step label)."""
+    plan = db.get(models.OnboardingPlan, plan_id)
+    if not plan:
+        raise HTTPException(404, "Onboarding plan not found")
+    joining = (plan.details or {}).get("joining_date", "")
+    fresh = onboarding_template.build_tasks(joining)
+    old_by_label = {(t.get("label") or t.get("title") or "").lower(): t for t in (plan.tasks or [])}
+    for t in fresh:
+        old = old_by_label.get(t["label"].lower())
+        if not old:
+            continue
+        for k in ("status", "value", "comments", "attendance"):
+            if old.get(k):
+                t[k] = old[k]
+        if old.get("status"):
+            t["done"] = old["status"] == "done"
+        elif old.get("done"):
+            t["status"], t["done"] = "done", True
+    plan.tasks = fresh
+    log(db, "onboarding.reset", "onboarding", plan.id, {"steps": len(fresh)})
+    db.commit()
+    db.refresh(plan)
+    _enrich_plan(db, plan)
+    return plan
+
+
+@router.patch("/{plan_id}/details", response_model=schemas.OnboardingOut)
+def update_details(plan_id: int, body: schemas.UpdateOnboardingDetailsRequest, db: Session = Depends(get_db)):
+    """Update the HR-filled hire details shown on the tracker (entity, compensation, managers, ...).
+    Changing the joining date re-derives the scheduled step/session dates (keeping manual overrides)."""
+    plan = db.get(models.OnboardingPlan, plan_id)
+    if not plan:
+        raise HTTPException(404, "Onboarding plan not found")
+    new_details = {**(plan.details or {}), **(body.details or {})}
+    if "joining_date" in (body.details or {}):
+        plan.tasks = onboarding_template.reschedule_dates(plan.tasks or [], new_details.get("joining_date", ""))
+    plan.details = new_details
     log(db, "onboarding.details_updated", "onboarding", plan.id, {"keys": sorted((body.details or {}).keys())})
     db.commit()
     db.refresh(plan)

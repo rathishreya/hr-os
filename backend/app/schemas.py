@@ -638,6 +638,18 @@ class UpdateOnboardingDetailsRequest(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+class OnboardingStepUpdate(BaseModel):
+    """Update one onboarding step. Only the provided fields change. `date` is a manual override
+    (sticks across joining-date reschedules); `day` reschedules off the joining date."""
+    step_id: int
+    status: str | None = None       # "" | done | pending | na
+    value: str | None = None        # link URL / personality type / go-to person name
+    date: str | None = None         # explicit date (manual override)
+    comments: str | None = None
+    attendance: str | None = None   # "" | present | absent
+    day: int | None = None          # working-day offset → reschedule off the joining date
+
+
 class OnboardingOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

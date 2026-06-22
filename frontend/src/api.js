@@ -254,5 +254,9 @@ export const api = {
   listAllOnboarding: () => req('/onboarding'),
   generateOnboarding: (applicationId) => req('/onboarding/generate', { method: 'POST', body: JSON.stringify({ application_id: applicationId }) }),
   toggleOnboardingTask: (planId, taskId, done) => req(`/onboarding/${planId}/task`, { method: 'PATCH', body: JSON.stringify({ task_id: taskId, done }) }),
+  // Update one 100-day step: { step_id, status?, value?, date?, comments?, attendance?, day? }.
+  updateOnboardingStep: (planId, body) => req(`/onboarding/${planId}/step`, { method: 'PATCH', body: JSON.stringify(body) }),
+  // Rebuild a plan's steps from the latest 100-day template (preserves status by label).
+  resetOnboarding: (planId) => req(`/onboarding/${planId}/reset`, { method: 'POST' }),
   updateOnboardingDetails: (planId, details) => req(`/onboarding/${planId}/details`, { method: 'PATCH', body: JSON.stringify({ details }) }),
 }
