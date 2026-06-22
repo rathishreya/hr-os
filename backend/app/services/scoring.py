@@ -11,6 +11,7 @@ The output is always a *suggestion* a human can override.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import skill_normalize
@@ -201,6 +202,25 @@ def finalize(
 
     strengths = ai_result.get("strengths") or matched[:5]
     concerns = ai_result.get("concerns") or [f"Missing: {m}" for m in missing[:5]]
+
+    # Reconcile the AI's free-form strengths/concerns with the DETERMINISTIC skill match, which is
+    # authoritative for whether a skill is present. The AI judges skills independently (and via the
+    # raw resume), so it can wrongly call a skill "missing" that our matcher matched — which would
+    # render as the same skill being BOTH a green "matched" chip and an amber "missing" gap. Drop
+    # those self-contradicting lines so the report is internally consistent.
+    matched_lc = {str(m).lower().strip() for m in matched if str(m).strip()}
+    missing_lc = {str(m).lower().strip() for m in missing if str(m).strip()}
+    _MISS_CUE = re.compile(r"missing|lack|absent|without|\bno\b|\bnot\b|\bgap|weak|limited|little|few", re.I)
+    _HAS_CUE = re.compile(r"strong|solid|proficient|experienc|skilled|expert|excellent|deep|good|background", re.I)
+
+    def _names(text: str, skills: set[str]) -> bool:
+        t = " " + re.sub(r"[^a-z0-9+#]+", " ", str(text).lower()).strip() + " "
+        return any(sk and (" " + sk + " ") in t for sk in skills)
+
+    # A concern that flags a MATCHED skill as absent is a contradiction → drop it.
+    concerns = [c for c in concerns if not (_MISS_CUE.search(str(c)) and _names(c, matched_lc))]
+    # A strength that credits a MISSING skill as present is the inverse contradiction → drop it.
+    strengths = [s for s in strengths if not (_HAS_CUE.search(str(s)) and _names(s, missing_lc))]
 
     # Per-dimension contribution to the overall score, so the UI can show *why* the
     # number is what it is. `measured` dims are deterministic; `ai_estimate` are softer.

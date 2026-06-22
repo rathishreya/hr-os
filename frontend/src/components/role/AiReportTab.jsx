@@ -213,10 +213,23 @@ export default function AiReportTab({ app, onRefresh }) {
   // pointers high-signal instead of echoing the chips.
   const matchedSet = new Set(matched.map((s) => String(s).toLowerCase().trim()))
   const missingSet = new Set(missing.map((s) => String(s).toLowerCase().trim()))
-  const strongPoints = strengths.filter((s) => !matchedSet.has(String(s).toLowerCase().trim()))
-  const gaps = concerns.filter(
-    (c) => !missingSet.has(String(c).replace(/^Missing:\s*/i, '').toLowerCase().trim()),
-  )
+  // True if `text` names any skill in `set` as a whole token (space-padded so "sql" ≠ "nosql").
+  const namesSkill = (text, set) => {
+    const padded = ` ${String(text).toLowerCase().trim()} `
+    for (const s of set) { if (s && padded.includes(` ${s} `)) return true }
+    return false
+  }
+  // Drop a strength that just echoes a matched chip, OR that credits a skill we found missing
+  // (a contradiction). Likewise drop a gap that echoes a missing chip, OR that flags a skill we
+  // matched as absent. Guards older reports whose AI text disagreed with the deterministic match.
+  const strongPoints = strengths.filter((s) => {
+    const core = String(s).toLowerCase().trim()
+    return !matchedSet.has(core) && !namesSkill(core, missingSet)
+  })
+  const gaps = concerns.filter((c) => {
+    const core = String(c).replace(/^Missing:\s*/i, '').toLowerCase().trim()
+    return !missingSet.has(core) && !namesSkill(core, matchedSet)
+  })
 
   // Surface the experience read as a pointer — otherwise it's only a score bar.
   const expScore = contributions.find((c) => c.key === 'experience_match')?.score
