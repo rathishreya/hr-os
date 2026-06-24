@@ -19,6 +19,11 @@ router = APIRouter(prefix="/api/assessments", tags=["assessments"])
 
 _MAX_ASSESSMENT_BYTES = 25 * 1024 * 1024  # 25 MB cap per uploaded assessment
 
+# Matches a {placeholder} token (e.g. {name}, {role}) so _fill can substitute per-candidate
+# values in one pass. Only simple identifier tokens are treated as placeholders, so stray
+# braces in the body text are left untouched.
+_PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
 
 def _assessment_link(assessment_id: int) -> str:
     base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
@@ -188,6 +193,51 @@ def get_assessment_file_by_id(assessment_id: int, file_id: int, db: Session = De
     if not af or af.assessment_id != assessment_id or af.file is None:
         raise HTTPException(404, "Assessment file not found")
     return _file_response(af.filename, af.mime, af.file)
+
+
+@router.delete("/{assessment_id}/files/{file_id}", response_model=schemas.AssessmentOut)
+def delete_assessment_file(assessment_id: int, file_id: int, db: Session = Depends(get_db)):
+    """Remove a single file from an assessment (used by the edit card's per-file remove control).
+
+    Refuses to delete the assessment's last remaining file (delete the whole assessment instead).
+    If the removed file was the one mirrored into the legacy columns, re-mirror the next remaining
+    file so the back-compat preview link keeps working — or clear the legacy columns if it was the
+    legacy-only single file (no rows in `files`).
+    """
+    a = db.get(models.Assessment, assessment_id)
+    if not a:
+        raise HTTPException(404, "Assessment not found")
+
+    # Legacy single-file assessment (data only in the legacy columns, no AssessmentFile rows):
+    # file_id 0 is the sentinel the client sends for that case.
+    if not a.files:
+        if file_id != 0 or a.file is None:
+            raise HTTPException(404, "Assessment file not found")
+        raise HTTPException(400, "This is the only file — delete the assessment instead")
+
+    af = db.get(models.AssessmentFile, file_id)
+    if not af or af.assessment_id != assessment_id:
+        raise HTTPException(404, "Assessment file not found")
+    if len(a.files) <= 1:
+        raise HTTPException(400, "This is the only file — delete the assessment instead")
+
+    # The legacy columns mirror the FIRST-added file; `a.files` is ordered by id ascending, so the
+    # current primary is files[0]. Deleting it means we must re-point the legacy columns.
+    was_primary = a.file is not None and a.files and a.files[0].id == af.id
+    db.delete(af)
+    db.flush()
+    db.refresh(a)
+    if was_primary:
+        # Re-point the legacy/back-compat columns at the new first remaining file.
+        nxt = a.files[0] if a.files else None
+        if nxt:
+            a.filename, a.mime, a.size, a.file = nxt.filename, nxt.mime, nxt.size, nxt.file
+        else:
+            a.filename, a.mime, a.size, a.file = "", "application/octet-stream", 0, None
+    log(db, "assessment.file_deleted", "assessment", a.id, {"file_id": file_id, "files": len(a.files)})
+    db.commit()
+    db.refresh(a)
+    return a
 
 
 @router.post("/{assessment_id}/draft-email", response_model=schemas.DraftAssessmentEmailOut)

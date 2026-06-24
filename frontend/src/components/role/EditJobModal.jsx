@@ -4,18 +4,23 @@ import { Modal, Button, Field, Spinner, inputClass } from '../../ui'
 import { useToast } from '../Toast'
 import MultiSelect from '../MultiSelect'
 import { SkillChecklist, ApplicationQuestionsBuilder, InterviewTypesPicker, BudgetCtcField, ComboField, useFieldOptions, useTeamOptions } from './jobFormParts'
+import { HIRE_TYPES } from '../../constants'
 
 // Edit an existing job's details. Mounted only while open (see call site) so state initializes
-// from the role without an effect. Saves via PATCH /api/hiring-requests/{id}.
+// from the role without an effect. Saves via PATCH /api/hiring-requests/{id} (core fields) +
+// the role-meta endpoint (team / hire_type / role_brief, which the core PATCH doesn't persist).
 export default function EditJobModal({ role, onClose, onSaved }) {
   const { toast } = useToast()
   const teamOpts = useTeamOptions()
   const deptOptions = useFieldOptions('department')
+  const teamFieldOptions = useFieldOptions('team')
   const locationOptions = useFieldOptions('location')
   const [busy, setBusy] = useState(false)
   const [f, setF] = useState(() => ({
     position: role.position || '',
     department: role.department || '',
+    team: role.team || '',
+    hire_type: role.hire_type || '',
     budget_ctc: role.budget_ctc || '',
     location: role.location || '',
     role_brief: role.role_brief || '',
@@ -47,7 +52,9 @@ export default function EditJobModal({ role, onClose, onSaved }) {
     if (!f.position.trim()) { toast('Position is required', 'error'); return }
     setBusy(true)
     try {
-      const { panelists, status, ...rest } = f
+      // team / hire_type / role_brief aren't applied by the core role PATCH — send them through
+      // the role-meta endpoint so they actually persist (this is why edits "didn't save" before).
+      const { panelists, status, team, hire_type, role_brief, ...rest } = f
       let updated = await api.updateRole(role.id, {
         ...rest,
         yoe_min: Number(f.yoe_min) || 0,
@@ -55,6 +62,7 @@ export default function EditJobModal({ role, onClose, onSaved }) {
         num_openings: Number(f.num_openings) || 1,
         interview_panel: panelists,
       })
+      updated = await api.updateRoleMeta(role.id, { team, hire_type, role_brief })
       // Apply a status change separately through the guarded lifecycle endpoint.
       if (status && status !== role.status) {
         updated = await api.changeRoleStatus(role.id, status)
@@ -77,11 +85,19 @@ export default function EditJobModal({ role, onClose, onSaved }) {
       title="Edit job"
       footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button><Button onClick={save} disabled={busy}>{busy ? <Spinner /> : 'Save changes'}</Button></>}
     >
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/* min-w-0 on the wrapper + grid children keeps wide composite fields (budget row) from
+          forcing a horizontal scrollbar — everything stays on one page within the modal. */}
+      <div className="min-w-0 space-y-4">
+        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
           <Field label="Role *"><input className={inputClass} value={f.position} onChange={set('position')} /></Field>
           <ComboField label="Department" listId="edit-dept-options" value={f.department} onChange={setKey('department')} options={deptOptions} placeholder="Pick or type to add" />
-          <div className="sm:col-span-2">
+          <ComboField label="Team" listId="edit-team-options" value={f.team} onChange={setKey('team')} options={teamFieldOptions} placeholder="Pick or type to add" />
+          <Field label="New / Replacement" hint="New headcount or backfilling a leaver?">
+            <select className={inputClass} value={f.hire_type} onChange={set('hire_type')}>
+              {HIRE_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </Field>
+          <div className="min-w-0 sm:col-span-2">
             <BudgetCtcField value={f.budget_ctc} onChange={setKey('budget_ctc')} />
           </div>
           <ComboField label="Location" listId="edit-location-options" value={f.location} onChange={setKey('location')} options={locationOptions} placeholder="Pick or type to add" />

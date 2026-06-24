@@ -498,8 +498,59 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
                     />
                   </div>
                   <div>
-                    <SectionTitle>Candidate History</SectionTitle>
-                    <DataTable columns={historyColumns} rows={apps} empty="No applications yet." />
+                    <SectionTitle>Application History</SectionTitle>
+                    {apps.length === 0 ? (
+                      <div className="rounded-lg border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400">
+                        No applications yet.
+                      </div>
+                    ) : (
+                      <ul className="space-y-2.5">
+                        {[...apps]
+                          .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+                          .map((a) => {
+                            const dept = a.department || roleById[a.hiring_request_id]?.department || ''
+                            const score = a.score_overall
+                            return (
+                              <li
+                                key={a.application_id}
+                                className="rounded-xl border border-slate-200 bg-white p-4 transition-colors duration-150 ease-snappy hover:border-brand-200"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <Link
+                                      to={`/roles/${a.hiring_request_id}`}
+                                      onClick={onClose}
+                                      className="truncate text-sm font-semibold text-brand-700 hover:underline"
+                                    >
+                                      {a.position || `Role #${a.hiring_request_id}`}
+                                    </Link>
+                                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                                      {dept && <span>{dept}</span>}
+                                      {dept && <span className="text-slate-300">·</span>}
+                                      <span className="inline-flex items-center gap-1">
+                                        <CalendarClock className="h-3 w-3 text-slate-400" />
+                                        Applied {a.created_at ? fmtDate(a.created_at) : '—'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex shrink-0 items-center gap-2">
+                                    {score > 0 && (
+                                      <span className="text-right">
+                                        <Badge tone={scoreTone(score)}>{Math.round(score)}</Badge>
+                                        <span className="ml-1 hidden text-[10px] uppercase tracking-wide text-slate-400 sm:inline">match</span>
+                                      </span>
+                                    )}
+                                    <Badge tone={stageTone[a.stage] || 'gray'}>{a.stage}</Badge>
+                                  </div>
+                                </div>
+                                {a.recommendation && (
+                                  <p className="mt-2 line-clamp-2 text-xs text-slate-500">{a.recommendation}</p>
+                                )}
+                              </li>
+                            )
+                          })}
+                      </ul>
+                    )}
                   </div>
                   <div>
                     <SectionTitle>Conversation History</SectionTitle>

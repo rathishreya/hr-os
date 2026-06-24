@@ -76,7 +76,6 @@ const COL_WIDTH = {
   suggested_role: 'min-w-[160px]',
   pipeline: 'min-w-[140px]',
   added: 'w-32',
-  applied_by: 'w-28',
 }
 
 // String accessors for per-column filtering (F9). Columns without an entry get no filter input.
@@ -88,7 +87,7 @@ const FILTER_ACCESSORS = {
   comp: (r) => `${r.current_ctc || ''} ${r.salary_expectation || ''}`,
   exp: (r) => (r.total_yoe != null ? String(r.total_yoe) : ''),
   source: (r) => r.source || '',
-  sub_source: (r) => r.sub_source || '',
+  sub_source: (r) => r.applied_by || (r.sub_source !== r.source ? r.sub_source : '') || '',
   location: (r) => r.location || '',
   suggested_role: (r) => r.suggested_role || '',
   pipeline: (r) => `${r.primary_stage || r.latest_stage || ''} ${r.primary_role || ''} ${r.primary_score ?? r.top_score ?? ''}`,
@@ -132,7 +131,7 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
     education: (r) => `${r.education_degree || ''} ${r.education_institution || ''}`.toLowerCase(),
     exp: (r) => Number(r.total_yoe) || 0,
     source: (r) => (r.source || '').toLowerCase(),
-    sub_source: (r) => (r.sub_source || '').toLowerCase(),
+    sub_source: (r) => (r.applied_by || (r.sub_source !== r.source ? r.sub_source : '') || '').toLowerCase(),
     location: (r) => (r.location || '').toLowerCase(),
     suggested_role: (r) => (r.suggested_role || '').toLowerCase(),
     pipeline: (r) => (r.primary_score != null ? r.primary_score : r.top_score) || 0,
@@ -246,14 +245,20 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
           ? <span className="tabular-nums text-sm font-medium text-slate-800">{row.total_yoe} <span className="font-normal text-slate-400">yrs</span></span>
           : <span className="text-slate-300">—</span>
       case 'source':
-        // Source = the candidate's acquisition channel (Candidate.source).
-        return <Badge tone="gray" className="capitalize" title="Acquisition channel (where this candidate came from)">{row.source || '—'}</Badge>
+        // SOURCE = where the candidate came from / how they were acquired (Candidate.source):
+        // careers, linkedin, referral, naukri, direct… One channel per candidate.
+        return row.source
+          ? <Badge tone="gray" className="capitalize" title="Source — where this candidate came from (acquisition channel)">{row.source}</Badge>
+          : <span className="text-slate-300">—</span>
       case 'sub_source': {
-        // Sub-source = a finer attribution. Use the distinct sub_source when set; otherwise
-        // fall back to who/what applied them (Application.applied_by). Avoid just echoing Source.
-        const sub = (row.sub_source && row.sub_source !== row.source) ? row.sub_source : (row.applied_by || '')
-        return sub
-          ? <span className="text-sm capitalize text-slate-600" title="Finer attribution (e.g. who referred or which channel sub-tag)">{sub}</span>
+        // SUB-SOURCE = the finer "who/what submitted them" on their primary application
+        // (Application.applied_by) — e.g. the recruiter who added them, "Referral", or the
+        // specific channel they self-applied through. Falls back to a distinct parsed sub_source
+        // tag. Never echoes Source, so the two columns stay meaningfully different.
+        const subRaw = row.applied_by
+          || (row.sub_source && row.sub_source.toLowerCase() !== (row.source || '').toLowerCase() ? row.sub_source : '')
+        return subRaw
+          ? <span className="text-sm capitalize text-slate-600" title="Sub-source — who/which channel submitted this candidate (Applied by)">{subRaw}</span>
           : <span className="text-slate-300">—</span>
       }
       case 'location':
@@ -261,64 +266,76 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
           ? <span className="inline-flex max-w-[140px] items-center gap-1 truncate text-sm text-slate-700"><MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />{row.location}</span>
           : <span className="text-slate-300">—</span>
       case 'suggested_role': {
+        // AI SUGGESTED ROLE = the open role the matcher thinks best fits this candidate
+        // (suggested_role + suggested_role_score), independent of where they've actually applied.
         if (!row.suggested_role) return <span className="text-slate-300">—</span>
-        const tip = `AI best-fit role: ${row.suggested_role}${row.suggested_role_score != null ? ` · ${row.suggested_role_score}% match` : ''}`
+        const pct = row.suggested_role_score
+        const tip = `AI best-fit open role: ${row.suggested_role}${pct != null ? ` · ${pct}% match` : ''}`
         const inner = (
-          <>
-            <Sparkles className="h-3 w-3 shrink-0 text-brand-400" />
+          <span
+            className="inline-flex max-w-[160px] items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700"
+            title={tip}
+          >
+            <Sparkles className="h-3 w-3 shrink-0 text-brand-500" />
             <span className="truncate">{row.suggested_role}</span>
-            {row.suggested_role_score != null && <span className="shrink-0 text-xs text-slate-400">{row.suggested_role_score}%</span>}
-          </>
+            {pct != null && (
+              <span className="shrink-0 rounded-full bg-white/70 px-1 text-[10px] font-semibold tabular-nums text-brand-600">{pct}%</span>
+            )}
+          </span>
         )
         // Link straight to the matched role when we have its id.
         return row.suggested_role_id ? (
           <Link
             to={`/roles/${row.suggested_role_id}`}
             onClick={(e) => e.stopPropagation()}
-            title={tip}
-            className="inline-flex max-w-[160px] items-center gap-1 truncate text-sm text-brand-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+            className="inline-block rounded-full transition hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
           >
             {inner}
           </Link>
-        ) : (
-          <span className="inline-flex max-w-[160px] items-center gap-1 truncate text-sm text-slate-700" title={tip}>
-            {inner}
-          </span>
-        )
+        ) : inner
       }
       case 'pipeline': {
         if (!row.application_count) return <span className="text-xs text-slate-400">Not applied</span>
-        // Show ONE application's stage + ITS score together (the candidate's primary/active
-        // application) so the score and stage can never come from different roles. Prefer the
-        // backend-matched primary_* fields; fall back to the most-recent stage + best score.
+        // PIPELINE = the candidate's current position on their PRIMARY (most-advanced) application.
+        // All three facts — stage, score and role — come from the SAME application (backend
+        // primary_* fields) so they can never mix across roles. We show the role + match score on
+        // the top line, then the current stage with a coloured dot, plus a "+N" for any other
+        // applications the candidate has open.
         const stage = row.primary_stage || row.latest_stage
-        const score = row.primary_score != null ? row.primary_score : row.top_score
+        const score = row.primary_score != null && row.primary_score > 0 ? row.primary_score : row.top_score
         const roleTitle = row.primary_role || ''
         const more = Math.max(0, (row.application_count || 0) - 1)
         return (
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 whitespace-nowrap">
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="max-w-[150px] truncate text-sm font-medium text-slate-800" title={roleTitle || undefined}>
+                {roleTitle || `${row.application_count} application${row.application_count === 1 ? '' : 's'}`}
+              </span>
               {score > 0 && (
                 <span
-                  className={cx('inline-flex h-5 items-center rounded-full px-2 text-xs font-semibold tabular-nums', SCORE_PILL[scoreTone(score)])}
-                  title="Match score for this application"
+                  className={cx('inline-flex h-5 shrink-0 items-center rounded-full px-2 text-xs font-semibold tabular-nums', SCORE_PILL[scoreTone(score)])}
+                  title="Match score on this application"
                 >
                   {Math.round(score)}
                 </span>
               )}
+            </div>
+            <div className="flex items-center gap-2 whitespace-nowrap">
               {stage && (
-                <span className="inline-flex items-center gap-1.5 text-sm capitalize text-slate-700">
+                <span className="inline-flex items-center gap-1.5 text-xs capitalize text-slate-600">
                   <span className={cx('h-1.5 w-1.5 rounded-full', STAGE_DOT[stageTone[stage]] || 'bg-slate-400')} />
                   {stage}
                 </span>
               )}
               {more > 0 && (
-                <span className="rounded-full bg-slate-100 px-1.5 text-[11px] font-medium text-slate-500" title={`${more} more application${more === 1 ? '' : 's'}`}>
-                  +{more}
+                <span
+                  className="rounded-full bg-slate-100 px-1.5 text-[11px] font-medium text-slate-500"
+                  title={`Also applied to ${more} other role${more === 1 ? '' : 's'}`}
+                >
+                  +{more} more
                 </span>
               )}
             </div>
-            {roleTitle && <div className="mt-0.5 max-w-[150px] truncate text-[11px] text-slate-400" title={roleTitle}>{roleTitle}</div>}
           </div>
         )
       }
@@ -328,12 +345,6 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
             {new Date(row.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
           </span>
         )
-      case 'applied_by': {
-        const by = row.applied_by || row.sub_source || row.source
-        return by
-          ? <span className="text-sm capitalize text-slate-600">{by}</span>
-          : <span className="text-slate-300">—</span>
-      }
       default:
         return null
     }

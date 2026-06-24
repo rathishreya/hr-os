@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { ClipboardList, Upload, Eye, Trash2, FileText, Pencil, Users, Building2, Briefcase } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ClipboardList, Upload, Eye, Trash2, FileText, Pencil, Users, Building2, Briefcase, X } from 'lucide-react'
 import { api } from '../api'
 import { Card, Button, Spinner, EmptyState, PageHeader, Field, Badge, Modal, inputClass, cx } from '../ui'
 import { useToast } from '../components/Toast'
@@ -12,6 +12,79 @@ function fmtSize(n) {
   let v = n
   while (v >= 1024 && i < u.length - 1) { v /= 1024; i++ }
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`
+}
+
+// A small, sensible default team list — merged with teams found on existing jobs/assessments so
+// the dropdown is never empty before any jobs exist.
+const DEFAULT_TEAMS = ['Engineering', 'Product', 'Design', 'Data', 'Sales', 'Marketing', 'Operations', 'People / HR', 'Finance']
+
+// Build the de-duplicated, sorted option list for one scope field from existing jobs + assessments
+// (+ any seed defaults). Keeps the values consistent instead of relying on free typing.
+function buildOptions(values, seed = []) {
+  const seen = new Map()
+  for (const raw of [...seed, ...values]) {
+    const v = (raw || '').trim()
+    if (!v) continue
+    const k = v.toLowerCase()
+    if (!seen.has(k)) seen.set(k, v)
+  }
+  return Array.from(seen.values()).sort((a, b) => a.localeCompare(b))
+}
+
+// Dropdown for a scope field (Team / Department / Role). Options come from existing data so values
+// stay unique/consistent; a "Custom…" escape hatch still allows a one-off value, and the current
+// value is always selectable even if it's no longer present in the source data (so editing an old
+// assessment never silently drops its scope).
+function ScopeSelect({ value, onChange, options, placeholder }) {
+  const matchesOption = !!value && options.some((o) => o.toLowerCase() === value.toLowerCase())
+  const [custom, setCustom] = useState(!!value && !matchesOption)
+  const SENTINEL = '__custom__'
+
+  // If the value resolves to a real list option (e.g. options loaded in after the modal opened),
+  // drop custom mode. An empty value while in custom mode is intentional (user is mid-typing or
+  // just chose "Custom…"), so don't bounce them out.
+  useEffect(() => { if (custom && matchesOption) setCustom(false) }, [custom, matchesOption])
+
+  if (custom) {
+    return (
+      <div className="flex items-center gap-2">
+        <input
+          className={inputClass}
+          value={value}
+          autoFocus
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+        />
+        <button
+          type="button"
+          onClick={() => { setCustom(false); onChange('') }}
+          className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-500 hover:border-slate-300 hover:text-slate-700"
+          title="Pick from the list instead"
+        >
+          List
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <select
+      className={inputClass}
+      value={value || ''}
+      onChange={(e) => {
+        if (e.target.value === SENTINEL) { setCustom(true); onChange('') }
+        else onChange(e.target.value)
+      }}
+    >
+      <option value="">{placeholder || 'Select…'}</option>
+      {/* Current value first, even if it's not in the source list anymore. */}
+      {value && !options.some((o) => o.toLowerCase() === value.toLowerCase()) && (
+        <option value={value}>{value}</option>
+      )}
+      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      <option value={SENTINEL}>Custom…</option>
+    </select>
+  )
 }
 
 // Colored badge per file type — makes a multi-file list scannable at a glance.
@@ -47,11 +120,23 @@ async function openAssessmentFile(f) {
   setTimeout(() => URL.revokeObjectURL(url), 60000)
 }
 
-// Edit an assessment: update its name / description / team / department / role and append more
-// files. Existing files are listed (and openable); file removal is not supported here.
-function EditAssessmentModal({ assessment, onClose, onSaved }) {
+// Normalize legacy single-file (stored only in legacy columns) and multi-file assessments into
+// one list, so every renderer treats them identically. Each entry carries the ids needed to fetch
+// the file WITH the auth header (the endpoints are gated) and to delete it.
+function fileListOf(a) {
+  if (a.files && a.files.length) {
+    return a.files.map((f) => ({ key: `f${f.id}`, name: f.filename, size: f.size, assessmentId: a.id, fileId: f.id }))
+  }
+  // Legacy: file lives only in the assessment's own columns. fileId 0 is the delete sentinel.
+  return a.filename ? [{ key: 'legacy', name: a.filename, size: a.size, assessmentId: a.id, fileId: 0, legacy: true }] : []
+}
+
+// Edit an assessment: update its name / description / team / department / role, append more files,
+// and remove individual existing files.
+function EditAssessmentModal({ assessment, scopeOptions, onClose, onSaved }) {
   const { toast } = useToast()
-  const a = assessment
+  // Keep a local copy so file removals reflect immediately without a full reload.
+  const [a, setA] = useState(assessment)
   const [name, setName] = useState(a.name || '')
   const [desc, setDesc] = useState(a.description || '')
   const [team, setTeam] = useState(a.team || '')
@@ -59,11 +144,10 @@ function EditAssessmentModal({ assessment, onClose, onSaved }) {
   const [role, setRole] = useState(a.role || '')
   const [newFiles, setNewFiles] = useState([])
   const [busy, setBusy] = useState(false)
+  const [removingKey, setRemovingKey] = useState(null)
   const fileRef = useRef(null)
 
-  const existing = (a.files && a.files.length)
-    ? a.files.map((f) => ({ key: `f${f.id}`, name: f.filename, size: f.size, assessmentId: a.id, fileId: f.id }))
-    : (a.filename ? [{ key: 'legacy', name: a.filename, size: a.size, assessmentId: a.id, fileId: null }] : [])
+  const existing = fileListOf(a)
 
   async function save() {
     if (!name.trim()) { toast('Name is required', 'error'); return }
@@ -87,6 +171,21 @@ function EditAssessmentModal({ assessment, onClose, onSaved }) {
     try { await openAssessmentFile(f) } catch { toast('Could not open the file', 'error') }
   }
 
+  async function removeFile(f) {
+    if (existing.length <= 1) {
+      toast('This is the only file — delete the whole assessment instead', 'error')
+      return
+    }
+    if (!window.confirm(`Remove "${f.name}" from this assessment?`)) return
+    setRemovingKey(f.key)
+    try {
+      const updated = await api.deleteAssessmentFile(f.assessmentId, f.fileId)
+      setA(updated)          // refresh the modal's file list from the server response
+      onSaved?.()            // keep the page's cards in sync
+      toast('File removed')
+    } catch (err) { toast(err.message, 'error') } finally { setRemovingKey(null) }
+  }
+
   return (
     <Modal
       open
@@ -102,10 +201,16 @@ function EditAssessmentModal({ assessment, onClose, onSaved }) {
       <div className="space-y-3">
         <Field label="Name *"><input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Team"><input className={inputClass} value={team} onChange={(e) => setTeam(e.target.value)} placeholder="Platform" /></Field>
-          <Field label="Department" hint="Used to auto-suggest this assessment for matching jobs"><input className={inputClass} value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Engineering" /></Field>
+          <Field label="Team">
+            <ScopeSelect value={team} onChange={setTeam} options={scopeOptions.teams} placeholder="Select a team…" />
+          </Field>
+          <Field label="Department" hint="Used to auto-suggest this assessment for matching jobs">
+            <ScopeSelect value={department} onChange={setDepartment} options={scopeOptions.departments} placeholder="Select a department…" />
+          </Field>
         </div>
-        <Field label="Role"><input className={inputClass} value={role} onChange={(e) => setRole(e.target.value)} placeholder="Frontend Engineer" /></Field>
+        <Field label="Role">
+          <ScopeSelect value={role} onChange={setRole} options={scopeOptions.roles} placeholder="Select a role…" />
+        </Field>
         <Field label="Description"><input className={inputClass} value={desc} onChange={(e) => setDesc(e.target.value)} /></Field>
 
         {existing.length > 0 && (
@@ -113,18 +218,32 @@ function EditAssessmentModal({ assessment, onClose, onSaved }) {
             <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">Current files</span>
             <div className="space-y-0.5">
               {existing.map((f) => (
-                <button
+                <div
                   key={f.key}
-                  type="button"
-                  onClick={() => openExisting(f)}
-                  title={`Preview ${f.name}`}
-                  className="group/file flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+                  className="group/file flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors duration-150 ease-snappy hover:bg-slate-50"
                 >
-                  <FileTypeBadge name={f.name} />
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700 group-hover/file:text-brand-700">{f.name}</span>
-                  {f.size ? <span className="shrink-0 text-[11px] tabular-nums text-slate-400">{fmtSize(f.size)}</span> : null}
-                  <Eye className="h-3.5 w-3.5 shrink-0 text-slate-300 opacity-0 transition-opacity duration-150 group-hover/file:text-brand-500 group-hover/file:opacity-100" />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => openExisting(f)}
+                    title={`Preview ${f.name}`}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 rounded"
+                  >
+                    <FileTypeBadge name={f.name} />
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700 group-hover/file:text-brand-700">{f.name}</span>
+                    {f.size ? <span className="shrink-0 text-[11px] tabular-nums text-slate-400">{fmtSize(f.size)}</span> : null}
+                    <Eye className="h-3.5 w-3.5 shrink-0 text-slate-300 opacity-0 transition-opacity duration-150 group-hover/file:text-brand-500 group-hover/file:opacity-100" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeFile(f)}
+                    disabled={removingKey === f.key || existing.length <= 1}
+                    title={existing.length <= 1 ? 'An assessment must keep at least one file' : `Remove ${f.name}`}
+                    aria-label={`Remove ${f.name}`}
+                    className="shrink-0 rounded-md p-1 text-slate-300 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-300"
+                  >
+                    {removingKey === f.key ? <Spinner className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -142,6 +261,7 @@ export default function Assessments() {
   usePageTitle('Assessments')
   const { toast } = useToast()
   const [items, setItems] = useState(null)
+  const [roles, setRoles] = useState([])  // existing jobs — seed the scope dropdowns
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
   const [team, setTeam] = useState('')
@@ -149,11 +269,25 @@ export default function Assessments() {
   const [role, setRole] = useState('')
   const [files, setFiles] = useState([])
   const [busy, setBusy] = useState(false)
-  const [editing, setEditing] = useState(null)  // assessment being edited (metadata + add files)
+  const [editing, setEditing] = useState(null)  // assessment being edited (metadata + files)
   const fileRef = useRef(null)
 
   const load = () => api.listAssessments().then(setItems).catch(() => setItems([]))
   useEffect(() => { load() }, [])
+  // Seed the Team / Department / Role dropdowns from existing jobs (their department + position)
+  // so scope values stay consistent with the rest of the system.
+  useEffect(() => { api.listRoles().then((r) => setRoles(Array.isArray(r) ? r : [])).catch(() => {}) }, [])
+
+  // Merge option sources: existing jobs + values already used on existing assessments + a few
+  // sensible team defaults. Recomputed when either list changes.
+  const scopeOptions = useMemo(() => {
+    const list = items || []
+    return {
+      teams: buildOptions([...roles.map((r) => r.team), ...list.map((a) => a.team)], DEFAULT_TEAMS),
+      departments: buildOptions([...roles.map((r) => r.department), ...list.map((a) => a.department)]),
+      roles: buildOptions([...roles.map((r) => r.position), ...list.map((a) => a.role)]),
+    }
+  }, [roles, items])
 
   async function add(e) {
     e.preventDefault()
@@ -198,10 +332,16 @@ export default function Assessments() {
           <Field label="Files *" hint={files.length ? `${files.length} file${files.length > 1 ? 's' : ''} selected — max 25 MB each` : 'PDF, DOCX, etc. — add one or more, max 25 MB each'}>
             <input ref={fileRef} type="file" multiple className={inputClass} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
           </Field>
-          <Field label="Team"><input className={inputClass} value={team} onChange={(e) => setTeam(e.target.value)} placeholder="Platform" /></Field>
-          <Field label="Department" hint="A job in this department can auto-suggest this assessment"><input className={inputClass} value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Engineering" /></Field>
+          <Field label="Team">
+            <ScopeSelect value={team} onChange={setTeam} options={scopeOptions.teams} placeholder="Select a team…" />
+          </Field>
+          <Field label="Department" hint="A job in this department can auto-suggest this assessment">
+            <ScopeSelect value={department} onChange={setDepartment} options={scopeOptions.departments} placeholder="Select a department…" />
+          </Field>
           <div className="sm:col-span-2">
-            <Field label="Role"><input className={inputClass} value={role} onChange={(e) => setRole(e.target.value)} placeholder="Frontend Engineer" /></Field>
+            <Field label="Role">
+              <ScopeSelect value={role} onChange={setRole} options={scopeOptions.roles} placeholder="Select a role…" />
+            </Field>
           </div>
           <div className="sm:col-span-2">
             <Field label="Description"><input className={inputClass} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="2-hour React build task — instructions inside" /></Field>
@@ -219,12 +359,7 @@ export default function Assessments() {
       ) : (
         <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((a) => {
-            // Normalize legacy single-file (stored only in legacy columns) and multi-file
-            // assessments into one list, so every card renders identically. Each entry carries
-            // the ids needed to fetch the file WITH the auth header (the endpoints are gated).
-            const fileList = (a.files && a.files.length)
-              ? a.files.map((f) => ({ key: `f${f.id}`, name: f.filename, size: f.size, assessmentId: a.id, fileId: f.id }))
-              : (a.filename ? [{ key: 'legacy', name: a.filename, size: a.size, assessmentId: a.id, fileId: null }] : [])
+            const fileList = fileListOf(a)
             const totalSize = fileList.reduce((s, f) => s + (f.size || 0), 0)
             const tags = [
               a.team && { icon: Users, label: a.team },
@@ -302,6 +437,7 @@ export default function Assessments() {
       {editing && (
         <EditAssessmentModal
           assessment={editing}
+          scopeOptions={scopeOptions}
           onClose={() => setEditing(null)}
           onSaved={load}
         />

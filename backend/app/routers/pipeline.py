@@ -1,6 +1,8 @@
 """Pipeline view, stage transitions, re-scoring, human overrides, analytics, audit."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -180,7 +182,7 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
             **schemas.ApplicationWithCandidate.model_validate(app).model_dump(),
             "profile": profile,
             "suggested_role": suggested_role,
-            "stage_changed_at": app.scored_at or app.created_at,
+            "stage_changed_at": app.stage_changed_at or app.scored_at or app.created_at,
             "meta": {
                 "screening_status": screening_status,
                 "screening_score": screening_score,
@@ -251,6 +253,8 @@ def move_stage(app_id: int, body: schemas.StageUpdate, db: Session = Depends(get
         raise HTTPException(422, f"Invalid stage. Must be one of {STAGES}")
     old = app.stage
     app.stage = body.stage
+    if old != body.stage:
+        app.stage_changed_at = datetime.now(timezone.utc)
     if body.note:
         app.notes = (app.notes + "\n" + body.note).strip() if app.notes else body.note
     recruitment.log(db, "application.stage_changed", "application", app.id, {"from": old, "to": body.stage}, actor="recruiter")

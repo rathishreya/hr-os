@@ -292,7 +292,7 @@ function UploadCell({ doc, onUploaded }) {
     }
   }
   return (
-    <>
+    <span className="inline-flex items-center gap-1.5">
       {doc.has_upload && (
         <a
           href={api.documentUploadUrl(doc.id)}
@@ -305,11 +305,23 @@ function UploadCell({ doc, onUploaded }) {
           <FileText className="h-4 w-4" />
         </a>
       )}
-      <label title={doc.has_upload ? 'Replace countersigned copy' : 'Upload countersigned copy (signed PDF)'} className={cx(ROW_ICON, 'cursor-pointer')}>
-        {busy ? <Spinner /> : <Upload className="h-4 w-4" />}
-        <input ref={ref} type="file" accept="application/pdf,.pdf" className="hidden" onChange={onFile} />
+      {/* Always-visible per-row upload affordance for the signed / countersigned copy. Reads as a
+          pill with a label when empty, and as a compact "Replace" control once a copy is on file. */}
+      <label
+        title={doc.has_upload ? 'Replace countersigned copy (signed PDF)' : 'Upload the signed / countersigned copy (PDF)'}
+        className={cx(
+          'inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium ring-1 transition duration-150 ease-snappy active:scale-95 focus-within:ring-2 focus-within:ring-brand-500/50',
+          doc.has_upload
+            ? 'text-slate-500 ring-slate-200 hover:bg-slate-50 hover:text-slate-700'
+            : 'text-brand-700 ring-brand-200 hover:bg-brand-50',
+          busy && 'pointer-events-none opacity-60',
+        )}
+      >
+        {busy ? <Spinner /> : <Upload className="h-3.5 w-3.5" />}
+        {doc.has_upload ? 'Replace' : 'Upload signed'}
+        <input ref={ref} type="file" accept="application/pdf,.pdf" className="hidden" onChange={onFile} disabled={busy} />
       </label>
-    </>
+    </span>
   )
 }
 
@@ -379,9 +391,12 @@ export default function OfferDocs() {
     <ColumnFilter label={fkey} values={distinct[fkey] || []} excluded={filterCtl.filters[fkey] || []} onChange={(arr) => filterCtl.setFilter(fkey, arr)} />
   )
   const groups = groupByCandidate(filteredDocs)
-  const [expanded, setExpanded] = useState(() => new Set())
+  // Rows are expanded by default so the per-document admin controls (personal email, joining date,
+  // entity dropdown, status, and the countersigned-copy upload) are visible in the list without an
+  // extra click — collapsing is opt-in and remembered per candidate.
+  const [collapsed, setCollapsed] = useState(() => new Set())
   const toggleExpand = (key) =>
-    setExpanded((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n })
+    setCollapsed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n })
 
   async function approve(d) {
     setBusy(true)
@@ -435,10 +450,14 @@ export default function OfferDocs() {
               </thead>
               <tbody>
                 {groups.map((g) => {
-                  const isOpen = expanded.has(g.key)
+                  const isOpen = !collapsed.has(g.key)
                   const drafts = g.docs.filter((d) => d.status !== 'approved').length
                   const approved = g.docs.length - drafts
                   const anyMoved = g.docs.some((d) => d.move_to_onboarding)
+                  const signed = g.docs.filter((d) => d.has_upload).length
+                  // Offer-admin gaps surfaced on the master row so HR doesn't have to open each row to
+                  // notice a candidate is missing the editable personal email / joining date.
+                  const needsAdmin = !anyMoved && g.docs.some((d) => !d.personal_email || !d.joining_date)
                   return (
                     <Fragment key={g.key}>
                       <tr onClick={() => toggleExpand(g.key)} className="cursor-pointer border-b border-slate-100 transition-colors duration-150 ease-snappy hover:bg-brand-50/40">
@@ -476,6 +495,8 @@ export default function OfferDocs() {
                           <span className="flex flex-wrap gap-1">
                             {approved > 0 && <Badge tone="green">{approved} approved</Badge>}
                             {drafts > 0 && <Badge tone="amber">{drafts} draft</Badge>}
+                            {signed > 0 && <Badge tone="blue"><FileText className="mr-1 h-3 w-3" />{signed} signed</Badge>}
+                            {needsAdmin && <span title="A personal email and/or joining date is still blank — fill it in the row below"><Badge tone="amber">Needs details</Badge></span>}
                           </span>
                         </td>
                         <td className="px-3 py-3 align-middle">

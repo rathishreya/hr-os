@@ -99,8 +99,8 @@ function PostJobModal({ open, onClose, jd, roleId, onPublished }) {
       footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button><Button onClick={confirm} disabled={busy}>{busy ? <Spinner /> : 'Publish & post'}</Button></>}>
       <div className="space-y-5">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Post to free job boards</p>
-          <p className="mb-2 mt-0.5 text-xs text-slate-400">Publishing makes it live on your careers page + feeds. Pick which free boards to target — they&apos;re highlighted on the Distribution page to register.</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">1 · Free job boards &amp; aggregators</p>
+          <p className="mb-2 mt-0.5 text-xs text-slate-400">Publishing makes the role live on your careers page + the structured feed every free aggregator below ingests. Tick the boards to target — after publishing, the green panel gives you the direct links to share/register each one.</p>
           <div className="grid grid-cols-2 gap-1.5">
             {POST_PLATFORMS.map((p) => (
               <CheckRow key={p.id} on={platforms.includes(p.id)} onClick={() => togglePlatform(p.id)}>{p.label}</CheckRow>
@@ -108,9 +108,10 @@ function PostJobModal({ open, onClose, jd, roleId, onPublished }) {
           </div>
         </div>
         <div>
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><GraduationCap className="h-3.5 w-3.5" /> Send to college placement officers</p>
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><GraduationCap className="h-3.5 w-3.5" /> 2 · College placement cells (TPOs)</p>
+          <p className="mb-1 mt-0.5 text-xs text-slate-400">Email this role straight to the campus placement officers you&apos;ve saved — they post it on their college boards. Applicants flow back into this role&apos;s pipeline.</p>
           {tpos.length === 0 ? (
-            <p className="mt-1 text-xs text-slate-400">No TPOs yet — add them in <Link to="/settings" className="text-brand-600 hover:underline">Settings → Placement officers</Link>.</p>
+            <p className="mt-1 text-xs text-slate-400">No placement officers yet — add them in <Link to="/settings" className="text-brand-600 hover:underline">Settings → Placement officers</Link>.</p>
           ) : (
             <>
               <div className="mt-2 max-h-40 space-y-1 overflow-y-auto pr-1">

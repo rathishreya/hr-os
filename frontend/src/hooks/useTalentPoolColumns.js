@@ -17,7 +17,6 @@ export const TALENT_POOL_COLUMNS = [
   { id: 'suggested_role', label: 'AI suggested role' },
   { id: 'pipeline', label: 'Pipeline' },
   { id: 'added', label: 'Date added' },
-  { id: 'applied_by', label: 'Applied by' },
 ]
 
 const DEFAULT_VISIBLE = Object.fromEntries(TALENT_POOL_COLUMNS.map((c) => [c.id, true]))

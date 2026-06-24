@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, Users, RefreshCw, Sparkles } from 'lucide-react'
+import { Search, Users, RefreshCw, Sparkles, ExternalLink } from 'lucide-react'
 import { api } from '../api'
 import { Spinner, PageHeader, EmptyState, inputClass, Button } from '../ui'
 import { useToast } from '../components/Toast'
@@ -31,9 +31,18 @@ export default function Candidates() {
   }, [search])
 
   useEffect(() => { api.listRoles().then(setRoles).catch(() => []) }, [])
+  // Public general talent-pool application link. Prefer the backend-configured public base
+  // (PUBLIC_BASE_URL on prod); always fall back to the current origin so the Copy control
+  // works even if /distribution/channels is unavailable. The URL is the EZ-careers-page form.
   useEffect(() => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const fallback = origin ? `${origin}/careers/apply` : '/careers/apply'
+    setApplyUrl(fallback)
     api.distributionChannels()
-      .then((d) => setApplyUrl(d?.feeds?.apply || (d?.base_url ? `${d.base_url}/careers/apply` : '')))
+      .then((d) => {
+        const url = d?.feeds?.apply || (d?.base_url ? `${d.base_url}/careers/apply` : '')
+        if (url) setApplyUrl(url)
+      })
       .catch(() => {})
   }, [])
 
@@ -71,11 +80,22 @@ export default function Candidates() {
         actions={(
           <>
             {applyUrl && (
-              <CopyBtn
-                value={applyUrl}
-                label="Copy application link"
-                className="!px-3 !py-2"
-              />
+              <div className="inline-flex items-center gap-1" title={`Public talent-pool application form — ${applyUrl}`}>
+                <CopyBtn
+                  value={applyUrl}
+                  label="Copy application link"
+                  className="!px-3 !py-2"
+                />
+                <a
+                  href={applyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open the public application form"
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-2 py-2 text-slate-500 transition duration-150 ease-snappy hover:border-brand-300 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
             )}
             {hasRole('admin', 'manager') && (
               <Button variant="ghost" className="text-xs" onClick={rescoreAll} disabled={rescoring || loading} title="Re-score every application with the latest skill matcher">

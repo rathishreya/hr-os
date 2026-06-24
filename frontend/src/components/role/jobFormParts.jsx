@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, Check } from 'lucide-react'
 import { Button, Field, Spinner, inputClass, cx } from '../../ui'
-import { CURRENCIES, DEPARTMENT_SEEDS, LOCATION_SEEDS, INTERVIEW_TYPES } from '../../constants'
+import { CURRENCIES, DEPARTMENT_SEEDS, LOCATION_SEEDS, TEAM_SEEDS, INTERVIEW_TYPES } from '../../constants'
 import { api } from '../../api'
 
 // Shared field components for the create + edit job forms (single source of truth).
@@ -9,15 +9,16 @@ import { api } from '../../api'
 let _qSeq = 0
 export const newQuestionId = () => `q_${Date.now().toString(36)}_${_qSeq++}`
 
-// Distinct option list for Department / Location dropdowns. Sourced from existing roles
-// (so the org's own values surface) merged with a small canonical seed set, de-duped
+// Distinct option list for the Department / Location / Team dropdowns. Sourced from existing
+// roles (so the org's own values surface) merged with a small canonical seed set, de-duped
 // case-insensitively. Used to back a creatable combobox (free text still allowed).
+const FIELD_SEEDS = { department: DEPARTMENT_SEEDS, location: LOCATION_SEEDS, team: TEAM_SEEDS }
 export function useFieldOptions(kind) {
   const [roles, setRoles] = useState([])
   useEffect(() => { api.listRoles().then(setRoles).catch(() => setRoles([])) }, [])
   return useMemo(() => {
-    const seeds = kind === 'department' ? DEPARTMENT_SEEDS : LOCATION_SEEDS
-    const fromRoles = roles.map((r) => (kind === 'department' ? r.department : r.location)).filter(Boolean)
+    const seeds = FIELD_SEEDS[kind] || []
+    const fromRoles = roles.map((r) => r[kind]).filter(Boolean)
     const seen = new Set()
     const out = []
     for (const v of [...fromRoles, ...seeds]) {
@@ -53,8 +54,14 @@ export function ComboField({ label, hint, value, onChange, options, placeholder,
 // ── Budget / CTC composite: currency prefix + min/max amount (grouped thousands) + unit ──
 // Serializes to the single free-text budget_ctc string the backend already parses, e.g.
 // "INR 20-28 LPA" or "USD 90,000-1,20,000 per year". Parsing back is best-effort for editing.
+// Units are currency-aware: "LPA" (lakhs per annum) only makes sense for INR. Other currencies
+// get plain per-year / per-month / "K / year" units so a USD/SGD range never reads "90 LPA".
+const INR_UNITS = ['LPA', 'per month', 'per year']
+const OTHER_UNITS = ['per year', 'per month', 'K / year']
 const DEFAULT_UNIT = 'LPA'
-const BUDGET_UNITS = ['LPA', 'per month', 'per year']
+// Every unit string we might emit — used by the parser to detect the unit out of the saved text.
+const ALL_UNITS = [...new Set([...INR_UNITS, ...OTHER_UNITS])]
+const unitsFor = (currency) => (currency === 'INR' ? INR_UNITS : OTHER_UNITS)
 
 function groupThousands(raw) {
   // Keep only digits, then group in the Indian style the rest of the app uses (en-IN).
@@ -66,10 +73,13 @@ function groupThousands(raw) {
 export function parseBudgetCtc(str) {
   const s = String(str || '').trim()
   const cur = CURRENCIES.find((c) => new RegExp(`(^|\\b)(${c.code}|\\${c.symbol})`, 'i').test(s))
-  const unit = BUDGET_UNITS.find((u) => s.toLowerCase().includes(u.toLowerCase())) || DEFAULT_UNIT
+  const currency = cur?.code || 'INR'
+  // "LPA" first so "per year"/"K / year" don't shadow it; fall back to the currency's default unit.
+  const found = ALL_UNITS.find((u) => s.toLowerCase().includes(u.toLowerCase()))
+  const unit = found || (currency === 'INR' ? DEFAULT_UNIT : OTHER_UNITS[0])
   const nums = s.replace(/,/g, '').match(/\d+(?:\.\d+)?/g) || []
   return {
-    currency: cur?.code || 'INR',
+    currency,
     min: nums[0] || '',
     max: nums[1] || '',
     unit,
@@ -88,12 +98,23 @@ export function composeBudgetCtc({ currency, min, max, unit }) {
 
 export function BudgetCtcField({ value, onChange, label = 'Budget / CTC', hint = 'Shown to candidates as the salary range' }) {
   const parsed = useMemo(() => parseBudgetCtc(value), [value])
-  const emit = (patch) => onChange(composeBudgetCtc({ ...parsed, ...patch }))
+  const units = unitsFor(parsed.currency)
+  const emit = (patch) => {
+    const next = { ...parsed, ...patch }
+    // Changing currency can invalidate the unit (e.g. "LPA" on a USD range) — snap it to the
+    // currency's first valid unit so we never serialize "USD 90,000 LPA".
+    if (patch.currency && !unitsFor(next.currency).includes(next.unit)) {
+      next.unit = unitsFor(next.currency)[0]
+    }
+    onChange(composeBudgetCtc(next))
+  }
   return (
     <Field label={label} hint={hint}>
-      <div className="flex items-stretch gap-1.5">
+      {/* min-w-0 on every flex child + flex-wrap keeps the row inside the form column instead of
+          forcing a horizontal scrollbar; the amount inputs flex-grow, the selects stay compact. */}
+      <div className="flex w-full min-w-0 flex-wrap items-stretch gap-1.5">
         <select
-          className={`${inputClass} w-20 shrink-0`}
+          className={`${inputClass} w-[5.5rem] shrink-0 px-2`}
           value={parsed.currency}
           onChange={(e) => emit({ currency: e.target.value })}
           aria-label="Currency"
@@ -101,7 +122,7 @@ export function BudgetCtcField({ value, onChange, label = 'Budget / CTC', hint =
           {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>)}
         </select>
         <input
-          className={inputClass}
+          className={`${inputClass} min-w-0 flex-1 basis-16`}
           inputMode="numeric"
           value={parsed.min ? groupThousands(parsed.min) : ''}
           onChange={(e) => emit({ min: e.target.value })}
@@ -110,7 +131,7 @@ export function BudgetCtcField({ value, onChange, label = 'Budget / CTC', hint =
         />
         <span className="self-center text-slate-400">–</span>
         <input
-          className={inputClass}
+          className={`${inputClass} min-w-0 flex-1 basis-16`}
           inputMode="numeric"
           value={parsed.max ? groupThousands(parsed.max) : ''}
           onChange={(e) => emit({ max: e.target.value })}
@@ -118,12 +139,12 @@ export function BudgetCtcField({ value, onChange, label = 'Budget / CTC', hint =
           aria-label="Maximum"
         />
         <select
-          className={`${inputClass} w-28 shrink-0`}
+          className={`${inputClass} w-[7rem] shrink-0 px-2`}
           value={parsed.unit}
           onChange={(e) => emit({ unit: e.target.value })}
           aria-label="Unit"
         >
-          {BUDGET_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+          {units.map((u) => <option key={u} value={u}>{u}</option>)}
         </select>
       </div>
     </Field>

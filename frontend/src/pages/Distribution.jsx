@@ -138,7 +138,7 @@ export default function Distribution() {
     <div className="space-y-6">
       <PageHeader
         title="Distribution"
-        subtitle="Publish your open roles to every genuinely free job board — Google for Jobs, Indeed, Adzuna, Jooble and more."
+        subtitle="Get your published roles seen — for free. Channels are grouped by how much effort each needs: nothing, one click, or a one-time setup."
         actions={data && (
           <a href={data.feeds.careers} target="_blank" rel="noreferrer">
             <Button variant="ghost"><Globe className="mr-1 h-4 w-4" /> View careers page</Button>
@@ -163,17 +163,15 @@ export default function Distribution() {
 
       {data && data.published_count > 0 && (
         <>
-          {/* Plain-language intro: what this page is and how the three tiers below differ. */}
-          <Card className="p-5">
+          {/* Short intro: one feed, three tiers of reach. The three labelled sections below
+              (a Automatic & free, b One-click direct post, c Manual / partner) carry the detail. */}
+          <Card className="p-4">
             <p className="text-sm leading-relaxed text-slate-600">
-              Every role you publish goes onto your <strong className="text-slate-800">careers page</strong> and into a single
-              job feed. From there it reaches the wider job boards in three ways, sorted below by how much work each takes:
+              Every published role lives on your <strong className="text-slate-800">careers page</strong> and in one job feed.
+              The three sections below are ordered by effort — <strong className="text-emerald-700">(a)</strong> happens on its own,
+              <strong className="text-brand-700"> (b)</strong> is one click once connected, and
+              <strong className="text-slate-700"> (c)</strong> is a one-time setup.
             </p>
-            <ul className="mt-3 space-y-1.5 text-sm text-slate-600">
-              <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /><span><strong className="text-emerald-700">Automatic &amp; free</strong> — the sitemap, RSS/XML feed and Google for Jobs pick up new roles on their own. Nothing to do.</span></li>
-              <li className="flex items-start gap-2"><Zap className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" /><span><strong className="text-brand-700">One-click direct post</strong> — once connected, push a role straight to Google or your LinkedIn page using the buttons on each role.</span></li>
-              <li className="flex items-start gap-2"><Plug className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /><span><strong className="text-slate-700">Manual / partner boards</strong> — free boards you connect once by pasting your feed link; Indeed, Naukri and the like have no free auto-posting.</span></li>
-            </ul>
           </Card>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -193,22 +191,31 @@ export default function Distribution() {
             </Card>
           </div>
 
-          {/* ── Tier 1 + 3: Automatic & free boards, plus the connect-once partner boards.
-                DistributionDetails groups these and keeps the feed-link copy step. ── */}
+          {/* ───────────── (a) Automatic & free — sitemap / feed / Google index ───────────── */}
           <Card className="p-5">
-            <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><Globe className="h-4 w-4 text-brand-500" /> Where your jobs get posted</h3>
-            <p className="mt-1 text-xs leading-relaxed text-slate-500">All free. One feed covers every published role — the automatic boards pull it in by themselves, and you set up each connect-once board a single time.</p>
-            <DistributionDetails data={data} />
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">a</span>
+              <h3 className="text-sm font-semibold text-slate-800">Automatic &amp; free</h3>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              <strong className="text-slate-700">What it does:</strong> your sitemap, RSS/XML feed and Google for Jobs pull in new roles by themselves.
+              <strong className="text-slate-700"> What you do:</strong> nothing — just keep the careers page public.
+            </p>
+            <DistributionDetails data={data} tier="auto" />
           </Card>
 
-          {/* ── Tier 2: One-click direct post (Google for Jobs + LinkedIn page). ── */}
+          {/* ───────────── (b) One-click direct post — LinkedIn / Google ───────────── */}
           {integrations && (
             <Card className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><Zap className="h-4 w-4 text-brand-500" /> One-click direct post</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">b</span>
+                    <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><Zap className="h-4 w-4 text-brand-500" /> One-click direct post</h3>
+                  </div>
                   <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                    Connect these once and you can post any role straight to Google for Jobs or your LinkedIn company page from the list below — it also fires automatically when you publish.
+                    <strong className="text-slate-700">What it does:</strong> pushes a role straight to Google for Jobs or your LinkedIn company page (also fires automatically on publish).
+                    <strong className="text-slate-700"> What you do:</strong> connect each once, then hit the button on any role below.
                   </p>
                 </div>
                 <button
@@ -243,9 +250,22 @@ export default function Distribution() {
                   hint="Add LINKEDIN_ACCESS_TOKEN + LINKEDIN_ORG_URN (you must be a page admin)."
                 />
               </div>
-              {!anyAuto && <p className="mt-3 text-[11px] text-slate-400">Not connected yet — until then, use the free feed boards above and the manual LinkedIn share button on each role.</p>}
+              {!anyAuto && <p className="mt-3 text-[11px] text-slate-400">Not connected yet — until then, use the automatic boards above and the manual LinkedIn share button on each role.</p>}
             </Card>
           )}
+
+          {/* ───────────── (c) Manual / partner boards — Indeed / Naukri / placement cells & vendors ───────────── */}
+          <Card className="p-5">
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">c</span>
+              <h3 className="text-sm font-semibold text-slate-800">Manual / partner boards</h3>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              <strong className="text-slate-700">What it does:</strong> free aggregators (Adzuna, Jooble, Careerjet…) and offline partners — campus placement cells and recruitment vendors.
+              <strong className="text-slate-700"> What you do:</strong> a one-time setup — paste your feed link on each board, or share the role link with partners.
+            </p>
+            <DistributionDetails data={data} tier="manual" />
+          </Card>
 
           {/* The control panel: every published role, with its direct-post + share + copy actions. */}
           <Card className="overflow-hidden p-0">

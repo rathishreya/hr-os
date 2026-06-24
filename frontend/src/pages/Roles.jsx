@@ -8,11 +8,12 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import JobsListTable from '../components/jobs/JobsListTable'
 import MultiSelect from '../components/MultiSelect'
 import { SkillChecklist, ApplicationQuestionsBuilder, InterviewTypesPicker, BudgetCtcField, ComboField, useFieldOptions, mergeSkills, useTeamOptions } from '../components/role/jobFormParts'
+import { HIRE_TYPES } from '../constants'
 
 const VIEW_KEY = 'hr-os-jobs-view'
 
 const EMPTY = {
-  position: '', department: '', budget_ctc: '', yoe_min: 0, yoe_max: 0,
+  position: '', department: '', team: '', hire_type: '', budget_ctc: '', yoe_min: 0, yoe_max: 0,
   mandatory_skills: [], preferred_skills: [], priority: 'medium',
   hiring_deadline: '', location: '', work_mode: 'hybrid', num_openings: 1,
   start_hiring_date: '', application_questions: [], interview_types: [],
@@ -94,6 +95,8 @@ function NewRoleForm({ onCreated, onCancel }) {
       ...p,
       position: r.position || '',
       department: r.department || '',
+      team: r.team || '',
+      hire_type: r.hire_type || '',
       budget_ctc: r.budget_ctc || '',
       location: r.location || '',
       work_mode: r.work_mode || 'hybrid',
@@ -146,8 +149,9 @@ function NewRoleForm({ onCreated, onCancel }) {
 
   // Team dropdowns are mapped from people in Settings → Users & roles.
   const teamOpts = useTeamOptions()
-  // Department / Location options for the creatable comboboxes (existing roles + seeds).
+  // Department / Team / Location options for the creatable comboboxes (existing roles + seeds).
   const deptOptions = useFieldOptions('department')
+  const teamFieldOptions = useFieldOptions('team')
   const locationOptions = useFieldOptions('location')
 
   // Skill suggestions — auto-filled from position/department/experience; the user edits the checklist.
@@ -249,6 +253,19 @@ function NewRoleForm({ onCreated, onCancel }) {
             options={deptOptions}
             placeholder="Engineering — pick or type to add"
           />
+          <ComboField
+            label="Team"
+            listId="team-options"
+            value={f.team}
+            onChange={(v) => setF((p) => ({ ...p, team: v }))}
+            options={teamFieldOptions}
+            placeholder="Platform — pick or type to add"
+          />
+          <Field label="New / Replacement" hint="Is this new headcount or backfilling a leaver?">
+            <select className={inputClass} value={f.hire_type} onChange={set('hire_type')}>
+              {HIRE_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </Field>
           <div className="sm:col-span-2">
             <BudgetCtcField value={f.budget_ctc} onChange={(v) => setF((p) => ({ ...p, budget_ctc: v }))} />
           </div>

@@ -4,9 +4,21 @@ import { api } from '../../api'
 import { Modal, Button, Spinner, Field, inputClass } from '../../ui'
 import { useToast } from '../Toast'
 
+// Preview the chosen assessment file. The file endpoints are behind the Bearer-token auth gate,
+// so a plain <a href> navigation (which carries NO Authorization header) 401s. Fetch the file as
+// an authenticated Blob and open the object URL instead — this is what was making preview fail.
+async function previewAssessment(aid) {
+  const blob = await api.fetchAssessmentFile(aid)
+  const url = URL.createObjectURL(blob)
+  window.open(url, '_blank', 'noopener')
+  setTimeout(() => URL.revokeObjectURL(url), 60000)
+}
+
 /** Pick an assessment (with preview), draft/AI-draft the email, and send it to one or more
- *  candidates. Reused by the interview "assessment round" flow and the bulk table action. */
-export default function SendAssessmentModal({ open, onClose, applicationIds = [], assessmentId = null, onSent }) {
+ *  candidates. Reused by the interview "assessment round" flow and the bulk table action.
+ *  When `department` is provided (the job's department), assessments scoped to that department are
+ *  surfaced first and one is auto-selected — the link from a job to its suggested assessments. */
+export default function SendAssessmentModal({ open, onClose, applicationIds = [], assessmentId = null, department = '', onSent }) {
   const { toast } = useToast()
   const [assessments, setAssessments] = useState([])
   const [aid, setAid] = useState(assessmentId || '')
@@ -14,9 +26,14 @@ export default function SendAssessmentModal({ open, onClose, applicationIds = []
   const [body, setBody] = useState('')
   const [busy, setBusy] = useState(false)
   const [drafting, setDrafting] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
 
   const firstApp = applicationIds[0] || null
   const n = applicationIds.length
+  const dept = (department || '').trim().toLowerCase()
+  // Does the selected assessment match the job's department? Drives the "suggested" hint.
+  const selected = assessments.find((a) => a.id === aid)
+  const isSuggested = !!dept && !!selected && (selected.department || '').trim().toLowerCase() === dept
 
   useEffect(() => {
     if (!open) return
@@ -24,10 +41,21 @@ export default function SendAssessmentModal({ open, onClose, applicationIds = []
     api.listAssessments().then((list) => {
       if (!alive) return
       setAssessments(list)
-      setAid(assessmentId || list[0]?.id || '')  // reset selection each time the modal opens
+      // Default selection: an explicit assessmentId wins; else the first assessment scoped to the
+      // job's department (the auto-suggest link); else the first available.
+      const match = dept && list.find((a) => (a.department || '').trim().toLowerCase() === dept)
+      setAid(assessmentId || match?.id || list[0]?.id || '')  // reset selection each time the modal opens
     }).catch(() => {})
     return () => { alive = false }
-  }, [open, assessmentId])
+  }, [open, assessmentId, dept])
+
+  async function preview() {
+    if (!aid) return
+    setPreviewing(true)
+    try { await previewAssessment(aid) }
+    catch { toast('Could not open the assessment file', 'error') }
+    finally { setPreviewing(false) }
+  }
 
   // (Re)load a template draft whenever the chosen assessment changes.
   useEffect(() => {
@@ -75,16 +103,24 @@ export default function SendAssessmentModal({ open, onClose, applicationIds = []
       )}
     >
       <div className="space-y-3">
-        <Field label="Assessment">
+        <Field label="Assessment" hint={isSuggested ? `Suggested for the ${department} department` : (dept ? 'No assessment is scoped to this department — pick one manually' : undefined)}>
           <div className="flex items-center gap-2">
             <select className={inputClass} value={aid} onChange={(e) => setAid(Number(e.target.value) || '')}>
               <option value="">Select an assessment…</option>
-              {assessments.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              {assessments.map((a) => {
+                const match = dept && (a.department || '').trim().toLowerCase() === dept
+                return <option key={a.id} value={a.id}>{a.name}{match ? '  ·  suggested' : ''}</option>
+              })}
             </select>
             {aid ? (
-              <a href={api.assessmentFileUrl(aid)} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-600 hover:border-brand-300 hover:text-brand-700">
-                <Eye className="h-3.5 w-3.5" /> Preview
-              </a>
+              <button
+                type="button"
+                onClick={preview}
+                disabled={previewing}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700 disabled:opacity-50"
+              >
+                {previewing ? <Spinner className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />} Preview
+              </button>
             ) : null}
           </div>
         </Field>

@@ -40,6 +40,16 @@ export function formatComp(value) {
 
 const VERDICT_LABEL = { strong_yes: 'Yes', yes: 'Yes', maybe: 'Maybe', no: 'No' }
 
+// Final Yes / Maybe / No verdict for an export row — mirrors the table's rowVerdict():
+// prefer the AI recommendation, else derive from the overall score (so rows scored before the
+// recommendation field existed still export a verdict), else blank for truly unscored rows.
+function verdictLabel(app) {
+  if (VERDICT_LABEL[app.recommendation]) return VERDICT_LABEL[app.recommendation]
+  if (!app.scored_at && !(app.score_overall > 0)) return ''
+  const s = app.score_overall || 0
+  return s >= 65 ? 'Yes' : s >= 50 ? 'Maybe' : 'No'
+}
+
 export function exportTalentPoolCsv(rows) {
   const headers = [
     'Name', 'Email', 'Phone', 'LinkedIn', 'GitHub', 'Current Title', 'Current Company',
@@ -92,7 +102,7 @@ export function exportPipelineCsv(apps, roleTitle = 'pipeline') {
       app.stage || '',
       Math.round(app.score_overall || 0),
       ((app.score_overall || 0) / 20).toFixed(1),
-      VERDICT_LABEL[app.recommendation] || '',
+      verdictLabel(app),
       app.recommendation || '',
       p.current_title || '',
       p.current_company || '',
@@ -105,7 +115,7 @@ export function exportPipelineCsv(apps, roleTitle = 'pipeline') {
       p.notice_period || '',
       lastEmail,
       app.created_at ? new Date(app.created_at).toLocaleDateString() : '',
-      app.stage_changed_at ? new Date(app.stage_changed_at).toLocaleDateString() : '',
+      app.stage_changed_at ? new Date(app.stage_changed_at).toLocaleString() : '',
       (app.notes || '').replace(/\n/g, ' '),
     ]
   })

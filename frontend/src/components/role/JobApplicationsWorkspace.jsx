@@ -54,6 +54,18 @@ function formatDate(d) {
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+// Date + time for the "Status changed" column, so moving a candidate (e.g. shortlisted → hired)
+// visibly updates even when it happens the same day. Includes the local tz abbreviation so the
+// moment is unambiguous. Falls back to a dash when no timestamp is set.
+function formatDateTime(d) {
+  if (!d) return '—'
+  const dt = new Date(d)
+  if (Number.isNaN(dt.getTime())) return '—'
+  return dt.toLocaleString(undefined, {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+  })
+}
+
 // The viewer's local IANA timezone (e.g. "Asia/Kolkata") — surfaced next to scheduling inputs so
 // a chosen interview time is never ambiguous about which zone it's in.
 const LOCAL_TZ = (() => {
@@ -66,6 +78,19 @@ const AI_VERDICT = {
   yes: { label: 'Yes', tone: 'green' },
   maybe: { label: 'Maybe', tone: 'amber' },
   no: { label: 'No', tone: 'rose' },
+}
+
+// Resolve the final Yes / Maybe / No verdict for a row. Prefer the AI recommendation; for older
+// rows scored before the recommendation field existed, derive it from the overall score so the
+// verdict always renders alongside the star rating (it was showing "—" otherwise). Unscored rows
+// (no score, no recommendation) return null → a neutral dash.
+function rowVerdict(row) {
+  if (AI_VERDICT[row.recommendation]) return AI_VERDICT[row.recommendation]
+  if (!row.scored_at && !(row.score_overall > 0)) return null
+  const s = row.score_overall || 0
+  if (s >= 65) return AI_VERDICT.yes
+  if (s >= 50) return AI_VERDICT.maybe
+  return AI_VERDICT.no
 }
 
 // Per-row "Download CV": the resume-file endpoint is auth-gated, so fetch it WITH the bearer
@@ -133,7 +158,7 @@ const FILTER_ACCESSORS = {
   sub_source: (r) => profileOf(r).sub_source || '',
   applied: (r) => formatDate(r.created_at),
   applied_by: (r) => r.applied_by || '',
-  changed: (r) => formatDate(r.stage_changed_at),
+  changed: (r) => formatDateTime(r.stage_changed_at),
   activity: (r) => r.meta?.activity || '',
   email: (r) => (r.meta?.email_count ? String(r.meta.email_count) : ''),
   last_email: (r) => {
@@ -141,7 +166,7 @@ const FILTER_ACCESSORS = {
     if (!m.last_email_at) return 'No email'
     return `${(m.last_email_template || 'email').replace(/_/g, ' ')} · ${m.last_email_status || 'sent'}`
   },
-  ai: (r) => (AI_VERDICT[r.recommendation]?.label || '—'),
+  ai: (r) => (rowVerdict(r)?.label || '—'),
   interview: (r) => {
     const m = r.meta || {}
     if (m.interview_rounds_scheduled > 0) return `R${m.interview_next_round || '?'}`
@@ -338,7 +363,7 @@ export default function JobApplicationsWorkspace({
     applied: (r) => new Date(r.created_at).getTime(),
     changed: (r) => new Date(r.stage_changed_at || r.created_at).getTime(),
     last_email: (r) => (r.meta?.last_email_at ? new Date(r.meta.last_email_at).getTime() : 0),
-    ai: (r) => ({ strong_yes: 4, yes: 3, maybe: 2, no: 1 }[r.recommendation] || 0),
+    ai: (r) => ({ Yes: 3, Maybe: 2, No: 1 }[rowVerdict(r)?.label] || 0),
     score: (r) => r.score_overall || 0,
   }
 
@@ -501,7 +526,11 @@ export default function JobApplicationsWorkspace({
           ? <span className="text-xs text-slate-600">{row.applied_by}</span>
           : <span className="text-slate-300">—</span>
       case 'changed':
-        return <span className="text-xs text-slate-500">{formatDate(row.stage_changed_at)}</span>
+        return (
+          <span className="whitespace-nowrap text-xs text-slate-500" title={row.stage_changed_at ? new Date(row.stage_changed_at).toLocaleString() : ''}>
+            {formatDateTime(row.stage_changed_at)}
+          </span>
+        )
       case 'activity':
         return <span className={`max-w-[130px] truncate text-xs ${m.is_live ? 'font-medium text-brand-600' : 'text-slate-500'}`}>{m.activity || '—'}</span>
       case 'interview':
@@ -527,9 +556,9 @@ export default function JobApplicationsWorkspace({
       case 'email':
         return m.email_count ? <span className="text-xs font-medium text-slate-600">{m.email_count}</span> : <span className="text-slate-300">—</span>
       case 'ai': {
-        const v = AI_VERDICT[row.recommendation]
+        const v = rowVerdict(row)
         if (!v) return <Badge tone="gray">—</Badge>
-        return <Badge tone={v.tone}>{v.label}</Badge>
+        return <Badge tone={v.tone} title="AI verdict — hire signal">{v.label}</Badge>
       }
       case 'cv':
         return <DownloadCvButton candidate={c} />
@@ -603,15 +632,22 @@ export default function JobApplicationsWorkspace({
             <button type="button" className={iconBtn} onClick={() => setColumnsOpen(true)} title="Columns"><Columns3 className="h-3.5 w-3.5" /></button>
             <button
               type="button"
-              className={cx(iconBtn, colFiltered.length === 0 && 'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-slate-500 hover:ring-slate-200/80')}
-              disabled={colFiltered.length === 0}
+              className={cx('inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200/80 transition duration-150 ease-snappy hover:bg-white hover:text-brand-600 hover:ring-brand-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50', sorted.length === 0 && 'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-slate-600 hover:ring-slate-200/80')}
+              disabled={sorted.length === 0}
               onClick={() => {
-                const ok = exportPipelineCsv(colFiltered, roleTitle)
-                toast(ok ? `Exported ${colFiltered.length} candidate${colFiltered.length !== 1 ? 's' : ''}` : 'Export failed — your browser blocked the download', ok ? 'success' : 'error')
+                // Export exactly what's in view (current tab + search + column filters), in the
+                // same sorted order shown in the table — so the CSV matches the screen.
+                const ok = exportPipelineCsv(sorted, roleTitle)
+                toast(
+                  ok
+                    ? `Exported ${sorted.length} candidate${sorted.length !== 1 ? 's' : ''} to CSV`
+                    : 'Export failed — your browser blocked the download',
+                  ok ? 'success' : 'error',
+                )
               }}
-              title={colFiltered.length === 0 ? 'No rows to export' : `Export ${colFiltered.length} to CSV`}
+              title={sorted.length === 0 ? 'No rows to export' : `Download ${sorted.length} candidate${sorted.length !== 1 ? 's' : ''} as a CSV`}
             >
-              <Download className="h-3.5 w-3.5" />
+              <Download className="h-3.5 w-3.5" /> <span className="hidden md:inline">Export</span>
             </button>
           </div>
         </div>
@@ -645,7 +681,7 @@ export default function JobApplicationsWorkspace({
                   const c = row.candidate || {}
                   const p = profileOf(row)
                   const m = row.meta || {}
-                  const v = AI_VERDICT[row.recommendation]
+                  const v = rowVerdict(row)
                   const company = (p.current_company || '').trim()
                   const title = (p.current_title || '').trim()
                   const subtitle = [title, company].filter(Boolean).join(' · ') || c.email || ''

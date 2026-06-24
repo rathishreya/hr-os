@@ -53,3 +53,17 @@ export const LOCATION_SEEDS = [
   'Kolkata', 'Ahmedabad', 'Remote (India)', 'Remote',
 ]
 
+// Seed values for the creatable Team dropdown (sits next to Department). Like the others, the
+// org's own team values from existing roles are merged in at runtime and free-text is allowed.
+export const TEAM_SEEDS = [
+  'Platform', 'Frontend', 'Backend', 'Mobile', 'Infrastructure', 'Data Platform',
+  'Growth', 'Core Product', 'Design Systems', 'Revenue', 'Support', 'Recruiting',
+]
+
+// Whether a requisition is a brand-new headcount or backfilling someone who left.
+export const HIRE_TYPES = [
+  { value: '', label: 'Not set' },
+  { value: 'new', label: 'New' },
+  { value: 'replacement', label: 'Replacement' },
+]
+

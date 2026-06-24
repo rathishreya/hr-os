@@ -49,6 +49,10 @@ def hr_to_dict(hr: models.HiringRequest) -> dict[str, Any]:
         "location": hr.location,
         "work_mode": hr.work_mode,
         "num_openings": hr.num_openings,
+        # Recruiter's 100–200 word brief — the JD prompt treats this as primary context.
+        "role_brief": hr.role_brief or "",
+        "team": hr.team or "",
+        "hire_type": hr.hire_type or "",
     }
 
 

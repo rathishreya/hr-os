@@ -74,6 +74,27 @@ function formatSlot(iso) {
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZoneName: 'short' })
 }
 
+// One-line outcome for a finished round, derived from panel feedback — shown as an at-a-glance
+// chip on the collapsed card so the result is readable without expanding. Returns null until
+// there's a verdict to show.
+function roundOutcome(round) {
+  const fb = Array.isArray(round.panel_feedback) ? round.panel_feedback : []
+  const recs = fb.map((f) => (f.recommendation || '').toLowerCase()).filter(Boolean)
+  if (recs.length) {
+    const positive = recs.filter((r) => r.includes('advance') || r.includes('yes') || r.includes('hire')).length
+    const negative = recs.filter((r) => r.includes('reject') || r.includes('no')).length
+    if (positive && !negative) return { label: 'Advance', tone: 'green' }
+    if (negative && !positive) return { label: 'Reject', tone: 'rose' }
+    return { label: 'Mixed', tone: 'amber' }
+  }
+  const ratings = fb.map((f) => Number(f.rating) || 0).filter(Boolean)
+  if (ratings.length) {
+    const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length
+    return { label: `${avg.toFixed(1)}/5`, tone: avg >= 3.5 ? 'green' : avg >= 2.5 ? 'amber' : 'rose' }
+  }
+  return null
+}
+
 function PanelistInput({ panelists, suggestions, onChange }) {
   const [draft, setDraft] = useState('')
 
@@ -262,6 +283,7 @@ function RoundCard({ round, panelSuggestions, onUpdated, onDeleted, app }) {
   const [form, setForm] = useState(null)
 
   const sm = statusMeta(round.status)
+  const outcome = roundOutcome(round)
 
   async function save() {
     setBusy(true)
@@ -319,8 +341,10 @@ function RoundCard({ round, panelSuggestions, onUpdated, onDeleted, app }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Round {round.round_number}</span>
             <span className="font-medium text-slate-900">{typeLabel(round.interview_type)}</span>
             <Badge tone={sm.tone}>{sm.label}</Badge>
+            {outcome && <Badge tone={outcome.tone} title="Outcome from panel feedback">{outcome.label}</Badge>}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
             <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{formatSlot(round.scheduled_at)}</span>

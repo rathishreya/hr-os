@@ -91,6 +91,7 @@ export default function JobsListTable({ rows, onStatusChange }) {
   const { toast } = useToast()
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' })
   const [updatingId, setUpdatingId] = useState(null)
+  const [hireTypeId, setHireTypeId] = useState(null)
   const filterCtl = useColumnFilters()
 
   const filtered = useMemo(
@@ -168,6 +169,24 @@ export default function JobsListTable({ rows, onStatusChange }) {
     }
   }
 
+  // Inline edit of New vs Replacement. Routed through the role-meta endpoint (the plain role
+  // PATCH doesn't persist hire_type), then refresh the list so the row reflects the saved value.
+  async function changeHireType(row, hire_type, e) {
+    e.stopPropagation()
+    if ((row.hire_type || '') === hire_type) return
+    setHireTypeId(row.id)
+    try {
+      await api.updateRoleMeta(row.id, { hire_type })
+      onStatusChange?.()
+      const label = hire_type === 'replacement' ? 'replacement hire' : hire_type === 'new' ? 'new hire' : 'unset'
+      toast(`Job #${row.id} hire type set to ${label}`)
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      setHireTypeId(null)
+    }
+  }
+
   function SortHead({ label, col, filterKey }) {
     const active = sort.key === col
     return (
@@ -200,7 +219,7 @@ export default function JobsListTable({ rows, onStatusChange }) {
               </th>
               <SortHead label="Job Title" col="position" filterKey="position" />
               <SortHead label="Department" col="department" filterKey="department" />
-              <SortHead label="Experience" col="level_label" filterKey="level_label" />
+              <SortHead label="Level" col="level_label" filterKey="level_label" />
               <SortHead label="Location" col="location" filterKey="location" />
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Application</th>
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Shortlisted</th>
@@ -290,7 +309,19 @@ export default function JobsListTable({ rows, onStatusChange }) {
                   <td className="max-w-[140px] truncate px-3 py-2.5 text-xs text-slate-500">{row.hiring_manager || '—'}</td>
                   <td className="max-w-[140px] truncate px-3 py-2.5 text-xs text-slate-500">{row.recruiter || '—'}</td>
                   <td className="whitespace-nowrap px-2 py-2.5 text-xs text-slate-600">{row.employment_type || '—'}</td>
-                  <td className="whitespace-nowrap px-2 py-2.5 text-xs text-slate-600">{row.hire_type || '—'}</td>
+                  <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs capitalize disabled:cursor-not-allowed disabled:opacity-60"
+                      value={row.hire_type || ''}
+                      disabled={hireTypeId === row.id}
+                      onChange={(e) => changeHireType(row, e.target.value, e)}
+                      title="Is this a new role or backfilling someone who left?"
+                    >
+                      <option value="">—</option>
+                      <option value="new">New</option>
+                      <option value="replacement">Replacement</option>
+                    </select>
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-xs text-slate-500">
                     {fmtDate(row.created_at)}
                   </td>

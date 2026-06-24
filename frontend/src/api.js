@@ -112,6 +112,8 @@ export const api = {
   deleteRole: (id) => req(`/hiring-requests/${id}`, { method: 'DELETE' }),
   // Lifecycle-guarded status change (closed = locked; on-hold older than 3 months → paused).
   changeRoleStatus: (hrId, status) => req(`/jobs/lifecycle/${hrId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+  // Persist role-level meta the core role PATCH drops: { hire_type?, team?, role_brief? }.
+  updateRoleMeta: (id, body) => req(`/jobs/lifecycle/${id}/meta`, { method: 'PATCH', body: JSON.stringify(body) }),
   // Upload a JD file (PDF/DOCX/TXT) → structured fields to prefill the create-job form.
   parseJd: (formData) =>
     fetch(BASE + '/hiring-requests/parse-jd', { method: 'POST', headers: authHeaders(), body: formData }).then(async (r) => {
@@ -213,6 +215,7 @@ export const api = {
   deleteAssessment: (id) => req(`/assessments/${id}`, { method: 'DELETE' }),
   assessmentFileUrl: (id) => `${BASE}/assessments/${id}/file`,
   assessmentFileByIdUrl: (id, fileId) => `${BASE}/assessments/${id}/files/${fileId}`,
+  deleteAssessmentFile: (id, fileId) => req(`/assessments/${id}/files/${fileId}`, { method: 'DELETE' }),
   // Auth-gated file fetch (Bearer header) → Blob the caller can open/download.
   fetchAssessmentFile: async (id) => {
     const r = await fetch(BASE + `/assessments/${id}/file`, { headers: authHeaders() })

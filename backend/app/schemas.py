@@ -31,6 +31,8 @@ class HiringRequestCreate(BaseModel):
     application_questions: list[dict[str, Any]] = Field(default_factory=list)
     interview_types: list[str] = Field(default_factory=list)
     role_brief: str = ""
+    team: str = ""
+    hire_type: str = ""  # new | replacement
 
 
 class SuggestSkillsIn(BaseModel):
@@ -151,6 +153,7 @@ class ApplicationOut(BaseModel):
     application_answers: list[Any] = Field(default_factory=list)
     applied_by: str = ""
     scored_at: datetime | None
+    stage_changed_at: datetime | None = None
     created_at: datetime
 
     @field_validator("application_answers", mode="before")
@@ -189,6 +192,8 @@ class HiringRequestUpdate(BaseModel):
     application_questions: list[dict[str, Any]] | None = None
     interview_types: list[str] | None = None
     role_brief: str | None = None
+    team: str | None = None
+    hire_type: str | None = None
 
 
 # ---------- Publish / distribution ----------

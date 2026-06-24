@@ -37,6 +37,8 @@ class HiringRequest(Base):
     hiring_manager: Mapped[str] = mapped_column(String(160), default="")
     recruiter: Mapped[str] = mapped_column(String(160), default="")
     num_openings: Mapped[int] = mapped_column(Integer, default=1)
+    team: Mapped[str] = mapped_column(String(120), default="")
+    hire_type: Mapped[str] = mapped_column(String(20), default="")  # new | replacement
     status: Mapped[str] = mapped_column(String(30), default="draft")
     # When `status` last changed — drives the lifecycle rule: an on-hold role can be reopened
     # within 3 months, after which it is auto-paused. NULL on legacy rows.
@@ -159,6 +161,8 @@ class Application(Base):
     fit_label: Mapped[str] = mapped_column(String(30), default="")
     human_override: Mapped[dict] = mapped_column(JSON, default=dict)
     scored_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # When `stage` last changed — powers the pipeline "Changed" date (created_at/scored_at don't move).
+    stage_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 

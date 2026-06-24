@@ -88,6 +88,38 @@ def change_role_status(hr_id: int, status: str = Body(..., embed=True), db: Sess
     return hr
 
 
+# Role-level meta the plain hiring-request PATCH endpoint doesn't currently apply. The jobs
+# list edits these inline (New/Replacement dropdown, team) and the edit modal saves the brief,
+# so expose a small guarded patch here to actually persist them. Whitelisted to avoid letting
+# this become a back-door for arbitrary column writes.
+_ROLE_META_FIELDS = {"hire_type", "team", "role_brief"}
+_HIRE_TYPES = {"new", "replacement", ""}
+
+
+@router.patch("/lifecycle/{hr_id}/meta", response_model=schemas.HiringRequestOut)
+def update_role_meta(hr_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Persist role-level meta fields (hire_type / team / role_brief) edited from the jobs list
+    and the edit-job modal. Only whitelisted keys are applied; unknown keys are ignored."""
+    hr = db.get(models.HiringRequest, hr_id)
+    if not hr:
+        raise HTTPException(404, "Hiring request not found")
+    changed: list[str] = []
+    for key in _ROLE_META_FIELDS & set(body.keys()):
+        val = body.get(key)
+        val = "" if val is None else str(val).strip()
+        if key == "hire_type":
+            val = val.lower()
+            if val not in _HIRE_TYPES:
+                raise HTTPException(422, "hire_type must be 'new' or 'replacement'")
+        setattr(hr, key, val)
+        changed.append(key)
+    if changed:
+        log(db, "hiring_request.meta_updated", "hiring_request", hr.id, {"fields": sorted(changed)})
+        db.commit()
+        db.refresh(hr)
+    return hr
+
+
 @router.get("", response_model=list[schemas.JobOut])
 def list_jobs(db: Session = Depends(get_db)):
     return db.scalars(select(models.Job).order_by(models.Job.created_at.desc())).all()
