@@ -8,7 +8,7 @@ const STAGE_LABELS = {
   rejected: 'Rejected',
 }
 
-const STAGE_ORDER = ['applied', 'screening', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
+const STAGE_ORDER = ['applied', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
 
 export default function FunnelChart({ funnel = {} }) {
   const entries = STAGE_ORDER.map((s) => ({ stage: s, count: funnel[s] || 0 })).filter((e) => e.count > 0)

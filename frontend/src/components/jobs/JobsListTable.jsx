@@ -224,7 +224,7 @@ export default function JobsListTable({ rows, onStatusChange }) {
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Application</th>
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Shortlisted</th>
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Interview</th>
-              <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Pre-Offer</th>
+              <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Offer</th>
               <SortHead label="Exp (yrs)" col="yoe_max" filterKey="yoe" />
               <SortHead label="Min Salary" col="salary_min" filterKey="salary_min" />
               <SortHead label="Max Salary" col="salary_max" filterKey="salary_max" />
@@ -296,7 +296,7 @@ export default function JobsListTable({ rows, onStatusChange }) {
                     <PipelinePill count={f.interview || 0} roleId={row.id} view="applications" stage="interview" title="View candidates in the interview stage" />
                   </td>
                   <td className="px-2 py-2.5 text-center">
-                    <PipelinePill count={f.pre_offer || 0} roleId={row.id} view="positions" stage="offer" title="View pre-offer candidates" />
+                    <PipelinePill count={f.pre_offer || 0} roleId={row.id} view="positions" stage="offer" title="View offer candidates" />
                   </td>
                   <td className="whitespace-nowrap px-2 py-2.5 text-center tabular-nums text-slate-600">
                     {row.yoe_min || row.yoe_max ? `${row.yoe_min || 0}–${row.yoe_max || '—'}` : '—'}

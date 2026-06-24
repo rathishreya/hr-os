@@ -11,7 +11,7 @@ import { usePageTitle } from '../hooks/usePageTitle'
 
 // ── brand palette ───────────────────────────────────────────────────────────
 const PIE_COLORS = ['#7c3aed', '#d946ef', '#a855f7', '#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#f43f5e']
-const STAGE_ORDER = ['applied', 'screening', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
+const STAGE_ORDER = ['applied', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
 const STAGE_LABEL = { applied: 'Applied', screening: 'Screening', shortlisted: 'Shortlisted', interview: 'Interview', offer: 'Offer', hired: 'Hired', rejected: 'Rejected' }
 const STAGE_COLOR = { applied: '#c4b5fd', screening: '#a78bfa', shortlisted: '#8b5cf6', interview: '#7c3aed', offer: '#6d28d9', hired: '#10b981', rejected: '#f43f5e' }
 const DIFF_COLOR = { 'very hard': '#f43f5e', hard: '#f59e0b', moderate: '#0ea5e9', easy: '#10b981', unrated: '#94a3b8' }
@@ -126,7 +126,7 @@ export default function Analytics() {
 
   // Pipeline conversion by stage: how many applications reached at least each stage. Shown both as
   // a bar (volume) and as a pass-through % vs the prior stage in the tooltip-friendly label.
-  const REACH_ORDER = ['applied', 'screening', 'shortlisted', 'interview', 'offer', 'hired']
+  const REACH_ORDER = ['applied', 'shortlisted', 'interview', 'offer', 'hired']
   const REACH_LABEL = { applied: 'Applied', screening: 'Screened', shortlisted: 'Shortlisted', interview: 'Interview', offer: 'Offer', hired: 'Hired' }
   const reachData = data ? REACH_ORDER
     .map((s, i, arr) => {

@@ -20,7 +20,7 @@ import { useColumnFilters, ColumnFilter, distinctValues } from '../tableFilters'
 import { useToast } from '../Toast'
 import { api } from '../../api'
 
-const STAGES = ['applied', 'screening', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
+const STAGES = ['applied', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
 const STAGE_LABELS = {
   applied: 'Applied', screening: 'Screening', shortlisted: 'Shortlisted',
   interview: 'Interview', offer: 'Offer', hired: 'Hired', rejected: 'Rejected',

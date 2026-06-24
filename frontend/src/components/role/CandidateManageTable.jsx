@@ -11,7 +11,7 @@ import AddFromPool from './AddFromPool'
 import CandidateManageDrawer from './CandidateManageDrawer'
 import PipelineStats from './PipelineStats'
 
-const STAGES = ['applied', 'screening', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
+const STAGES = ['applied', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
 
 // Bulk-apply a set of interview rounds to many selected candidates at once (F8).
 // Mounted only while open (see call site), so state initializes from props without an effect.
@@ -86,7 +86,7 @@ function BulkRoundsModal({ onClose, applicationIds, defaultTypes, onDone }) {
   )
 }
 const STAGE_GROUPS = {
-  application: ['applied', 'screening'],
+  application: ['applied'],
 }
 const STAGE_LABELS = {
   applied: 'Applied', screening: 'Screening', shortlisted: 'Shortlisted',

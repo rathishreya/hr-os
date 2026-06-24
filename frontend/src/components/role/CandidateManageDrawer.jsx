@@ -15,7 +15,7 @@ import {
   OVERLAY_CLASSES,
 } from '../../hooks/useDrawerPreferences'
 
-const STAGES = ['applied', 'screening', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
+const STAGES = ['applied', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
 
 // Card customization was removed — the drawer now renders with these fixed defaults (all tabs,
 // medium width, light overlay, all overview sections, formatted resume first).

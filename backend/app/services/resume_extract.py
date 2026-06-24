@@ -261,9 +261,46 @@ def _parse_job_line(line: str) -> dict[str, str] | None:
     return None
 
 
+# Prose/verb signals that mark a string as a sentence (a résumé bullet), not an employer name.
+_COMPANY_PROSE = re.compile(
+    r"%|\b(with|enabling|enforcing|building|using|developed|implemented|implementing|"
+    r"reducing|increasing|achieved|achieving|responsible|worked|created|creating|"
+    r"designed|managed|managing|leading|ensuring|eligibility|automated|integration|"
+    r"system|systems|standards|checkout|across|within|through)\b",
+    re.I,
+)
+
+
+def _looks_like_company(name: str) -> bool:
+    """A real employer name is short and proper-noun-ish — reject prose bullets that the line
+    parser sometimes mistakes for a company (e.g. 'Checkout with 100% system – enforcing …')."""
+    s = (name or "").strip().strip(".,;:–—- ").strip()
+    if not s or len(s) > 60:
+        return False
+    words = s.split()
+    if len(words) > 7 or s.count(",") >= 2:
+        return False
+    if _COMPANY_PROSE.search(s):
+        return False
+    if not re.search(r"[A-Z]", s):  # needs at least one capitalised token / acronym
+        return False
+    # A mostly-lowercase multi-word string reads as a sentence, not a name.
+    lower = sum(1 for w in words if w[:1].islower())
+    if len(words) > 2 and lower > len(words) / 2:
+        return False
+    return True
+
+
+def _clean_company(name: str) -> str:
+    s = (name or "").strip().strip(".,;:–—- ").strip()
+    return s if _looks_like_company(s) else ""
+
+
 def _best_company(companies: list[dict[str, str]]) -> dict[str, str]:
+    # Prefer the first entry whose name actually looks like an employer; fall back to the first
+    # entry (still useful for the title) so we never invent a company.
     for c in companies:
-        if (c.get("name") or "").strip():
+        if _looks_like_company(c.get("name") or ""):
             return c
     return companies[0] if companies else {}
 
@@ -384,7 +421,7 @@ def parse_resume_text(text: str, *, fallback_name: str = "", fallback_source: st
         "github": github_m.group(0) if github_m else "",
         "skills": skills,
         "total_yoe": _years_from_text(text),
-        "current_company": co0.get("name") or "",
+        "current_company": _clean_company(co0.get("name")),
         "current_title": co0.get("title") or "",
         "companies": companies,
         "education": education,
@@ -475,13 +512,15 @@ def table_fields(parsed: dict[str, Any], candidate: Any) -> dict[str, Any]:
     edu_list = parsed.get("education") or []
     edu0 = edu_list[0] if edu_list else {}
     companies = parsed.get("companies") or []
-    co0 = companies[0] if companies else {}
+    co0 = _best_company(companies)
     return {
         "phone": parsed.get("phone") or getattr(candidate, "phone", "") or "",
         "linkedin": parsed.get("linkedin") or "",
         "github": parsed.get("github") or "",
         "location": parsed.get("location") or "",
-        "current_company": parsed.get("current_company") or co0.get("name") or "",
+        # Sanitise so a wrongly-parsed prose bullet never shows as the employer (cleans existing
+        # candidates at display time too, no re-parse needed).
+        "current_company": _clean_company(parsed.get("current_company") or co0.get("name")),
         "current_title": parsed.get("current_title") or co0.get("title") or "",
         "education_degree": edu0.get("degree") or "",
         "education_institution": edu0.get("institution") or "",

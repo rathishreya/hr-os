@@ -10,7 +10,7 @@ import EmailPanel from './EmailPanel'
 import OfferPanel from './OfferPanel'
 import OnboardingPanel from './OnboardingPanel'
 
-const STAGES = ['applied', 'screening', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
+const STAGES = ['applied', 'shortlisted', 'interview', 'offer', 'hired', 'rejected']
 const REC_TONE = { strong_yes: 'green', yes: 'green', maybe: 'amber', no: 'rose' }
 const SCORE_RING = {
   green: 'ring-emerald-200 bg-emerald-50 text-emerald-700',
