@@ -35,7 +35,7 @@
   --color-muted: #64748b;
   --color-border: #e2e8f0;
   --radius-card: 1rem;
-  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+  /* --shadow-card lives in @theme (the layered, slate-tinted elevation) — single source. */
 }
 
 html, body, #root {

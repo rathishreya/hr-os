@@ -16,16 +16,18 @@ const STEPS = [
 
 const DIFF_TONE = { 'very hard': 'rose', hard: 'amber', moderate: 'blue', easy: 'green' }
 
-function Stat({ label, value, icon: Icon, from, to }) {
+// Calm, consistent KPI — one restrained brand accent, not a rainbow of gradient tiles (the
+// product brief explicitly avoids "gradient-metric hero cards"). Label leads; the figure carries.
+function Stat({ label, value, icon: Icon }) {
   return (
-    <Card className="p-4 transition hover:shadow-md">
-      <div className="flex items-center gap-2.5">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm" style={{ backgroundImage: `linear-gradient(135deg, ${from}, ${to})` }}>
-          <Icon className="h-5 w-5" strokeWidth={2.2} />
+    <Card hover className="p-4">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</span>
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-50 text-brand-600 ring-1 ring-inset ring-brand-100">
+          <Icon className="h-4 w-4" strokeWidth={2} />
         </span>
-        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</div>
       </div>
-      <div className="mt-2.5 text-3xl font-bold tabular-nums tracking-tight text-slate-900">{value}</div>
+      <div className="mt-2.5 text-[1.75rem] font-bold leading-none tabular-nums tracking-tight text-slate-900">{value}</div>
     </Card>
   )
 }
@@ -111,11 +113,11 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 gap-4 md:grid-cols-5">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-24" />)}</div>
       ) : data && (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-          <Stat label="Open Jobs" value={data.total_roles} icon={Briefcase} from="#7c3aed" to="#d946ef" />
-          <Stat label="Candidates" value={data.total_candidates} icon={Users} from="#0ea5e9" to="#6366f1" />
-          <Stat label="Applications" value={data.total_applications} icon={TrendingUp} from="#a855f7" to="#7c3aed" />
-          <Stat label="Avg AI Score" value={data.avg_score} icon={Star} from="#f59e0b" to="#f97316" />
-          <Stat label="Conversion" value={`${data.conversion_rate}%`} icon={Percent} from="#10b981" to="#14b8a6" />
+          <Stat label="Open Jobs" value={data.total_roles} icon={Briefcase} />
+          <Stat label="Candidates" value={data.total_candidates} icon={Users} />
+          <Stat label="Applications" value={data.total_applications} icon={TrendingUp} />
+          <Stat label="Avg AI Score" value={data.avg_score} icon={Star} />
+          <Stat label="Conversion" value={`${data.conversion_rate}%`} icon={Percent} />
         </div>
       )}
 

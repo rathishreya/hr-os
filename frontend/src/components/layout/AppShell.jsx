@@ -6,14 +6,42 @@ import { useAuth } from '../../contexts/auth'
 
 export const NAV = [
   { to: '/', label: 'Home', end: true, icon: Home },
-  { to: '/roles', label: 'Jobs', icon: Briefcase },
-  { to: '/distribution', label: 'Distribution', icon: Megaphone },
-  { to: '/candidates', label: 'Talent Pool', icon: Users },
-  { to: '/assessments', label: 'Assessments', icon: ClipboardList },
-  { to: '/offer-docs', label: 'Offer & Docs', icon: FileText },
-  { to: '/onboarding', label: 'Onboarding', icon: Rocket },
-  { to: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { to: '/roles', label: 'Jobs', icon: Briefcase, group: 'Recruiting' },
+  { to: '/distribution', label: 'Distribution', icon: Megaphone, group: 'Recruiting' },
+  { to: '/candidates', label: 'Talent Pool', icon: Users, group: 'Recruiting' },
+  { to: '/assessments', label: 'Assessments', icon: ClipboardList, group: 'Recruiting' },
+  { to: '/offer-docs', label: 'Offer & Docs', icon: FileText, group: 'Hiring' },
+  { to: '/onboarding', label: 'Onboarding', icon: Rocket, group: 'Hiring' },
+  { to: '/analytics', label: 'Analytics', icon: BarChart3, group: 'Insights' },
 ]
+
+// Workflow phases for the sidebar — turns a flat 8-item list into scannable sections.
+const NAV_GROUPS = [...new Set(NAV.filter((n) => n.group).map((n) => n.group))]
+
+function NavRow({ n, onNavigate }) {
+  const Icon = n.icon
+  return (
+    <NavLink
+      to={n.to}
+      end={n.end}
+      onClick={onNavigate}
+      className={({ isActive }) =>
+        `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${
+          isActive
+            ? 'bg-brand-50 font-semibold text-brand-700 shadow-[inset_0_0_0_1px] shadow-brand-100'
+            : 'font-medium text-slate-600 hover:bg-slate-100/70 hover:text-slate-900'
+        }`
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <Icon className={`h-4 w-4 shrink-0 transition-opacity duration-150 ${isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-90'}`} />
+          {n.label}
+        </>
+      )}
+    </NavLink>
+  )
+}
 
 function SidebarContent({ onNavigate }) {
   const { user, logout } = useAuth()
@@ -28,31 +56,15 @@ function SidebarContent({ onNavigate }) {
       </div>
 
       <nav className="flex flex-col gap-0.5">
-        {NAV.map((n) => {
-          const Icon = n.icon
-          return (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              end={n.end}
-              onClick={onNavigate}
-              className={({ isActive }) =>
-                `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${
-                  isActive
-                    ? 'bg-brand-50 font-semibold text-brand-700 shadow-[inset_0_0_0_1px] shadow-brand-100'
-                    : 'font-medium text-slate-500 hover:bg-slate-100/70 hover:text-slate-900'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <Icon className={`h-4 w-4 shrink-0 transition-opacity duration-150 ${isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-90'}`} />
-                  {n.label}
-                </>
-              )}
-            </NavLink>
-          )
-        })}
+        {NAV.filter((n) => !n.group).map((n) => <NavRow key={n.to} n={n} onNavigate={onNavigate} />)}
+        {NAV_GROUPS.map((g) => (
+          <div key={g} className="mt-5 first:mt-2">
+            <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{g}</div>
+            <div className="flex flex-col gap-0.5">
+              {NAV.filter((n) => n.group === g).map((n) => <NavRow key={n.to} n={n} onNavigate={onNavigate} />)}
+            </div>
+          </div>
+        ))}
       </nav>
 
       <div className="mt-auto space-y-3 border-t border-slate-100 pt-4">

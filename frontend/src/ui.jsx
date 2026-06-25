@@ -171,12 +171,13 @@ export function Tabs({ tabs, active, onChange }) {
           key={t.id}
           type="button"
           onClick={() => onChange(t.id)}
+          // -mb-px lets the active 2px underline sit flush on the container's 1px border.
           className={cx(
-            'shrink-0 px-4 py-2.5 text-sm font-medium transition-colors duration-150 ease-snappy',
+            'shrink-0 -mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors duration-150 ease-snappy',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 rounded-t-lg',
             active === t.id
-              ? 'border-b-2 border-brand-600 text-slate-900'
-              : 'text-slate-400 hover:text-slate-700',
+              ? 'border-brand-600 text-slate-900'
+              : 'border-transparent text-slate-500 hover:text-slate-800',
           )}
         >
           {t.label}
