@@ -216,6 +216,20 @@ class SignupRequest(BaseModel):
     password: str = Field(min_length=8, max_length=200)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(max_length=200)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(max_length=1000)
+    password: str = Field(min_length=8, max_length=200)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: str = Field(min_length=8, max_length=200)
+
+
 # ---------- Users & roles ----------
 ROLE_CHOICES = ["recruiter", "manager", "admin", "panellist"]
 

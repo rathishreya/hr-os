@@ -73,6 +73,9 @@ export const api = {
   signup: (name, email, password) => req('/auth/signup', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
   canSignup: () => req('/auth/can-signup'),
   me: () => req('/auth/me'),
+  forgotPassword: (email) => req('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (token, password) => req('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
+  changePassword: (current_password, new_password) => req('/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password, new_password }) }),
 
   aiStatus: () => req('/ai-status'),
   company: () => req('/company'),

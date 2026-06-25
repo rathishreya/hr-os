@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Mail, Users as UsersIcon, GraduationCap, Plus, Trash2, RefreshCw, Eye, EyeOff,
   ChevronDown, Check, Phone, Building2, MapPin, Globe, Pencil, Power,
-  Send, CheckCircle2, AlertTriangle, XCircle, Download,
+  Send, CheckCircle2, AlertTriangle, XCircle, Download, KeyRound,
 } from 'lucide-react'
 import { api } from '../api'
 import { Card, Button, Badge, Spinner, Modal, Field, inputClass, Tabs, PageHeader, EmptyState, IconButton, Avatar } from '../ui'
@@ -430,7 +430,51 @@ function EmailTab() {
   )
 }
 
+// Any signed-in user can change their OWN password here (needs the current one).
+function AccountTab() {
+  const { toast } = useToast()
+  const [cur, setCur] = useState('')
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function save(e) {
+    e.preventDefault()
+    if (next.length < 8) { toast('New password must be at least 8 characters.', 'error'); return }
+    if (next !== confirm) { toast('New passwords don’t match.', 'error'); return }
+    setBusy(true)
+    try {
+      await api.changePassword(cur, next)
+      toast('Password changed')
+      setCur(''); setNext(''); setConfirm('')
+    } catch (e2) { toast(e2.message, 'error') } finally { setBusy(false) }
+  }
+
+  return (
+    <Card className="max-w-md p-5">
+      <div className="mb-1 flex items-center gap-2">
+        <KeyRound className="h-4 w-4 text-brand-500" />
+        <h3 className="text-sm font-semibold text-slate-800">Change your password</h3>
+      </div>
+      <p className="mb-4 text-xs text-slate-500">Forgot it instead? Sign out and use “Forgot password?” on the login screen.</p>
+      <form onSubmit={save} className="space-y-3">
+        <Field label="Current password">
+          <input className={inputClass} type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} />
+        </Field>
+        <Field label="New password">
+          <input className={inputClass} type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="At least 8 characters" />
+        </Field>
+        <Field label="Confirm new password">
+          <input className={inputClass} type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        </Field>
+        <Button type="submit" disabled={busy || !cur || !next}>{busy ? <Spinner /> : <><KeyRound className="h-4 w-4" /> Update password</>}</Button>
+      </form>
+    </Card>
+  )
+}
+
 const TABS = [
+  { id: 'account', label: 'My account' },
   { id: 'users', label: 'Users & roles' },
   { id: 'tpos', label: 'Placement cells & hiring vendors' },
   { id: 'email', label: 'Email' },
@@ -439,11 +483,12 @@ const TABS = [
 
 export default function Settings() {
   usePageTitle('Settings')
-  const [tab, setTab] = useState('users')
+  const [tab, setTab] = useState('account')
   return (
     <div className="space-y-6">
       <PageHeader title="Settings" subtitle="Manage your team, placement cells & hiring vendors, and workspace configuration." />
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      {tab === 'account' && <AccountTab />}
       {tab === 'users' && <UsersTab />}
       {tab === 'tpos' && <TposTab />}
       {tab === 'email' && <EmailTab />}

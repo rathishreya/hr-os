@@ -72,3 +72,40 @@ def decode_token(token: str, secret: str) -> int | None:
         return int(payload["uid"])
     except Exception:
         return None
+
+
+# ── Password-reset tokens ──
+# Short-lived, single-use links for "forgot password". The signing key folds in the user's
+# CURRENT password_hash, so the moment the password changes (a successful reset, or any other
+# update) every outstanding reset link for that user stops validating — one-time use, for free.
+
+def create_reset_token(user_id: int, password_hash: str, secret: str, ttl_minutes: int = 60) -> str:
+    payload = {"uid": int(user_id), "purpose": "reset", "exp": int(time.time()) + ttl_minutes * 60}
+    body = _b64e(json.dumps(payload, separators=(",", ":")).encode())
+    key = f"{secret}|reset|{password_hash or ''}".encode()
+    sig = _b64e(hmac.new(key, body.encode(), hashlib.sha256).digest())
+    return f"{body}.{sig}"
+
+
+def reset_token_uid(token: str) -> int | None:
+    """Parse the (UNVERIFIED) uid from a reset token, so the caller can load that user and verify
+    the signature with their current password_hash. Never trust this without verify_reset_token."""
+    try:
+        body, _ = token.split(".", 1)
+        p = json.loads(_b64d(body))
+        return int(p["uid"]) if p.get("purpose") == "reset" else None
+    except Exception:
+        return None
+
+
+def verify_reset_token(token: str, password_hash: str, secret: str) -> int | None:
+    try:
+        body, sig = token.split(".", 1)
+        p = json.loads(_b64d(body))
+        if p.get("purpose") != "reset" or int(p.get("exp", 0)) < int(time.time()):
+            return None
+        key = f"{secret}|reset|{password_hash or ''}".encode()
+        expected = _b64e(hmac.new(key, body.encode(), hashlib.sha256).digest())
+        return int(p["uid"]) if hmac.compare_digest(sig, expected) else None
+    except Exception:
+        return None

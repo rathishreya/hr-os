@@ -15,6 +15,7 @@ import Settings from './pages/Settings'
 import Assessments from './pages/Assessments'
 import OfferDocs from './pages/OfferDocs'
 import Onboarding from './pages/Onboarding'
+import ResetPassword from './pages/ResetPassword'
 import NotFound from './pages/NotFound'
 
 // Heavy / standalone pages — loaded on demand.
@@ -61,6 +62,8 @@ export default function App() {
         <Routes>
           {/* Public candidate interview — no recruiter shell, no login */}
           <Route path="/interview/:appId" element={<Suspense fallback={<Loading />}><VideoInterview /></Suspense>} />
+          {/* Public password-reset link target (no login) */}
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/*" element={<RequireAuth><AppRoutes /></RequireAuth>} />
         </Routes>
       </AuthProvider>
