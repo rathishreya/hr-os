@@ -6,17 +6,14 @@ import { useAuth } from '../../contexts/auth'
 
 export const NAV = [
   { to: '/', label: 'Home', end: true, icon: Home },
-  { to: '/roles', label: 'Jobs', icon: Briefcase, group: 'Recruiting' },
-  { to: '/distribution', label: 'Distribution', icon: Megaphone, group: 'Recruiting' },
-  { to: '/candidates', label: 'Talent Pool', icon: Users, group: 'Recruiting' },
-  { to: '/assessments', label: 'Assessments', icon: ClipboardList, group: 'Recruiting' },
-  { to: '/offer-docs', label: 'Offer & Docs', icon: FileText, group: 'Hiring' },
-  { to: '/onboarding', label: 'Onboarding', icon: Rocket, group: 'Hiring' },
-  { to: '/analytics', label: 'Analytics', icon: BarChart3, group: 'Insights' },
+  { to: '/roles', label: 'Jobs', icon: Briefcase },
+  { to: '/distribution', label: 'Distribution', icon: Megaphone },
+  { to: '/candidates', label: 'Talent Pool', icon: Users },
+  { to: '/assessments', label: 'Assessments', icon: ClipboardList },
+  { to: '/offer-docs', label: 'Offer & Docs', icon: FileText },
+  { to: '/onboarding', label: 'Onboarding', icon: Rocket },
+  { to: '/analytics', label: 'Analytics', icon: BarChart3 },
 ]
-
-// Workflow phases for the sidebar — turns a flat 8-item list into scannable sections.
-const NAV_GROUPS = [...new Set(NAV.filter((n) => n.group).map((n) => n.group))]
 
 function NavRow({ n, onNavigate }) {
   const Icon = n.icon
@@ -56,15 +53,7 @@ function SidebarContent({ onNavigate }) {
       </div>
 
       <nav className="flex flex-col gap-0.5">
-        {NAV.filter((n) => !n.group).map((n) => <NavRow key={n.to} n={n} onNavigate={onNavigate} />)}
-        {NAV_GROUPS.map((g) => (
-          <div key={g} className="mt-5 first:mt-2">
-            <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{g}</div>
-            <div className="flex flex-col gap-0.5">
-              {NAV.filter((n) => n.group === g).map((n) => <NavRow key={n.to} n={n} onNavigate={onNavigate} />)}
-            </div>
-          </div>
-        ))}
+        {NAV.map((n) => <NavRow key={n.to} n={n} onNavigate={onNavigate} />)}
       </nav>
 
       <div className="mt-auto space-y-3 border-t border-slate-100 pt-4">
