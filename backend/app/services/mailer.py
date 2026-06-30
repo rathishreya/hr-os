@@ -119,10 +119,49 @@ def render_draft(
     return s, b, False
 
 
-def _smtp_send(to_email: str, to_name: str, subject: str, body: str, ics: str | None = None) -> None:
+def resolve_identity(user: "models.User | None" = None) -> dict:
+    """Decide which mailbox sends an email.
+
+    Per-user mailbox (chosen design): when the logged-in user has stored their own Gmail/
+    Workspace App Password, authenticate as THEIR login email and send FROM it — a true
+    send-from. Otherwise fall back to the shared workspace SMTP account, but still stamp the
+    logged-in user as the From-name + Reply-To so replies reach the right person.
+    """
+    has_personal = bool(user and (user.smtp_password or "").strip() and (user.email or "").strip())
+    if has_personal:
+        host = settings.SMTP_HOST or "smtp.gmail.com"
+        return {
+            "host": host,
+            "port": settings.SMTP_PORT or 587,
+            "starttls": settings.SMTP_STARTTLS,
+            "smtp_user": user.email,
+            "smtp_password": user.smtp_password,
+            "from_email": user.email,
+            "from_name": user.name or settings.EMAIL_FROM_NAME,
+            "reply_to": user.email,
+            "configured": bool(host),
+            "personal": True,
+        }
+    return {
+        "host": settings.SMTP_HOST,
+        "port": settings.SMTP_PORT,
+        "starttls": settings.SMTP_STARTTLS,
+        "smtp_user": settings.SMTP_USER,
+        "smtp_password": settings.SMTP_PASSWORD,
+        "from_email": settings.EMAIL_FROM,
+        "from_name": (user.name if user else "") or settings.EMAIL_FROM_NAME,
+        "reply_to": (user.email if user else ""),
+        "configured": bool(settings.SMTP_HOST),
+        "personal": False,
+    }
+
+
+def _smtp_send(identity: dict, to_email: str, to_name: str, subject: str, body: str, ics: str | None = None) -> None:
     msg = MimeEmail()
-    msg["From"] = f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM}>"
+    msg["From"] = f"{identity['from_name']} <{identity['from_email']}>"
     msg["To"] = f"{to_name} <{to_email}>" if to_name else to_email
+    if identity.get("reply_to") and identity["reply_to"].lower() != (identity.get("from_email") or "").lower():
+        msg["Reply-To"] = identity["reply_to"]
     msg["Subject"] = subject
     msg.set_content(body)
     if ics:
@@ -132,11 +171,11 @@ def _smtp_send(to_email: str, to_name: str, subject: str, body: str, ics: str | 
             filename="invite.ics", params={"method": "REQUEST", "name": "invite.ics"},
         )
 
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as server:
-        if settings.SMTP_STARTTLS:
+    with smtplib.SMTP(identity["host"], identity["port"], timeout=30) as server:
+        if identity["starttls"]:
             server.starttls(context=ssl.create_default_context())
-        if settings.SMTP_USER:
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        if identity["smtp_user"]:
+            server.login(identity["smtp_user"], identity["smtp_password"])
         server.send_message(msg)
 
 
@@ -153,10 +192,15 @@ def compose(
     candidate_id: int | None = None,
     application_id: int | None = None,
     ics: str | None = None,
+    sender_user: "models.User | None" = None,
 ) -> models.EmailMessage:
     """Build (optionally with AI), send-or-log, and persist an email. `ics`, if given, is
-    attached as a calendar invite (.ics)."""
-    ctx = {"name": to_name, "role": role, "company": settings.COMPANY_NAME, "sender": settings.EMAIL_FROM_NAME}
+    attached as a calendar invite (.ics). `sender_user` is the logged-in user — when they've
+    set up their own mailbox the email is sent FROM their address (see resolve_identity)."""
+    identity = resolve_identity(sender_user)
+    # Sign templated emails with the sending person's name (their own mailbox or, on the shared
+    # account, still the logged-in user) rather than a generic workspace label.
+    ctx = {"name": to_name, "role": role, "company": settings.COMPANY_NAME, "sender": identity["from_name"]}
     subject, body, ai_generated = render_draft(template, ctx, use_ai=use_ai, subject=subject, body=body)
 
     rec = models.EmailMessage(
@@ -173,9 +217,9 @@ def compose(
     if not to_email:
         rec.status = "failed"
         rec.error = "No recipient email address."
-    elif settings.email_configured:
+    elif identity["configured"]:
         try:
-            _smtp_send(to_email, to_name, subject, body, ics=ics)
+            _smtp_send(identity, to_email, to_name, subject, body, ics=ics)
             rec.status = "sent"
         except Exception as exc:  # don't crash the request on a send failure
             rec.status = "failed"

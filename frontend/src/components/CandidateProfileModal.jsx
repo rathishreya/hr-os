@@ -412,6 +412,18 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
                       <div className="text-xs font-semibold uppercase text-slate-400">Notice period</div>
                       <div className="mt-1 text-sm text-slate-800">{p.notice_period || '—'}</div>
                     </div>
+                    {p.gender && (
+                      <div>
+                        <div className="text-xs font-semibold uppercase text-slate-400">Gender</div>
+                        <div className="mt-1 text-sm capitalize text-slate-800">{String(p.gender).replace(/_/g, ' ')}</div>
+                      </div>
+                    )}
+                    {p.desired_role && (
+                      <div>
+                        <div className="text-xs font-semibold uppercase text-slate-400">Role interested in</div>
+                        <div className="mt-1 text-sm text-slate-800">{p.desired_role}</div>
+                      </div>
+                    )}
                   </div>
                   {p.skills?.length > 0 && (
                     <div>

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Megaphone, Globe, ExternalLink, CheckCircle2, AlertTriangle, Briefcase, Plug, Check, Loader, Zap, Settings2, ChevronDown } from 'lucide-react'
+import { Megaphone, Globe, ExternalLink, CheckCircle2, AlertTriangle, Briefcase, Plug, Check, Loader, Zap, Settings2, ChevronDown, GraduationCap, Send } from 'lucide-react'
 import { api } from '../api'
-import { Card, Button, Spinner, EmptyState, PageHeader, Badge } from '../ui'
+import { Card, Button, Spinner, EmptyState, PageHeader, Badge, Modal, inputClass } from '../ui'
 import { CopyBtn, DistributionDetails, LinkedinIcon } from '../components/distribution/DistributionPanel'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -14,7 +14,108 @@ function StatusChip({ state }) {
   return null
 }
 
-function RoleRow({ role, integrations, busyKey, onGoogle, onLinkedin }) {
+// Popup: pick saved colleges & vendors and email this role to all of them at once.
+// Reuses the campus-outreach endpoint (send-to-tpos), which needs the role's hiring_request_id.
+function SendToPartnersModal({ role, open, onClose }) {
+  const { toast } = useToast()
+  const [partners, setPartners] = useState(null)
+  const [selected, setSelected] = useState(() => new Set())
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setSelected(new Set())
+    setMessage('')
+    setPartners(null)
+    api.listTpos().then(setPartners).catch(() => setPartners([]))
+  }, [open])
+
+  const list = partners || []
+  const allIds = list.map((p) => p.id)
+  const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id))
+  const toggle = (id) => setSelected((s) => {
+    const n = new Set(s)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    return n
+  })
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(allIds))
+
+  async function send() {
+    if (!selected.size) { toast('Select at least one college or vendor', 'error'); return }
+    if (!role?.hiring_request_id) { toast('This role is missing its reference — re-publish and try again', 'error'); return }
+    setBusy(true)
+    try {
+      const r = await api.sendToTpos(role.hiring_request_id, { tpo_ids: [...selected], message })
+      toast(`Sent to ${r.delivered} of ${r.total} partner${r.total === 1 ? '' : 's'}`)
+      onClose()
+    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Email to colleges & vendors${role ? ` — ${role.title}` : ''}`}
+      footer={(
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button onClick={send} disabled={busy || !selected.size}>
+            {busy ? <Spinner /> : <><Send className="h-4 w-4" /> Send to {selected.size || 0} selected</>}
+          </Button>
+        </>
+      )}
+    >
+      {partners === null ? (
+        <div className="flex items-center gap-2 py-6 text-sm text-slate-400"><Spinner /> Loading partners…</div>
+      ) : list.length === 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          No colleges or vendors saved yet. Add them in{' '}
+          <Link to="/settings" className="font-medium text-brand-600 hover:underline">Settings → Placement cells &amp; hiring vendors</Link>.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-500">Pick who to email this role to — each gets a personalised message with the apply link.</p>
+            <button type="button" onClick={toggleAll} className="shrink-0 text-xs font-medium text-brand-600 hover:underline">
+              {allSelected ? 'Clear all' : 'Select all'}
+            </button>
+          </div>
+          <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
+            {list.map((t) => {
+              const on = selected.has(t.id)
+              const vendor = t.kind === 'vendor'
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => toggle(t.id)}
+                  className={`flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm transition ${on ? 'border-brand-300 bg-brand-50' : 'border-slate-200 hover:bg-slate-50'}`}
+                >
+                  <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${on ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300'}`}>{on && <Check className="h-3 w-3" />}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-medium text-slate-800">{t.college || t.name || 'Partner'}</span>
+                    {t.college && t.name && <span className="text-xs text-slate-400"> · {t.name}</span>}
+                    {!t.email && <span className="ml-1 text-xs text-rose-500">(no email)</span>}
+                  </span>
+                  <Badge tone={vendor ? 'amber' : 'violet'}>{vendor ? 'Vendor' : 'College'}</Badge>
+                </button>
+              )
+            })}
+          </div>
+          <textarea
+            className={`${inputClass} h-20 resize-y`}
+            placeholder="Optional note to include in the outreach email…"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+          />
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+function RoleRow({ role, integrations, busyKey, onGoogle, onLinkedin, onPartners }) {
   const meta = [role.location, role.work_mode, role.department].filter(Boolean).join(' · ')
   const g = role.distribution?.google
   const li = role.distribution?.linkedin
@@ -65,6 +166,16 @@ function RoleRow({ role, integrations, busyKey, onGoogle, onLinkedin }) {
         )}
         <StatusChip state={li} />
 
+        {/* Email this role to saved colleges & vendors (multi-select popup). */}
+        <button
+          type="button"
+          onClick={() => onPartners(role)}
+          title="Email this role to your saved colleges & recruitment vendors"
+          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]"
+        >
+          <GraduationCap className="h-3.5 w-3.5" /> Colleges &amp; vendors
+        </button>
+
         <CopyBtn value={role.url} label="Copy link" />
         <a href={role.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]">
           <ExternalLink className="h-3.5 w-3.5" /> View
@@ -104,6 +215,7 @@ export default function Distribution() {
   const [err, setErr] = useState('')
   const [busyKey, setBusyKey] = useState('')
   const [showSetup, setShowSetup] = useState(false)
+  const [partnersRole, setPartnersRole] = useState(null)  // role whose colleges/vendors popup is open
 
   const loadChannels = () => api.distributionChannels().then(setData).catch((e) => setErr(e.message))
 
@@ -274,11 +386,13 @@ export default function Distribution() {
               <CopyBtn value={data.feeds.xml} label="Copy XML feed" />
             </div>
             {data.roles.map((r) => (
-              <RoleRow key={r.id} role={r} integrations={integrations} busyKey={busyKey} onGoogle={pushGoogle} onLinkedin={pushLinkedin} />
+              <RoleRow key={r.id} role={r} integrations={integrations} busyKey={busyKey} onGoogle={pushGoogle} onLinkedin={pushLinkedin} onPartners={setPartnersRole} />
             ))}
           </Card>
         </>
       )}
+
+      <SendToPartnersModal role={partnersRole} open={!!partnersRole} onClose={() => setPartnersRole(null)} />
     </div>
   )
 }

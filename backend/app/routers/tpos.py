@@ -22,6 +22,7 @@ def create_tpo(payload: schemas.TPOCreate, db: Session = Depends(get_db)):
     if not (payload.name or "").strip() and not (payload.college or "").strip():
         raise HTTPException(422, "A name or college is required.")
     tpo = models.TPO(
+        kind=(payload.kind or "college").strip().lower() or "college",
         name=payload.name.strip(),
         college=payload.college.strip(),
         email=(payload.email or "").strip(),

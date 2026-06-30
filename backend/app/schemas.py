@@ -270,6 +270,7 @@ class UserOut(BaseModel):
 
 # ---------- TPO (campus placement officers) ----------
 class TPOCreate(BaseModel):
+    kind: str = "college"  # college | vendor
     name: str = ""
     college: str = ""
     email: str = ""
@@ -281,6 +282,7 @@ class TPOCreate(BaseModel):
 
 
 class TPOUpdate(BaseModel):
+    kind: str | None = None
     name: str | None = None
     college: str | None = None
     email: str | None = None
@@ -295,6 +297,7 @@ class TPOOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    kind: str = "college"
     name: str
     college: str
     email: str
@@ -491,6 +494,12 @@ class BulkEmailRequest(BaseModel):
     use_ai: bool = False
     subject: str | None = None  # optional edited template (with {name}/{role} tokens)
     body: str | None = None
+
+
+class MyMailboxUpdate(BaseModel):
+    # The user's own Gmail/Workspace App Password (16 chars; spaces are stripped server-side).
+    # Empty string disconnects their mailbox and reverts to the shared workspace account.
+    app_password: str = Field("", max_length=200)
 
 
 class EmailOut(BaseModel):

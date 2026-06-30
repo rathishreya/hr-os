@@ -169,6 +169,10 @@ export const api = {
   override: (id, body) => req(`/applications/${id}/override`, { method: 'PUT', body: JSON.stringify(body) }),
 
   emailTemplates: () => req('/comms/templates'),
+  // Per-user outbound mailbox (send candidate emails from your own login email)
+  getMyMailbox: () => req('/comms/my-mailbox'),
+  setMyMailbox: (app_password) => req('/comms/my-mailbox', { method: 'PUT', body: JSON.stringify({ app_password }) }),
+  testMyMailbox: () => req('/comms/my-mailbox/test', { method: 'POST' }),
   previewEmail: (body) => req('/comms/preview', { method: 'POST', body: JSON.stringify(body) }),
   sendEmail: (body) => req('/comms/send', { method: 'POST', body: JSON.stringify(body) }),
   sendBulkEmail: (body) => req('/comms/send-bulk', { method: 'POST', body: JSON.stringify(body) }),

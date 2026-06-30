@@ -33,7 +33,6 @@ const JOBS_ACCESSORS = {
   status: (r) => r.status || '',
   position: (r) => r.position || '',
   department: (r) => r.department || '',
-  level_label: (r) => r.level_label || '',
   location: (r) => r.location || '',
   yoe: (r) => [r.yoe_min, r.yoe_max].filter((v) => v != null && v !== '').join('-'),
   salary_min: (r) => (r.salary_min != null ? String(r.salary_min) : ''),
@@ -219,7 +218,6 @@ export default function JobsListTable({ rows, onStatusChange }) {
               </th>
               <SortHead label="Job Title" col="position" filterKey="position" />
               <SortHead label="Department" col="department" filterKey="department" />
-              <SortHead label="Level" col="level_label" filterKey="level_label" />
               <SortHead label="Location" col="location" filterKey="location" />
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Application</th>
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Shortlisted</th>
@@ -282,7 +280,6 @@ export default function JobsListTable({ rows, onStatusChange }) {
                   </td>
                   <td className="max-w-[200px] truncate px-3 py-2.5 font-medium text-slate-900">{row.position}</td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.department || '—'}</td>
-                  <td className="whitespace-nowrap px-2 py-2.5 text-slate-600">{row.level_label || '—'}</td>
                   <td className="whitespace-nowrap px-2 py-2.5 text-slate-600">{row.location || '—'}</td>
                   <td className="px-2 py-2.5 text-center">
                     {/* Total applications received — the headline "how many applied" count, which
@@ -332,7 +329,7 @@ export default function JobsListTable({ rows, onStatusChange }) {
               )
             })}
             {!sorted.length && (
-              <tr><td colSpan={23} className="px-4 py-10 text-center text-sm text-slate-400">No jobs match your filters.</td></tr>
+              <tr><td colSpan={22} className="px-4 py-10 text-center text-sm text-slate-400">No jobs match your filters.</td></tr>
             )}
           </tbody>
         </table>

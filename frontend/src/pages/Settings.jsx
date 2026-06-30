@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Mail, Users as UsersIcon, GraduationCap, Plus, Trash2, RefreshCw, Eye, EyeOff,
   ChevronDown, Check, Phone, Building2, MapPin, Globe, Pencil, Power,
-  Send, CheckCircle2, AlertTriangle, XCircle, Download, KeyRound,
+  Send, CheckCircle2, AlertTriangle, XCircle, Download, KeyRound, Briefcase,
 } from 'lucide-react'
 import { api } from '../api'
 import { Card, Button, Badge, Spinner, Modal, Field, inputClass, Tabs, PageHeader, EmptyState, IconButton, Avatar } from '../ui'
@@ -148,28 +148,54 @@ function AddTpoModal({ open, onClose, onCreated }) {
   const { toast } = useToast()
   const [form, setForm] = useState(null)
   const [busy, setBusy] = useState(false)
-  useEffect(() => { if (open) setForm({ name: '', college: '', email: '', phone: '', designation: '', linkedin: '', address: '' }) }, [open])
+  useEffect(() => { if (open) setForm({ kind: 'college', name: '', college: '', email: '', phone: '', designation: '', linkedin: '', address: '' }) }, [open])
   if (!form) return null
 
+  const isVendor = form.kind === 'vendor'
+
   async function submit() {
-    if (!form.name.trim() && !form.college.trim()) { toast('Enter a name or college / organisation', 'error'); return }
+    if (!form.name.trim() && !form.college.trim()) { toast('Enter a name or organisation', 'error'); return }
     setBusy(true)
     try {
       await api.createTpo(form)
-      toast('Hiring partner added')
+      toast(isVendor ? 'Vendor added' : 'College added')
       onCreated(); onClose()
     } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
   }
 
+  // Field labels adapt to the chosen type so a vendor entry doesn't read "College".
+  const orgLabel = isVendor ? 'Vendor / agency' : 'College / university'
+  const orgPh = isVendor ? 'e.g. Acme Staffing Pvt. Ltd.' : 'e.g. IIT Delhi'
+
   return (
-    <Modal open={open} onClose={onClose} title="Add placement cell or hiring vendor"
+    <Modal open={open} onClose={onClose} title="Add college or hiring vendor"
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit} disabled={busy}>{busy ? <Spinner /> : 'Add partner'}</Button></>}>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {TPO_FIELDS.map(([k, label, ph]) => (
-          <div key={k} className={k === 'address' ? 'sm:col-span-2' : ''}>
-            <Field label={label}><input className={inputClass} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} placeholder={ph} /></Field>
+      <div className="space-y-3">
+        <Field label="Type">
+          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+            {[['college', 'College'], ['vendor', 'Vendor']].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setForm({ ...form, kind: id })}
+                className={`rounded-md px-4 py-1.5 text-sm font-medium transition ${form.kind === id ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-        ))}
+        </Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {TPO_FIELDS.map(([k, label, ph]) => {
+            const useLabel = k === 'college' ? orgLabel : label
+            const usePh = k === 'college' ? orgPh : ph
+            return (
+              <div key={k} className={k === 'address' ? 'sm:col-span-2' : ''}>
+                <Field label={useLabel}><input className={inputClass} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} placeholder={usePh} /></Field>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </Modal>
   )
@@ -258,11 +284,18 @@ function TposTab() {
           <EmptyState icon={GraduationCap} title="No placement cells or vendors yet" description="Add campus placement officers or hiring vendors so you can broadcast roles to them when posting." action={<Button onClick={() => setAdd(true)}><Plus className="h-4 w-4" /> Add partner</Button>} />
         ) : (
           <Card className="divide-y divide-slate-100">
-            {tpos.map((t) => (
+            {tpos.map((t) => {
+              const vendor = t.kind === 'vendor'
+              return (
               <div key={t.id} className="flex items-start gap-3 px-4 py-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700"><GraduationCap className="h-5 w-5" /></div>
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${vendor ? 'bg-amber-100 text-amber-700' : 'bg-brand-100 text-brand-700'}`}>
+                  {vendor ? <Briefcase className="h-5 w-5" /> : <GraduationCap className="h-5 w-5" />}
+                </div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium text-slate-800">{t.name || '—'} {t.designation && <span className="text-xs font-normal text-slate-400">· {t.designation}</span>}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-slate-800">{t.name || '—'} {t.designation && <span className="text-xs font-normal text-slate-400">· {t.designation}</span>}</span>
+                    <Badge tone={vendor ? 'amber' : 'violet'}>{vendor ? 'Vendor' : 'College'}</Badge>
+                  </div>
                   <div className="flex items-center gap-1 text-sm text-slate-600"><Building2 className="h-3.5 w-3.5 text-slate-400" /> {t.college || '—'}</div>
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
                     {t.email && <span className="inline-flex items-center gap-1"><Mail className="h-3 w-3" /> {t.email}</span>}
@@ -273,7 +306,8 @@ function TposTab() {
                 </div>
                 <IconButton onClick={() => remove(t)} aria-label="Remove" className="hover:text-rose-600"><Trash2 className="h-4 w-4" /></IconButton>
               </div>
-            ))}
+              )
+            })}
           </Card>
         )}
       <AddTpoModal open={add} onClose={() => setAdd(false)} onCreated={load} />
@@ -322,6 +356,127 @@ function DataTab() {
   )
 }
 
+// Connect the logged-in user's OWN mailbox so candidate emails are sent FROM their login
+// email (true send-from). Stores a Gmail/Workspace App Password; falls back to the shared
+// workspace account until connected.
+function MyMailboxCard() {
+  const { toast } = useToast()
+  const [info, setInfo] = useState(null)   // { email, name, connected, active, workspace_fallback, host }
+  const [pw, setPw] = useState('')
+  const [show, setShow] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [result, setResult] = useState(null)
+
+  const load = () => api.getMyMailbox().then(setInfo).catch(() => setInfo(null))
+  useEffect(() => { load() }, [])
+
+  async function save() {
+    if (!pw.trim()) { toast('Paste your App Password first', 'error'); return }
+    setBusy(true)
+    try {
+      await api.setMyMailbox(pw)
+      setPw('')
+      toast('Mailbox connected — send a test to confirm')
+      await load()
+    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
+  }
+
+  async function disconnect() {
+    if (!window.confirm('Disconnect your mailbox? Candidate emails will use the workspace default.')) return
+    setBusy(true)
+    try { await api.setMyMailbox(''); setResult(null); toast('Mailbox disconnected'); await load() }
+    catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
+  }
+
+  async function test() {
+    setTesting(true); setResult(null)
+    try {
+      const rec = await api.testMyMailbox()
+      setResult(rec)
+      if (rec.status === 'sent') toast(`Test sent to ${info?.email}`)
+      else if (rec.status === 'logged') toast('Logged only — no active mailbox/SMTP', 'error')
+      else toast('Send failed', 'error')
+    } catch (e) { toast(e.message, 'error') } finally { setTesting(false) }
+  }
+
+  if (!info) return null
+  const { email, connected, active } = info
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-start gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${active ? 'bg-emerald-100 text-emerald-600' : 'bg-brand-100 text-brand-600'}`}>
+          <Mail className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-800">Send candidate emails from your mailbox</h3>
+            <Badge tone={active ? 'green' : 'gray'}>{active ? 'Active' : 'Not connected'}</Badge>
+          </div>
+          <p className="mt-1 text-pretty text-sm text-slate-500">
+            Connect your own mailbox so candidate emails are sent <strong>from {email || 'your login email'}</strong> and replies come back to you.
+            {!connected && info.workspace_fallback && ' Until you connect it, emails go out from the shared workspace account.'}
+          </p>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
+            <Field label="Your email (login)">
+              <input className={`${inputClass} bg-slate-50`} value={email || ''} readOnly />
+            </Field>
+            <div className="hidden sm:block" />
+            <Field label={connected ? 'Replace App Password' : 'Gmail / Workspace App Password'}>
+              <div className="relative">
+                <input
+                  className={`${inputClass} pr-10`}
+                  type={show ? 'text' : 'password'}
+                  value={pw}
+                  onChange={(e) => setPw(e.target.value)}
+                  placeholder={connected ? 'Connected · paste a new one to replace' : 'abcd efgh ijkl mnop'}
+                  autoComplete="off"
+                />
+                <button type="button" title={show ? 'Hide' : 'Show'} onClick={() => setShow((s) => !s)} className="absolute inset-y-0 right-2 flex items-center rounded p-1 text-slate-500 hover:bg-slate-100">{show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+              </div>
+            </Field>
+            <div className="flex items-end gap-2">
+              <Button onClick={save} disabled={busy}>{busy ? <Spinner /> : <><KeyRound className="h-4 w-4" /> {connected ? 'Update' : 'Connect'}</>}</Button>
+            </div>
+          </div>
+
+          <p className="mt-2 text-xs text-slate-400">
+            Use a 16-character <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="font-medium text-brand-600 hover:underline">App Password</a> (not your login password). Requires 2-Step Verification on your Google account.
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button variant="ghost" onClick={test} disabled={testing}>{testing ? <><Spinner /> Sending…</> : <><Send className="h-4 w-4" /> Send test to myself</>}</Button>
+            {connected && (
+              <Button variant="ghost" onClick={disconnect} disabled={busy} className="text-rose-600 hover:text-rose-700">
+                <Trash2 className="h-4 w-4" /> Disconnect
+              </Button>
+            )}
+          </div>
+
+          {result && (
+            <div className={`mt-3 flex items-start gap-2.5 rounded-xl border p-3 text-sm ${
+              result.status === 'sent' ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : result.status === 'logged' ? 'border-amber-200 bg-amber-50 text-amber-800'
+                  : 'border-rose-200 bg-rose-50 text-rose-700'
+            }`}>
+              {result.status === 'sent' ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+                : result.status === 'logged' ? <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                  : <XCircle className="mt-0.5 h-5 w-5 shrink-0" />}
+              <div>
+                {result.status === 'sent' && <><strong>Delivered.</strong> Sent to {result.to_email}. Check your inbox (and spam).</>}
+                {result.status === 'logged' && <><strong>Logged only.</strong> No active mailbox — connect your App Password (or set the workspace SMTP) and try again.</>}
+                {result.status === 'failed' && <><strong>Send failed.</strong> {result.error || 'The mail server rejected the message.'} <span className="block text-rose-600/80">Check the App Password is correct and from this same Google account.</span></>}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 function EmailTab() {
   const { toast } = useToast()
   const [info, setInfo] = useState(null)        // { email_configured, from, templates }
@@ -361,10 +516,16 @@ function EmailTab() {
   return (
     <div className="max-w-2xl space-y-4">
       <p className="text-sm text-slate-500">
-        Shows whether outbound email is being delivered for real or only logged, and lets you send a test to confirm
-        end-to-end. This panel is read-only — SMTP credentials live in <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">backend/.env</code>, not here.
+        Connect your own mailbox to send candidate emails from your login address, and check whether the shared
+        workspace account is delivering for real.
       </p>
-      {/* Status */}
+
+      {/* Per-user mailbox — the primary path for sending as yourself. */}
+      <MyMailboxCard />
+
+      <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Workspace default (fallback)</p>
+      {/* Status of the shared workspace SMTP — used when a user hasn't connected their own mailbox.
+          Read-only: those SMTP credentials live in backend/.env, not here. */}
       <Card className="p-5">
         <div className="flex items-start gap-3">
           <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${configured ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>

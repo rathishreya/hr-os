@@ -82,6 +82,81 @@ def _norm_applicant_ctc(raw: str) -> str:
     return f"₹{val:g} LPA"
 
 
+# Applicant gender (optional; "prefer not to say" keeps it inclusive). Stored in parsed.gender.
+GENDER_OPTIONS = [
+    ("", "Select…"),
+    ("male", "Male"),
+    ("female", "Female"),
+    ("other", "Other"),
+    ("prefer_not_to_say", "Prefer not to say"),
+]
+
+# Compensation currency. Number + currency are captured separately on the form, then combined.
+# INR figures are read as LPA (lakhs/annum, the India-centric convention the rest of the app uses);
+# every other currency is stored as an absolute annual figure with its symbol.
+CURRENCY_OPTIONS = [
+    ("INR", "₹ INR"),
+    ("USD", "$ USD"),
+    ("EUR", "€ EUR"),
+    ("GBP", "£ GBP"),
+    ("AED", "AED"),
+    ("SGD", "S$ SGD"),
+    ("AUD", "A$ AUD"),
+    ("CAD", "C$ CAD"),
+]
+_CURRENCY_SYMBOLS = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£", "SGD": "S$", "AUD": "A$", "CAD": "C$"}
+
+
+def _gender_options(selected: str) -> str:
+    sel = (selected or "").strip()
+    return "".join(
+        f'<option value="{_e(k)}"{" selected" if k == sel else ""}>{_e(label)}</option>'
+        for k, label in GENDER_OPTIONS
+    )
+
+
+def _currency_options(selected: str) -> str:
+    sel = (selected or "INR").strip().upper()
+    return "".join(
+        f'<option value="{_e(k)}"{" selected" if k == sel else ""}>{_e(label)}</option>'
+        for k, label in CURRENCY_OPTIONS
+    )
+
+
+def _compose_ctc(amount: str, currency: str) -> str:
+    """Combine the separate amount + currency form fields into one stored compensation string
+    the talent pool / résumé extractor already understand (₹…LPA for INR, symbol+figure else)."""
+    amt = (amount or "").strip()
+    if not amt:
+        return ""
+    cur = (currency or "INR").strip().upper()
+    if cur == "INR":
+        return f"₹{amt} LPA"
+    sym = _CURRENCY_SYMBOLS.get(cur, "")
+    return f"{sym}{amt}" if sym else f"{amt} {cur}"
+
+
+def _compose_location(city: str, country: str, pin: str) -> str:
+    """Single-line location for the talent-pool 'Location' column from the split fields."""
+    city, country, pin = (city or "").strip(), (country or "").strip(), (pin or "").strip()
+    loc = ", ".join(p for p in [city, country] if p)
+    return f"{loc} {pin}".strip() if pin else loc
+
+
+def _published_titles(db: Session) -> list[str]:
+    """Distinct published-role titles, for the general form's 'role you're interested in' list."""
+    titles: list[str] = []
+    seen: set[str] = set()
+    for j in _published(db):
+        hr = j.hiring_request
+        title = (hr.position if hr and hr.position else j.title) or ""
+        key = title.strip().lower()
+        if title.strip() and key not in seen:
+            seen.add(key)
+            titles.append(title.strip())
+    return titles
+
+
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB cap on public résumé uploads
 
 
@@ -320,6 +395,10 @@ font-size:14px;font-family:inherit;color:var(--ink);background:#fff;outline:none
 input.inp:focus,textarea.inp:focus,select.inp:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(124,58,237,.12)}
 input[type=file].inp{padding:8px}
 textarea.inp{resize:vertical}
+.row2{display:flex;gap:8px;align-items:stretch}
+.row2 select.cur{flex:0 0 auto;width:auto;min-width:96px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:520px){.grid2{grid-template-columns:1fr}}
 .err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:10px 12px;font-size:13px;margin:0 0 16px}
 button.apply{border:0;cursor:pointer;font-size:15px}
 .back{display:inline-block;margin-bottom:16px;color:var(--brand);text-decoration:none;font-size:13px;font-weight:600}
@@ -565,6 +644,7 @@ def distribution_channels(request: Request, db: Session = Depends(get_db)):
         hr = j.hiring_request
         roles.append({
             "id": j.id,
+            "hiring_request_id": j.hiring_request_id,
             "title": j.title or (hr.position if hr else "Role"),
             "location": (hr.location if hr else "") or "",
             "work_mode": (hr.work_mode if hr else "") or "",
@@ -634,6 +714,48 @@ def _source_options(selected: str) -> str:
     )
 
 
+def _gender_field(v: dict) -> str:
+    return (
+        '<div class="field"><label class="lbl">Gender</label>'
+        f'<select class="inp" name="gender">{_gender_options(v.get("gender"))}</select></div>'
+    )
+
+
+def _phone_field(v: dict) -> str:
+    return (
+        '<div class="field"><label class="lbl">Phone <span class="req">*</span></label>'
+        f'<input class="inp" name="phone" value="{_e(v.get("phone"))}" required></div>'
+    )
+
+
+def _location_fields(v: dict) -> str:
+    """City / Country / PIN — captured separately, combined into one stored Location."""
+    return (
+        '<div class="grid2">'
+        '<div class="field"><label class="lbl">City <span class="req">*</span></label>'
+        f'<input class="inp" name="city" value="{_e(v.get("city"))}" placeholder="e.g. Bengaluru" required></div>'
+        '<div class="field"><label class="lbl">Country <span class="req">*</span></label>'
+        f'<input class="inp" name="country" value="{_e(v.get("country"))}" placeholder="e.g. India" required></div>'
+        '</div>'
+        '<div class="field"><label class="lbl">PIN / Postal code</label>'
+        f'<input class="inp" name="pin" value="{_e(v.get("pin"))}" placeholder="e.g. 560001"></div>'
+    )
+
+
+def _comp_field(label: str, name: str, v: dict, *, required: bool) -> str:
+    """One compensation control: a currency dropdown + a numeric amount."""
+    req = ' <span class="req">*</span>' if required else ""
+    req_attr = " required" if required else ""
+    return (
+        f'<div class="field"><label class="lbl">{label}{req}</label>'
+        '<div class="row2">'
+        f'<select class="inp cur" name="{name}_currency">{_currency_options(v.get(name + "_currency"))}</select>'
+        f'<input class="inp" type="number" min="0" step="any" name="{name}_amount" '
+        f'value="{_e(v.get(name + "_amount"))}" placeholder="e.g. 12"{req_attr}></div>'
+        '<p class="hint">For INR, enter the figure in LPA (lakhs per annum).</p></div>'
+    )
+
+
 def _apply_form(job: models.Job, *, values: dict | None = None, error: str = "", src: str = "") -> str:
     hr = job.hiring_request
     title = job.title or (hr.position if hr else "Role")
@@ -650,12 +772,11 @@ def _apply_form(job: models.Job, *, values: dict | None = None, error: str = "",
         f'<input class="inp" name="name" value="{_e(v.get("name"))}" required></div>'
         f'<div class="field"><label class="lbl">Email <span class="req">*</span></label>'
         f'<input class="inp" type="email" name="email" value="{_e(v.get("email"))}" required></div>'
-        f'<div class="field"><label class="lbl">Phone</label>'
-        f'<input class="inp" name="phone" value="{_e(v.get("phone"))}"></div>'
-        f'<div class="field"><label class="lbl">Current Annual Total Compensation <span class="req">*</span></label>'
-        f'<input class="inp" name="current_ctc" value="{_e(v.get("current_ctc"))}" placeholder="e.g. 12 LPA" required></div>'
-        f'<div class="field"><label class="lbl">Expected Annual Total Compensation <span class="req">*</span></label>'
-        f'<input class="inp" name="expected_ctc" value="{_e(v.get("expected_ctc"))}" placeholder="e.g. 18 LPA" required></div>'
+        f'{_phone_field(v)}'
+        f'{_gender_field(v)}'
+        f'{_location_fields(v)}'
+        f'{_comp_field("Current Annual Total Compensation", "current_ctc", v, required=True)}'
+        f'{_comp_field("Expected Annual Total Compensation", "expected_ctc", v, required=True)}'
         f'<div class="field"><label class="lbl">Notice Period (Days) <span class="req">*</span></label>'
         f'<input class="inp" type="number" min="0" name="notice_period" value="{_e(v.get("notice_period"))}" placeholder="e.g. 30" required></div>'
         f'<div class="field"><label class="lbl">Source <span class="req">*</span></label>'
@@ -691,9 +812,15 @@ async def submit_application(
     name: str = Form(""),
     email: str = Form(""),
     phone: str = Form(""),
+    gender: str = Form(""),
+    city: str = Form(""),
+    country: str = Form(""),
+    pin: str = Form(""),
     resume_text: str = Form(""),
-    current_ctc: str = Form(""),
-    expected_ctc: str = Form(""),
+    current_ctc_amount: str = Form(""),
+    current_ctc_currency: str = Form("INR"),
+    expected_ctc_amount: str = Form(""),
+    expected_ctc_currency: str = Form("INR"),
     notice_period: str = Form(""),
     source_choice: str = Form("direct"),
     src: str = Form(""),
@@ -704,9 +831,13 @@ async def submit_application(
     if not job or job.status != "published":
         return HTMLResponse(_page("Not found", _NOT_OPEN), status_code=404)
     hr = job.hiring_request
+    current_ctc = _compose_ctc(current_ctc_amount, current_ctc_currency)
+    expected_ctc = _compose_ctc(expected_ctc_amount, expected_ctc_currency)
     values = {
-        "name": name, "email": email, "phone": phone, "resume_text": resume_text,
-        "current_ctc": current_ctc, "expected_ctc": expected_ctc,
+        "name": name, "email": email, "phone": phone, "gender": gender,
+        "city": city, "country": country, "pin": pin, "resume_text": resume_text,
+        "current_ctc_amount": current_ctc_amount, "current_ctc_currency": current_ctc_currency,
+        "expected_ctc_amount": expected_ctc_amount, "expected_ctc_currency": expected_ctc_currency,
         "notice_period": notice_period, "source_choice": source_choice,
     }
 
@@ -727,7 +858,11 @@ async def submit_application(
 
     if not name.strip() or not email.strip():
         return HTMLResponse(_apply_form(job, values=values, error="Please enter your name and email.", src=src), status_code=400)
-    if not current_ctc.strip() or not expected_ctc.strip() or not notice_period.strip():
+    if not phone.strip():
+        return HTMLResponse(_apply_form(job, values=values, error="Please enter your phone number.", src=src), status_code=400)
+    if not city.strip() or not country.strip():
+        return HTMLResponse(_apply_form(job, values=values, error="Please enter your city and country.", src=src), status_code=400)
+    if not current_ctc_amount.strip() or not expected_ctc_amount.strip() or not notice_period.strip():
         return HTMLResponse(_apply_form(job, values=values, error="Please fill current & expected compensation and notice period.", src=src), status_code=400)
     if missing_required:
         return HTMLResponse(_apply_form(job, values=values, error="Please answer all required questions.", src=src), status_code=400)
@@ -768,6 +903,11 @@ async def submit_application(
             "current_ctc": _norm_applicant_ctc(current_ctc),
             "salary_expectation": _norm_applicant_ctc(expected_ctc),
             "notice_period": notice_period.strip(),
+            "gender": gender.strip(),
+            "city": city.strip(),
+            "country": country.strip(),
+            "pin": pin.strip(),
+            "location": _compose_location(city, country, pin) or (cand.parsed or {}).get("location") or "",
         }
         # "Applied by" for a public application = the channel they came through (Careers,
         # Referral, LinkedIn, ...), since the candidate applied themselves.
@@ -802,7 +942,12 @@ async def submit_application(
 # them to roles from the portal. The same form is meant to live on the EZ careers page.
 # Declared BEFORE the /careers/{job_id} int catch-all so "apply" isn't parsed as a job id
 # (mirrors how /careers/{job_id}/apply is a separate two-segment route).
-def _general_apply_form(*, values: dict | None = None, error: str = "", src: str = "") -> str:
+def _role_datalist(roles: list[str] | None) -> str:
+    opts = "".join(f'<option value="{_e(t)}">' for t in (roles or []))
+    return f'<datalist id="role_list">{opts}</datalist>'
+
+
+def _general_apply_form(*, values: dict | None = None, error: str = "", src: str = "", roles: list[str] | None = None) -> str:
     v = values or {}
     err_html = f'<div class="err">{_e(error)}</div>' if error else ""
     norm_src = _norm_source(src)
@@ -817,12 +962,16 @@ def _general_apply_form(*, values: dict | None = None, error: str = "", src: str
         f'<input class="inp" name="name" value="{_e(v.get("name"))}" required></div>'
         f'<div class="field"><label class="lbl">Email <span class="req">*</span></label>'
         f'<input class="inp" type="email" name="email" value="{_e(v.get("email"))}" required></div>'
-        f'<div class="field"><label class="lbl">Phone</label>'
-        f'<input class="inp" name="phone" value="{_e(v.get("phone"))}"></div>'
-        f'<div class="field"><label class="lbl">Current Annual Total Compensation</label>'
-        f'<input class="inp" name="current_ctc" value="{_e(v.get("current_ctc"))}" placeholder="e.g. 12 LPA"></div>'
-        f'<div class="field"><label class="lbl">Expected Annual Total Compensation</label>'
-        f'<input class="inp" name="expected_ctc" value="{_e(v.get("expected_ctc"))}" placeholder="e.g. 18 LPA"></div>'
+        f'{_phone_field(v)}'
+        f'{_gender_field(v)}'
+        f'<div class="field"><label class="lbl">Role you&rsquo;re interested in</label>'
+        f'<input class="inp" name="desired_role" list="role_list" value="{_e(v.get("desired_role"))}" '
+        f'placeholder="Pick an open role or type your own">'
+        f'{_role_datalist(roles)}'
+        f'<p class="hint">Optional — choose from our open roles or tell us the kind of role you want.</p></div>'
+        f'{_location_fields(v)}'
+        f'{_comp_field("Current Annual Total Compensation", "current_ctc", v, required=False)}'
+        f'{_comp_field("Expected Annual Total Compensation", "expected_ctc", v, required=False)}'
         f'<div class="field"><label class="lbl">Notice Period (Days)</label>'
         f'<input class="inp" type="number" min="0" name="notice_period" value="{_e(v.get("notice_period"))}" placeholder="e.g. 30"></div>'
         f'<div class="field"><label class="lbl">Résumé <span class="req">*</span></label>'
@@ -842,8 +991,8 @@ def _general_apply_form(*, values: dict | None = None, error: str = "", src: str
 
 
 @router.get("/careers/apply", response_class=HTMLResponse)
-def general_apply_form(src: str = ""):
-    return HTMLResponse(_general_apply_form(src=src))
+def general_apply_form(src: str = "", db: Session = Depends(get_db)):
+    return HTMLResponse(_general_apply_form(src=src, roles=_published_titles(db)))
 
 
 @router.post("/careers/apply", response_class=HTMLResponse)
@@ -852,21 +1001,38 @@ async def submit_general_application(
     name: str = Form(""),
     email: str = Form(""),
     phone: str = Form(""),
+    gender: str = Form(""),
+    desired_role: str = Form(""),
+    city: str = Form(""),
+    country: str = Form(""),
+    pin: str = Form(""),
     resume_text: str = Form(""),
-    current_ctc: str = Form(""),
-    expected_ctc: str = Form(""),
+    current_ctc_amount: str = Form(""),
+    current_ctc_currency: str = Form("INR"),
+    expected_ctc_amount: str = Form(""),
+    expected_ctc_currency: str = Form("INR"),
     notice_period: str = Form(""),
     src: str = Form(""),
     file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
+    roles = _published_titles(db)
+    current_ctc = _compose_ctc(current_ctc_amount, current_ctc_currency)
+    expected_ctc = _compose_ctc(expected_ctc_amount, expected_ctc_currency)
     values = {
-        "name": name, "email": email, "phone": phone, "resume_text": resume_text,
-        "current_ctc": current_ctc, "expected_ctc": expected_ctc,
+        "name": name, "email": email, "phone": phone, "gender": gender,
+        "desired_role": desired_role, "city": city, "country": country, "pin": pin,
+        "resume_text": resume_text,
+        "current_ctc_amount": current_ctc_amount, "current_ctc_currency": current_ctc_currency,
+        "expected_ctc_amount": expected_ctc_amount, "expected_ctc_currency": expected_ctc_currency,
         "notice_period": notice_period,
     }
     if not name.strip() or not email.strip():
-        return HTMLResponse(_general_apply_form(values=values, error="Please enter your name and email.", src=src), status_code=400)
+        return HTMLResponse(_general_apply_form(values=values, error="Please enter your name and email.", src=src, roles=roles), status_code=400)
+    if not phone.strip():
+        return HTMLResponse(_general_apply_form(values=values, error="Please enter your phone number.", src=src, roles=roles), status_code=400)
+    if not city.strip() or not country.strip():
+        return HTMLResponse(_general_apply_form(values=values, error="Please enter your city and country.", src=src, roles=roles), status_code=400)
 
     file_bytes = None
     filename = mime = ""
@@ -877,7 +1043,7 @@ async def submit_general_application(
         file_bytes = file.file.read(_MAX_UPLOAD_BYTES + 1)
         if len(file_bytes) > _MAX_UPLOAD_BYTES:
             return HTMLResponse(
-                _general_apply_form(values=values, error="Résumé file is too large (max 10 MB).", src=src),
+                _general_apply_form(values=values, error="Résumé file is too large (max 10 MB).", src=src, roles=roles),
                 status_code=400,
             )
         filename = file.filename
@@ -888,7 +1054,7 @@ async def submit_general_application(
 
     if not text.strip() and not (file is not None and file.filename):
         return HTMLResponse(
-            _general_apply_form(values=values, error="Please attach a résumé or paste your details so we can match you to roles.", src=src),
+            _general_apply_form(values=values, error="Please attach a résumé or paste your details so we can match you to roles.", src=src, roles=roles),
             status_code=400,
         )
 
@@ -904,13 +1070,19 @@ async def submit_general_application(
             "current_ctc": _norm_applicant_ctc(current_ctc),
             "salary_expectation": _norm_applicant_ctc(expected_ctc),
             "notice_period": notice_period.strip(),
+            "gender": gender.strip(),
+            "desired_role": desired_role.strip(),
+            "city": city.strip(),
+            "country": country.strip(),
+            "pin": pin.strip(),
+            "location": _compose_location(city, country, pin) or (cand.parsed or {}).get("location") or "",
             "sub_source": _norm_source(src),
         }
         db.commit()
     except Exception:
         db.rollback()
         return HTMLResponse(
-            _general_apply_form(values=values, error="Something went wrong submitting your details — please try again.", src=src),
+            _general_apply_form(values=values, error="Something went wrong submitting your details — please try again.", src=src, roles=roles),
             status_code=500,
         )
 

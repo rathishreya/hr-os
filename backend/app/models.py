@@ -418,6 +418,10 @@ class User(Base):
     title: Mapped[str] = mapped_column(String(160), default="")  # designation
     roles: Mapped[list] = mapped_column(JSON, default=list)  # ["recruiter","manager","admin","panellist"]
     password_hash: Mapped[str] = mapped_column(String(255), default="")
+    # Per-user outbound mailbox: the user's own Gmail/Workspace App Password. When set, this
+    # user's candidate emails authenticate as their login email and are sent FROM it (true
+    # send-from). Empty → fall back to the shared workspace SMTP. Never returned by the API.
+    smtp_password: Mapped[str] = mapped_column(String(255), default="")
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
@@ -428,6 +432,9 @@ class TPO(Base):
     __tablename__ = "tpos"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Which kind of hiring partner this is — a campus placement cell or a recruitment vendor.
+    # Drives the badge in Settings and tailors the outreach email wording.
+    kind: Mapped[str] = mapped_column(String(20), default="college")  # college | vendor
     name: Mapped[str] = mapped_column(String(160), default="")
     college: Mapped[str] = mapped_column(String(200), default="")
     email: Mapped[str] = mapped_column(String(200), default="")

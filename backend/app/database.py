@@ -100,6 +100,12 @@ def _ensure_sqlite_columns() -> None:
         "onboarding_plans": [
             ("details", "TEXT DEFAULT '{}'"),
         ],
+        "tpos": [
+            ("kind", "VARCHAR DEFAULT 'college'"),
+        ],
+        "users": [
+            ("smtp_password", "VARCHAR DEFAULT ''"),
+        ],
     }
     with engine.begin() as conn:
         for table, cols in additions.items():
@@ -159,6 +165,8 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS department VARCHAR DEFAULT ''",
             "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS role VARCHAR DEFAULT ''",
             "ALTER TABLE onboarding_plans ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb",
+            "ALTER TABLE tpos ADD COLUMN IF NOT EXISTS kind VARCHAR DEFAULT 'college'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS smtp_password VARCHAR DEFAULT ''",
         ):
             conn.execute(text(stmt))
 
