@@ -65,9 +65,14 @@ _SECTION_MARKERS = {
     "skills": ("technical skills", "skills", "core competencies", "technologies"),
     "experience": (
         "experience", "work experience", "employment", "internship experience",
-        "professional experience", "career",
+        "professional experience", "career", "work history", "employment history",
+        "professional background",
     ),
-    "education": ("education", "academic", "qualification"),
+    "education": (
+        "education", "academic", "qualification", "educational background",
+        "education background", "academic background", "educational qualification",
+        "educational qualifications", "academic qualifications",
+    ),
     "projects": ("projects", "personal projects"),
     "certifications": ("certifications", "certificates"),
     "achievements": ("achievements", "awards", "honors"),
@@ -296,6 +301,44 @@ def _clean_company(name: str) -> str:
     return s if _looks_like_company(s) else ""
 
 
+# Sentence/first-person/marketing signals that mark a string as résumé prose (a summary line
+# or bullet) rather than a discrete value like a degree, institution, or city.
+_PROSE_SIGNALS = re.compile(
+    r"\b(i['’]?m|i\s+am|i\s+have|passionate|aspiring|responsible|enabling|enforcing|"
+    r"seeking|looking\s+for|stakeholders?|experience\s+in|worked|developed|ensuring|"
+    r"across|within|through|strong\s+foundation)\b",
+    re.I,
+)
+
+
+def _looks_like_prose(s: str) -> bool:
+    """True if the string reads like a résumé sentence/bullet rather than a discrete value
+    (degree, institution, city). Keeps mis-parsed fragments out of the structured columns —
+    e.g. 'senior stakeholders.', 'al Background', '& CERTIFICATE', an 'I'm a passionate…' line."""
+    s = (s or "").strip()
+    if not s:
+        return False
+    if len(s) > 80 or len(s.split()) > 10:
+        return True
+    if re.match(r"^[^A-Za-z0-9]", s):          # starts with punctuation → split fragment ("& CERTIFICATE")
+        return True
+    if re.match(r"^[a-z]", s) and len(s.split()) >= 2:  # starts mid-word ("al Background")
+        return True
+    if '"' in s or "“" in s or "”" in s:       # embedded quote → lifted from a sentence
+        return True
+    if _PROSE_SIGNALS.search(s):
+        return True
+    if len(re.findall(r"\.\s+[A-Z]", s)) >= 2:  # two+ sentence boundaries
+        return True
+    return False
+
+
+def _clean_value(s: str) -> str:
+    """Blank a value that is clearly a mis-parsed prose fragment, not a real field."""
+    s = (s or "").strip()
+    return "" if _looks_like_prose(s) else s
+
+
 def _best_company(companies: list[dict[str, str]]) -> dict[str, str]:
     # Prefer the first entry whose name actually looks like an employer; fall back to the first
     # entry (still useful for the title) so we never invent a company.
@@ -318,6 +361,23 @@ def _extract_companies(exp_lines: list[str], full_text: str) -> list[dict[str, s
                 if job:
                     companies.append(job)
     return companies
+
+
+def _looks_like_education(e: dict[str, str]) -> bool:
+    deg = (e.get("degree") or "").strip()
+    inst = (e.get("institution") or "").strip()
+    if not deg and not inst:
+        return False
+    return not (_looks_like_prose(deg) or _looks_like_prose(inst))
+
+
+def _best_education(education: list[dict[str, str]]) -> dict[str, str]:
+    """Prefer the first entry that reads like a real degree/institution; fall back to the
+    first entry so a title is still available without inventing anything."""
+    for e in education:
+        if _looks_like_education(e):
+            return e
+    return education[0] if education else {}
 
 
 def _extract_education(edu_lines: list[str], full_text: str) -> list[dict[str, str]]:
@@ -348,19 +408,23 @@ def _extract_education(edu_lines: list[str], full_text: str) -> list[dict[str, s
             education.append({"degree": "", "institution": line, "year": year})
         elif re.search(r"cgpa|gpa", line, re.I):
             continue
-        else:
+        elif not _looks_like_prose(line):
+            # Only keep leftover lines that read like a school/board line, not a stray
+            # summary sentence that landed in the education section from a jumbled PDF.
             education.append({"degree": "", "institution": line, "year": year})
     if pending_degree:
         education.append({"degree": pending_degree, "institution": "", "year": ""})
     if not education:
+        # \b so the word "Education" isn't matched inside "Educational Background" (which used to
+        # capture the leftover "al Background" as a degree).
         inline = re.search(
-            r"education[:\s]*(.+?)(?:\n|certifications|experience|skills|$)",
+            r"\beducation\b[:\s]*(.+?)(?:\n|certifications|experience|skills|$)",
             full_text,
             re.I | re.S,
         )
         if inline:
             chunk = inline.group(1).strip().split("\n")[0]
-            if chunk:
+            if chunk and not _looks_like_prose(chunk):
                 education.append({"degree": chunk, "institution": "", "year": ""})
     return education
 
@@ -455,8 +519,18 @@ def _has_value(v: Any) -> bool:
     return bool(str(v).strip())
 
 
+# Identity/discrete fields where the AI extraction is authoritative when present. For these a
+# *longer* heuristic string means "the regex swallowed a whole sentence", not "more signal" —
+# so the old len(av) >= len(hv) rule let regex garbage beat a correct short AI value ("Google").
+_AI_FIRST_FIELDS = frozenset({
+    "name", "email", "phone", "location", "linkedin", "github",
+    "current_company", "current_title", "current_ctc", "salary_expectation", "notice_period",
+})
+
+
 def merge_parsed(ai: dict[str, Any], heur: dict[str, Any]) -> dict[str, Any]:
-    """Combine AI JSON with heuristic extraction; prefer non-empty, richer values."""
+    """Combine AI JSON with heuristic extraction. AI is authoritative for identity/structured
+    fields (it understands layout); heuristics only fill gaps the AI left empty."""
     out: dict[str, Any] = {}
     keys = set(heur) | set(ai or {})
     for key in keys:
@@ -472,11 +546,17 @@ def merge_parsed(ai: dict[str, Any], heur: dict[str, Any]) -> dict[str, Any]:
             out[key] = list(seen.values())
             continue
         if key in ("companies", "education"):
-            out[key] = av if isinstance(av, list) and len(av) >= len(hv or []) else (hv or av or [])
+            # AI structures these better than regex; a longer heuristic list is usually more
+            # mis-parsed fragments, not more real entries. Use AI whenever it produced any.
+            out[key] = av if (isinstance(av, list) and len(av) > 0) else (hv or [])
             continue
         if key == "total_yoe":
             out[key] = av if (isinstance(av, (int, float)) and av > 0) else (hv or av or 0)
             continue
+        if key in _AI_FIRST_FIELDS:
+            out[key] = av if _has_value(av) else (hv if _has_value(hv) else av)
+            continue
+        # Free-form text (summary, etc.): prefer the richer (longer) non-empty value.
         if _has_value(av) and (not _has_value(hv) or len(str(av)) >= len(str(hv))):
             out[key] = av
         else:
@@ -510,20 +590,20 @@ def enrich_from_resume(
 def table_fields(parsed: dict[str, Any], candidate: Any) -> dict[str, Any]:
     """Flatten parsed resume into talent-pool table columns."""
     edu_list = parsed.get("education") or []
-    edu0 = edu_list[0] if edu_list else {}
+    edu0 = _best_education(edu_list)
     companies = parsed.get("companies") or []
     co0 = _best_company(companies)
     return {
         "phone": parsed.get("phone") or getattr(candidate, "phone", "") or "",
         "linkedin": parsed.get("linkedin") or "",
         "github": parsed.get("github") or "",
-        "location": parsed.get("location") or "",
-        # Sanitise so a wrongly-parsed prose bullet never shows as the employer (cleans existing
-        # candidates at display time too, no re-parse needed).
+        "location": _clean_value(parsed.get("location") or ""),
+        # Sanitise so a wrongly-parsed prose bullet never shows as the employer/degree (cleans
+        # existing candidates at display time too, no re-parse needed).
         "current_company": _clean_company(parsed.get("current_company") or co0.get("name")),
         "current_title": parsed.get("current_title") or co0.get("title") or "",
-        "education_degree": edu0.get("degree") or "",
-        "education_institution": edu0.get("institution") or "",
+        "education_degree": _clean_value(edu0.get("degree") or ""),
+        "education_institution": _clean_value(edu0.get("institution") or ""),
         "current_ctc": parsed.get("current_ctc") or "",
         "salary_expectation": parsed.get("salary_expectation") or "",
         "total_yoe": parsed.get("total_yoe") if parsed.get("total_yoe") is not None else None,
