@@ -143,6 +143,86 @@ def reparse_all_candidates(db: Session = Depends(get_db), _user: models.User = D
     return {"updated": updated, "total": len(rows)}
 
 
+@router.post("/reparse-all-ai")
+def reparse_all_ai(
+    payload: dict,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(require_roles("admin")),
+):
+    """TEMPORARY one-off migration endpoint. Reparses candidates through an AI provider whose
+    credentials are supplied in the request body — so a deployment where OPENAI_API_KEY isn't
+    set in the environment (e.g. Render) can still be back-filled with real AI extraction.
+
+    Non-destructive: only UPDATEs parsed/ai_summary (and fills empty name/email/phone). Never
+    deletes. The key is used in-memory for this request only and is never persisted or logged.
+    Accepts optional `ids` to reparse a subset (lets the caller batch under request timeouts).
+    REMOVE THIS ENDPOINT after the back-fill."""
+    import httpx
+    from ..services.ai import prompts
+    from ..services.ai.provider import _extract_json
+
+    api_key = (payload or {}).get("api_key") or ""
+    base_url = ((payload or {}).get("base_url")
+                or "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
+    model = (payload or {}).get("model") or "gemini-2.5-flash"
+    ids = (payload or {}).get("ids")
+    if not api_key:
+        raise HTTPException(422, "api_key required")
+
+    def _ai_parse(text: str) -> dict:
+        system, user = prompts.parse_resume(text)
+        resp = httpx.post(
+            f"{base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "temperature": 0.4,
+            },
+            timeout=90,
+        )
+        resp.raise_for_status()
+        raw = resp.json()["choices"][0]["message"]["content"]
+        parsed = _extract_json(raw)
+        return parsed if isinstance(parsed, dict) else {}
+
+    q = select(models.Candidate)
+    if isinstance(ids, list) and ids:
+        q = q.where(models.Candidate.id.in_(ids))
+    rows = db.scalars(q).all()
+    updated, failed, results = 0, 0, []
+    for c in rows:
+        if not (c.resume_text or "").strip():
+            continue
+        try:
+            parsed_ai = _ai_parse(c.resume_text)
+        except Exception as exc:  # network / provider hiccup — skip this row, keep going
+            failed += 1
+            results.append({"id": c.id, "ok": False, "error": type(exc).__name__})
+            continue
+        merged = resume_extract.merge_parsed(
+            parsed_ai,
+            resume_extract.parse_resume_text(c.resume_text, fallback_name=c.name, fallback_source=c.source),
+        )
+        c.parsed = merged
+        if merged.get("summary"):
+            c.ai_summary = merged["summary"]
+        if not c.name and merged.get("name"):
+            c.name = merged["name"]
+        if not c.email and merged.get("email"):
+            c.email = merged["email"]
+        if not c.phone and merged.get("phone"):
+            c.phone = merged["phone"]
+        c.ai_provider = "gemini(one-off backfill)"
+        updated += 1
+        results.append({"id": c.id, "ok": True})
+    db.commit()
+    return {"updated": updated, "failed": failed, "total": len(rows), "results": results}
+
+
 @router.get("/{cand_id}/resume-file")
 def resume_file(cand_id: int, db: Session = Depends(get_db)):
     """Serve the original uploaded resume file inline (for in-app preview)."""
