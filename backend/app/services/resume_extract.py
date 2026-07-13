@@ -339,6 +339,60 @@ def _clean_value(s: str) -> str:
     return "" if _looks_like_prose(s) else s
 
 
+# ALLOWLIST tokens — what a real academic qualification / institution actually contains. Used to
+# gate the Education column POSITIVELY (a blocklist leaks section headers like "LANGUAGES" and
+# bullet prose like "Managed and delivered ..."; an allowlist shows only recognised education).
+_DEGREE_TOKENS = re.compile(
+    r"\b(b\.?\s?tech|m\.?\s?tech|b\.?\s?e|m\.?\s?e|b\.?\s?sc|m\.?\s?sc|b\.?\s?com|m\.?\s?com|"
+    r"b\.?\s?a|m\.?\s?a|bba|mba|bca|mca|b\.?\s?ed|m\.?\s?ed|pgdm|pgd|ph\.?\s?d|llb|llm|"
+    r"bachelor|master|masters|diploma|degree|graduat(?:e|ion)|post[\s-]?grad|doctorate|"
+    r"honou?rs|intermediate|higher\s+secondary|hsc|ssc|class\s+(?:x|xii|10|12)|"
+    r"undergraduate|polytechnic|engineering)\b",
+    re.I,
+)
+_INSTITUTION_TOKENS = re.compile(
+    r"\b(universit(?:y|ies)|college|institute|institution|school|academy|vidyalaya|"
+    r"polytechnic|iit|nit|iiit|iim|bits)\b",
+    re.I,
+)
+
+
+def _looks_like_degree(s: str) -> bool:
+    return bool(_DEGREE_TOKENS.search(s or ""))
+
+
+def _looks_like_institution_name(s: str) -> bool:
+    return bool(_INSTITUTION_TOKENS.search(s or ""))
+
+
+def _is_education_value(s: str) -> bool:
+    """Positively recognise a degree/institution string — else it doesn't belong in Education."""
+    s = (s or "").strip()
+    return bool(s) and not _looks_like_prose(s) and (_looks_like_degree(s) or _looks_like_institution_name(s))
+
+
+# Job-title words that must NOT show as a company — unless the string also carries a company
+# marker (Ltd, Technologies, &, .com, ...), which means it's a real employer that happens to
+# contain one of these words (e.g. "Lead Analytics Pvt Ltd").
+_JOB_TITLE_WORDS = re.compile(
+    r"\b(intern|engineer|developer|designer|manager|lead|analyst|consultant|executive|"
+    r"specialist|associate|officer|administrator|coordinator|architect|scientist|trainee|"
+    r"recruiter|accountant|marketer|strategist|writer|editor)\b",
+    re.I,
+)
+_COMPANY_MARKER = re.compile(
+    r"\b(inc|llc|ltd|limited|pvt|private|corp|co|company|technolog(?:y|ies)|solutions?|"
+    r"systems?|labs?|services|consulting|group|enterprises?|industries|global|"
+    r"infotech|healthcare|realty|analytics|media|studios?|bank|networks?|ventures?)\b|&|\.com",
+    re.I,
+)
+
+
+def _looks_like_job_title(s: str) -> bool:
+    s = (s or "").strip()
+    return bool(_JOB_TITLE_WORDS.search(s)) and not _COMPANY_MARKER.search(s)
+
+
 def _best_company(companies: list[dict[str, str]]) -> dict[str, str]:
     # Prefer the first entry whose name actually looks like an employer; fall back to the first
     # entry (still useful for the title) so we never invent a company.
@@ -368,7 +422,10 @@ def _looks_like_education(e: dict[str, str]) -> bool:
     inst = (e.get("institution") or "").strip()
     if not deg and not inst:
         return False
-    return not (_looks_like_prose(deg) or _looks_like_prose(inst))
+    if _looks_like_prose(deg) or _looks_like_prose(inst):
+        return False
+    # Positively recognise: at least one field must read as a degree or institution.
+    return _is_education_value(deg) or _is_education_value(inst)
 
 
 def _best_education(education: list[dict[str, str]]) -> dict[str, str]:
@@ -593,17 +650,26 @@ def table_fields(parsed: dict[str, Any], candidate: Any) -> dict[str, Any]:
     edu0 = _best_education(edu_list)
     companies = parsed.get("companies") or []
     co0 = _best_company(companies)
+
+    # ALLOWLIST the display: show a value only when it positively reads as the intended field, so
+    # regex-parsed rows show BLANK rather than garbage (section headers, résumé bullets, job
+    # titles). This runs at display time, so existing candidates are cleaned with no re-parse.
+    company = _clean_company(parsed.get("current_company") or co0.get("name"))
+    if _looks_like_job_title(company):          # a title ("Lead – BPS") is not an employer
+        company = ""
+    degree = (edu0.get("degree") or "").strip()
+    degree = degree if _is_education_value(degree) else ""
+    institution = (edu0.get("institution") or "").strip()
+    institution = institution if _is_education_value(institution) else ""
     return {
         "phone": parsed.get("phone") or getattr(candidate, "phone", "") or "",
         "linkedin": parsed.get("linkedin") or "",
         "github": parsed.get("github") or "",
         "location": _clean_value(parsed.get("location") or ""),
-        # Sanitise so a wrongly-parsed prose bullet never shows as the employer/degree (cleans
-        # existing candidates at display time too, no re-parse needed).
-        "current_company": _clean_company(parsed.get("current_company") or co0.get("name")),
+        "current_company": company,
         "current_title": parsed.get("current_title") or co0.get("title") or "",
-        "education_degree": _clean_value(edu0.get("degree") or ""),
-        "education_institution": _clean_value(edu0.get("institution") or ""),
+        "education_degree": degree,
+        "education_institution": institution,
         "current_ctc": parsed.get("current_ctc") or "",
         "salary_expectation": parsed.get("salary_expectation") or "",
         "total_yoe": parsed.get("total_yoe") if parsed.get("total_yoe") is not None else None,
