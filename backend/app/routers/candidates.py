@@ -216,7 +216,7 @@ def reparse_all_ai(
             c.email = merged["email"]
         if not c.phone and merged.get("phone"):
             c.phone = merged["phone"]
-        c.ai_provider = "gemini(one-off backfill)"
+        c.ai_provider = "gemini-backfill"  # <= String(20)
         updated += 1
         results.append({"id": c.id, "ok": True})
     db.commit()
