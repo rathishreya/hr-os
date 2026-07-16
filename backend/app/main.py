@@ -122,7 +122,9 @@ app.include_router(careers.router)  # public careers pages (no /api prefix)
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok"}
+    import os
+    # Expose the running commit (Render injects RENDER_GIT_COMMIT) so a deploy can be verified.
+    return {"status": "ok", "commit": (os.getenv("RENDER_GIT_COMMIT") or "")[:7]}
 
 
 @app.get("/api/company")
