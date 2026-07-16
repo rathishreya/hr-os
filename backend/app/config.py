@@ -131,12 +131,12 @@ class Settings:
     # FIRST person to sign up via the UI becomes the admin/owner (no log-password hunting).
     ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@hr-os.local")
     ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
-    # Self-service sign-up. The first user is ALWAYS allowed (becomes admin), so a fresh
-    # workspace still onboards with zero setup. Secure-by-default: after that first user,
-    # self-sign-up is CLOSED and any explicitly-reopened sign-ups default to the LEAST-
-    # privileged role — a tool holding candidate PII must not let anyone self-register as
-    # admin. Set ALLOW_SIGNUP=true to reopen self-service onboarding for your team.
-    ALLOW_SIGNUP: bool = os.getenv("ALLOW_SIGNUP", "false").lower() == "true"
+    # Self-service sign-up. The first user is ALWAYS allowed (becomes admin). Open sign-up is ON
+    # (owner's choice) so anyone can create an account from the login page — but new sign-ups
+    # default to the LEAST-privileged role (recruiter), NEVER admin, so open signup can't become a
+    # privilege-escalation hole. Promote people in Settings → Users. Set ALLOW_SIGNUP=false to close
+    # self-signup, or SIGNUP_ALLOWED_DOMAIN=<domain> to restrict it to one company email domain.
+    ALLOW_SIGNUP: bool = os.getenv("ALLOW_SIGNUP", "true").lower() == "true"
     SIGNUP_DEFAULT_ROLE: str = os.getenv("SIGNUP_DEFAULT_ROLE", "recruiter")  # role for non-first signups
     SIGNUP_ALLOWED_DOMAIN: str = os.getenv("SIGNUP_ALLOWED_DOMAIN", "")  # e.g. "ez.works" to restrict
 
