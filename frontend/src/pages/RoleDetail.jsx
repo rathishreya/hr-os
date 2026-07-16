@@ -42,8 +42,11 @@ export default function RoleDetail() {
 
   const hasLive = useMemo(() => board.some((r) => r.meta?.is_live), [board])
 
-  const loadBoard = useCallback(() => {
-    setBoardLoading(true)
+  const loadBoard = useCallback((opts = {}) => {
+    // `silent` = a background refresh (after a stage change) or the 15s poll: update the data in
+    // place WITHOUT toggling the loading spinner, so the board never dims/flickers. Only the first
+    // load shows a spinner.
+    if (!opts.silent) setBoardLoading(true)
     return Promise.all([
       api.pipelineBoard(id),
       api.pipelineSummary(id).catch(() => null),
@@ -53,10 +56,12 @@ export default function RoleDetail() {
         setSummary(sum)
       })
       .catch(() => {
-        setBoard([])
-        setSummary(null)
+        if (!opts.silent) {  // don't wipe the visible board on a transient poll/refresh failure
+          setBoard([])
+          setSummary(null)
+        }
       })
-      .finally(() => setBoardLoading(false))
+      .finally(() => { if (!opts.silent) setBoardLoading(false) })
   }, [id])
 
   useEffect(() => {
@@ -67,7 +72,7 @@ export default function RoleDetail() {
 
   useEffect(() => {
     if (!hasLive) return
-    const t = setInterval(loadBoard, 15000)
+    const t = setInterval(() => loadBoard({ silent: true }), 15000)
     return () => clearInterval(t)
   }, [hasLive, loadBoard])
 
@@ -172,7 +177,7 @@ export default function RoleDetail() {
             roleTitle={role.position}
             board={board}
             loading={boardLoading}
-            onRefresh={loadBoard}
+            onRefresh={() => loadBoard({ silent: true })}
             summary={summary}
             workspaceTab={view}
             initialStage={stageFromUrl}
