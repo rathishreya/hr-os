@@ -1,6 +1,7 @@
 """Pipeline view, stage transitions, re-scoring, human overrides, analytics, audit."""
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -133,19 +134,31 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
 
     # Embed roles once; used to suggest a better-fit role for candidates the AI rejects here.
     role_vecs = recruitment.build_role_vectors(db)
+
+    # Batch-load interviews / emails / rounds for ALL applications in 3 queries instead of 3-per-app
+    # (this endpoint is polled live, so the old N+1 dominated the shortlisting slowness).
+    app_ids = [a.id for a in apps]
+    ivs_by_app: dict[int, list] = defaultdict(list)
+    for iv in db.scalars(select(models.ScreeningInterview)
+                         .where(models.ScreeningInterview.application_id.in_(app_ids))
+                         .order_by(models.ScreeningInterview.created_at.desc())):
+        ivs_by_app[iv.application_id].append(iv)
+    emails_by_app: dict[int, list] = defaultdict(list)
+    for em in db.scalars(select(models.EmailMessage)
+                         .where(models.EmailMessage.application_id.in_(app_ids))
+                         .order_by(models.EmailMessage.created_at.desc())):
+        emails_by_app[em.application_id].append(em)
+    rounds_by_app: dict[int, list] = defaultdict(list)
+    for r in db.scalars(select(models.InterviewRound)
+                        .where(models.InterviewRound.application_id.in_(app_ids))
+                        .order_by(models.InterviewRound.round_number.asc())):
+        rounds_by_app[r.application_id].append(r)
+
     rows = []
     for app in apps:
-        interviews = db.scalars(
-            select(models.ScreeningInterview)
-            .where(models.ScreeningInterview.application_id == app.id)
-            .order_by(models.ScreeningInterview.created_at.desc())
-        ).all()
+        interviews = ivs_by_app.get(app.id, [])
         latest_iv = interviews[0] if interviews else None
-        emails = db.scalars(
-            select(models.EmailMessage)
-            .where(models.EmailMessage.application_id == app.id)
-            .order_by(models.EmailMessage.created_at.desc())
-        ).all()
+        emails = emails_by_app.get(app.id, [])
         screening_status = "none"
         screening_score = None
         screening_rec = ""
@@ -154,11 +167,7 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
             screening_score = (latest_iv.scores or {}).get("overall")
             screening_rec = latest_iv.recommendation or ""
         last_email = emails[0] if emails else None
-        iv_rounds = db.scalars(
-            select(models.InterviewRound)
-            .where(models.InterviewRound.application_id == app.id)
-            .order_by(models.InterviewRound.round_number.asc())
-        ).all()
+        iv_rounds = rounds_by_app.get(app.id, [])
         scheduled_rounds = [r for r in iv_rounds if r.status == "scheduled"]
         next_round = scheduled_rounds[0] if scheduled_rounds else None
         next_label = ""
@@ -166,10 +175,12 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
             next_label = f"R{next_round.round_number} {next_round.interview_type.replace('_', ' ')}"
         stage = app.stage
         cand = app.candidate
-        parsed = resume_extract.enrich_from_resume(
-            cand.parsed or {}, cand.resume_text or "",
-            name=cand.name or "", email=cand.email or "", phone=cand.phone or "",
-            source=cand.source or "direct",
+        # Use the already-stored parsed résumé (fast). Only parse on the fly if it's genuinely
+        # missing — re-parsing every candidate on every poll was a big part of the slowness.
+        parsed = cand.parsed or (
+            resume_extract.parse_resume_text(
+                cand.resume_text or "", fallback_name=cand.name or "", fallback_source=cand.source or "direct")
+            if (cand.resume_text or "").strip() else {}
         )
         profile = resume_extract.table_fields(parsed, cand)
         # When the AI recommends against this role, suggest a better-fit open role instead.

@@ -1,6 +1,8 @@
 """Candidate ingestion (JSON + file upload), parsing, and applying to a role."""
 from __future__ import annotations
 
+from collections import defaultdict
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -191,13 +193,18 @@ def list_candidates(q: str = "", table: bool = False, limit: int = 500, db: Sess
     role_vecs = recruitment.build_role_vectors(db)
     pos_by_hr = {hr.id: hr.position for hr in db.scalars(select(models.HiringRequest)).all()}
     _stage_rank = {"applied": 1, "screening": 2, "shortlisted": 3, "interview": 4, "offer": 5, "hired": 6}
+    # One query for all candidates' applications instead of one-per-candidate (N+1).
+    cand_ids = [c.id for c in rows]
+    apps_by_cand: dict[int, list] = defaultdict(list)
+    for a in db.scalars(
+        select(models.Application)
+        .where(models.Application.candidate_id.in_(cand_ids))
+        .order_by(models.Application.created_at.desc())
+    ):
+        apps_by_cand[a.candidate_id].append(a)
     out = []
     for c in rows:
-        apps = db.scalars(
-            select(models.Application)
-            .where(models.Application.candidate_id == c.id)
-            .order_by(models.Application.created_at.desc())
-        ).all()
+        apps = apps_by_cand.get(c.id, [])
         stages = [a.stage for a in apps]
         active = [s for s in stages if s not in ("hired", "rejected")]
         # "Primary" application = most-advanced (active preferred), tie-broken by score — so the
@@ -206,8 +213,12 @@ def list_candidates(q: str = "", table: bool = False, limit: int = 500, db: Sess
         if apps:
             pool = [a for a in apps if a.stage != "rejected"] or apps
             primary = max(pool, key=lambda a: (_stage_rank.get(a.stage, 0), a.score_overall or 0))
-        parsed = resume_extract.enrich_from_resume(
-            c.parsed, c.resume_text, name=c.name, email=c.email, phone=c.phone, source=c.source,
+        # Use the already-stored parsed résumé; only parse on the fly if it's missing (avoids
+        # re-parsing every résumé on every talent-pool load).
+        parsed = c.parsed or (
+            resume_extract.parse_resume_text(
+                c.resume_text or "", fallback_name=c.name or "", fallback_source=c.source or "")
+            if (c.resume_text or "").strip() else {}
         )
         best = recruitment.suggest_roles_for(c, role_vecs, limit=1)
         suggestion = best[0] if best else None
