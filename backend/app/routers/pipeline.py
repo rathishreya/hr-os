@@ -5,8 +5,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
 from ..config import settings
@@ -66,6 +66,7 @@ def pipeline_for_role(hr_id: int, db: Session = Depends(get_db)):
     apps = db.scalars(
         select(models.Application)
         .where(models.Application.hiring_request_id == hr_id)
+        .options(selectinload(models.Application.candidate))
         .order_by(models.Application.score_overall.desc())
     ).all()
     return apps
@@ -110,6 +111,7 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
     apps = db.scalars(
         select(models.Application)
         .where(models.Application.hiring_request_id == hr_id)
+        .options(selectinload(models.Application.candidate))  # avoid N+1 candidate lazy-loads
         .order_by(models.Application.score_overall.desc())
     ).all()
 
@@ -129,6 +131,7 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
         apps = db.scalars(
             select(models.Application)
             .where(models.Application.hiring_request_id == hr_id)
+            .options(selectinload(models.Application.candidate))
             .order_by(models.Application.score_overall.desc())
         ).all()
 
@@ -226,7 +229,8 @@ def pipeline_summary(hr_id: int, db: Session = Depends(get_db)):
         select(models.Application).where(models.Application.hiring_request_id == hr_id)
     ).all()
     stages = [a.stage for a in apps]
-    pool_count = len(db.scalars(select(models.Candidate)).all())
+    # COUNT(*) — never load all candidate rows (with their PDF blobs) just to size the pool.
+    pool_count = db.scalar(select(func.count(models.Candidate.id))) or 0
     return {
         "id": hr.id,
         "position": hr.position,

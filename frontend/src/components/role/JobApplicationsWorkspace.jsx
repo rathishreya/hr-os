@@ -306,6 +306,7 @@ export default function JobApplicationsWorkspace({
   const [bulkAssessOpen, setBulkAssessOpen] = useState(false)
   const [bulkEmailOpen, setBulkEmailOpen] = useState(false)
   const [movingId, setMovingId] = useState(null)
+  const [stageOverride, setStageOverride] = useState({})  // optimistic rowId -> stage, cleared on refresh
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [selected, setSelected] = useState(null)
   const [columnsOpen, setColumnsOpen] = useState(false)
@@ -420,12 +421,16 @@ export default function JobApplicationsWorkspace({
   async function changeStage(row, stage, e) {
     e?.stopPropagation()
     if (stage === row.stage) return
+    // Optimistic: reflect the new stage in the dropdown instantly, and reconcile the board in the
+    // BACKGROUND instead of freezing the UI on the (slow) refetch. Revert if the save fails.
+    setStageOverride((m) => ({ ...m, [row.id]: stage }))
     setMovingId(row.id)
     try {
       await api.moveStage(row.id, stage)
-      await onRefresh()
       toast(`Updated ${row.candidate?.name || 'candidate'}`)
+      Promise.resolve(onRefresh()).finally(() => setStageOverride({}))
     } catch (err) {
+      setStageOverride((m) => { const n = { ...m }; delete n[row.id]; return n })
       toast(err.message, 'error')
     } finally {
       setMovingId(null)
@@ -483,7 +488,7 @@ export default function JobApplicationsWorkspace({
         return (
           <select
             className="max-w-[132px] rounded-md border-0 bg-slate-100/80 px-2 py-1.5 text-xs font-medium capitalize text-slate-800 ring-1 ring-slate-200/80 focus:ring-2 focus:ring-brand-400"
-            value={row.stage}
+            value={stageOverride[row.id] ?? row.stage}
             disabled={movingId === row.id}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => changeStage(row, e.target.value, e)}
