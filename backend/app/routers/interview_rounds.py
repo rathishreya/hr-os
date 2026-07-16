@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
 from ..config import settings
@@ -184,17 +184,26 @@ def my_rounds(db: Session = Depends(get_db), user: models.User = Depends(current
     (candidate capability, role, rubric) — no compensation or recruiter internals."""
     ident = _identity(user)
     rows = db.scalars(select(models.InterviewRound).order_by(models.InterviewRound.scheduled_at.asc())).all()
+    # Keep only the rounds this panelist is on, then batch-load app + candidate + role + job in a
+    # few queries instead of 4 per round (this endpoint was ~4N remote round-trips).
+    mine_rows = [r for r in rows if ident & {str(p).strip().lower() for p in (r.panelists or [])}]
+    apps_by_id = {a.id: a for a in db.scalars(
+        select(models.Application)
+        .where(models.Application.id.in_({r.application_id for r in mine_rows}))
+        .options(selectinload(models.Application.candidate),
+                 selectinload(models.Application.hiring_request))
+    )}
+    jobs_by_hr = {j.hiring_request_id: j for j in db.scalars(
+        select(models.Job).where(
+            models.Job.hiring_request_id.in_({a.hiring_request_id for a in apps_by_id.values()})))}
     out = []
-    for r in rows:
-        names = {str(p).strip().lower() for p in (r.panelists or [])}
-        if not (ident & names):
-            continue
-        app = db.get(models.Application, r.application_id)
+    for r in mine_rows:
+        app = apps_by_id.get(r.application_id)
         if not app:
             continue
-        cand = db.get(models.Candidate, app.candidate_id)
-        hr = db.get(models.HiringRequest, app.hiring_request_id)
-        job = db.scalar(select(models.Job).where(models.Job.hiring_request_id == app.hiring_request_id))
+        cand = app.candidate
+        hr = app.hiring_request
+        job = jobs_by_hr.get(app.hiring_request_id)
         mine = next((f for f in (r.panel_feedback or []) if str(f.get("panelist", "")).strip().lower() in ident), None)
         submitted = mine is not None
         # Other panelists' feedback is revealed only AFTER you submit yours (avoids anchoring).

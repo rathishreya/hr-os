@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
@@ -200,13 +201,17 @@ def list_hiring_requests(
         ]
     if not table:
         return [schemas.HiringRequestOut.model_validate(r) for r in rows]
+    # One query for all roles' applications instead of one-per-role (N+1).
+    apps_by_hr: dict[int, list] = defaultdict(list)
+    for a in db.scalars(
+        select(models.Application).where(
+            models.Application.hiring_request_id.in_([hr.id for hr in rows]))
+    ):
+        apps_by_hr[a.hiring_request_id].append(a)
     out = []
     for hr in rows:
-        apps = db.scalars(
-            select(models.Application).where(models.Application.hiring_request_id == hr.id)
-        ).all()
         base = schemas.HiringRequestOut.model_validate(hr).model_dump()
-        out.append({**base, **row_from_hiring_request(hr, apps)})
+        out.append({**base, **row_from_hiring_request(hr, apps_by_hr.get(hr.id, []))})
     return out
 
 

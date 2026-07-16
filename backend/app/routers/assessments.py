@@ -6,7 +6,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
 from ..config import settings
@@ -276,8 +276,15 @@ def send_assessment(assessment_id: int, req: schemas.SendAssessmentRequest, db: 
         raise HTTPException(404, "Assessment not found")
     link = _assessment_link(assessment_id)
     counts = {"sent": 0, "logged": 0, "failed": 0}
+    # Batch-load applications with candidate + role (avoids per-recipient lazy-load round-trips).
+    apps_by_id = {ap.id: ap for ap in db.scalars(
+        select(models.Application)
+        .where(models.Application.id.in_(req.application_ids))
+        .options(selectinload(models.Application.candidate),
+                 selectinload(models.Application.hiring_request))
+    )}
     for app_id in req.application_ids:
-        app = db.get(models.Application, app_id)
+        app = apps_by_id.get(app_id)
         if not app or not app.candidate:
             counts["failed"] += 1
             continue

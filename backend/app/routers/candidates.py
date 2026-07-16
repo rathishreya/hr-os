@@ -249,9 +249,14 @@ def candidate_profile(cand_id: int, db: Session = Depends(get_db)):
     apps = db.scalars(
         select(models.Application).where(models.Application.candidate_id == cand_id).order_by(models.Application.created_at.desc())
     ).all()
+    hrs_by_id = {
+        hr.id: hr for hr in db.scalars(
+            select(models.HiringRequest).where(
+                models.HiringRequest.id.in_({a.hiring_request_id for a in apps})))
+    }
     history = []
     for app in apps:
-        hr = db.get(models.HiringRequest, app.hiring_request_id)
+        hr = hrs_by_id.get(app.hiring_request_id)
         history.append({
             "application_id": app.id,
             "hiring_request_id": app.hiring_request_id,

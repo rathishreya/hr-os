@@ -379,7 +379,8 @@ def update_notes(app_id: int, body: schemas.NotesUpdate, db: Session = Depends(g
 @router.get("/analytics/overview")
 def analytics_overview(db: Session = Depends(get_db)):
     apps = db.scalars(select(models.Application)).all()
-    candidates = db.scalars(select(models.Candidate)).all()
+    # Only the `source` column is needed here — never pull full Candidate rows (résumé PDF blobs).
+    cand_sources = db.execute(select(models.Candidate.source)).scalars().all()
     roles = db.scalars(select(models.HiringRequest)).all()
 
     funnel = {s: 0 for s in STAGES}
@@ -390,8 +391,8 @@ def analytics_overview(db: Session = Depends(get_db)):
 
     # Candidate sources
     sources: dict[str, int] = {}
-    for c in candidates:
-        key = (c.source or "direct").strip() or "direct"
+    for src in cand_sources:
+        key = (src or "direct").strip() or "direct"
         sources[key] = sources.get(key, 0) + 1
 
     # AI score distribution (scored applications only)
@@ -487,7 +488,7 @@ def analytics_overview(db: Session = Depends(get_db)):
         "total_roles": len(roles),
         "open_roles": open_roles,
         "active_candidates": active_candidates,
-        "total_candidates": len(candidates),
+        "total_candidates": len(cand_sources),
         "total_applications": total,
         "published_roles": by_status.get("published", 0),
         "funnel": funnel,

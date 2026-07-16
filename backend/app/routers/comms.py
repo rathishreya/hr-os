@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
 from ..config import settings
@@ -160,8 +160,16 @@ def send_bulk(req: schemas.BulkEmailRequest, db: Session = Depends(get_db), user
     edited = bool(req.subject and req.body)  # caller supplied an edited template (with tokens)
     sender_name = mailer.resolve_identity(user)["from_name"]
     sent = logged = failed = skipped = 0
+    # Batch-load all applications with their candidate + role up front (avoids a per-recipient
+    # lazy-load, which was N extra round-trips against the remote DB on every bulk send).
+    apps_by_id = {a.id: a for a in db.scalars(
+        select(models.Application)
+        .where(models.Application.id.in_(req.application_ids))
+        .options(selectinload(models.Application.candidate),
+                 selectinload(models.Application.hiring_request))
+    )}
     for app_id in req.application_ids:
-        app = db.get(models.Application, app_id)
+        app = apps_by_id.get(app_id)
         if not app or not app.candidate or not app.candidate.email:
             skipped += 1
             continue
