@@ -496,7 +496,10 @@ export default function JobApplicationsWorkspace({
         const company = (p.current_company || '').trim()
         const title = (p.current_title || '').trim()
         if (company) return <TwoLine primary={company} secondary={title} />
-        const fresher = /fresher|intern/i.test(title) || Number(p.total_yoe) === 0
+        // Only call someone a "Fresher" on an EXPLICIT signal — never infer it from a zero/missing
+        // total_yoe, because that's also what an experienced résumé looks like when parsing fails
+        // (which was labeling seniors as freshers). Unknown → "—", not a false claim.
+        const fresher = /\b(fresher|fresh graduate|intern)\b/i.test(title)
         return <span className="text-sm text-slate-500">{fresher ? 'Fresher' : '—'}</span>
       }
       case 'education':
