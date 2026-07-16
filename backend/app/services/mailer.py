@@ -8,9 +8,11 @@
 """
 from __future__ import annotations
 
+import re
 import smtplib
 import ssl
 import sys
+import time
 from email.message import EmailMessage as MimeEmail
 from typing import Any
 
@@ -179,6 +181,43 @@ def _smtp_send(identity: dict, to_email: str, to_name: str, subject: str, body: 
         server.send_message(msg)
 
 
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+
+# SMTP errors that won't succeed on retry — bad credentials or an address the server rejected.
+_PERMANENT_SMTP = (
+    smtplib.SMTPAuthenticationError,
+    smtplib.SMTPRecipientsRefused,
+    smtplib.SMTPSenderRefused,
+    smtplib.SMTPNotSupportedError,
+)
+
+
+def _clean_recipient(addr: str) -> str:
+    """Extract the real address from a possibly-dirty value. Résumé-parsed emails often carry
+    trailing junk ('name@x.com Behance LinkedIn') that SMTP rejects — pull out just the address."""
+    m = _EMAIL_RE.search(addr or "")
+    return m.group(0).rstrip(".") if m else ""
+
+
+def _send_with_retry(identity: dict, to_email: str, to_name: str, subject: str, body: str,
+                     ics: str | None, attempts: int = 3) -> tuple[str, str]:
+    """Send, retrying only TRANSIENT failures (disconnects, timeouts, greylisting) with a short
+    backoff, so a temporary Gmail/SMTP blip isn't recorded as a permanent 'failed'. Returns
+    (status, error). Permanent errors (auth / rejected recipient) fail immediately."""
+    last = ""
+    for i in range(attempts):
+        try:
+            _smtp_send(identity, to_email, to_name, subject, body, ics=ics)
+            return "sent", ""
+        except _PERMANENT_SMTP as exc:
+            return "failed", str(exc)
+        except Exception as exc:  # transient — back off and retry
+            last = str(exc)
+            if i < attempts - 1:
+                time.sleep(1.2 * (i + 1))
+    return "failed", last
+
+
 def compose(
     db: Session,
     *,
@@ -203,10 +242,14 @@ def compose(
     ctx = {"name": to_name, "role": role, "company": settings.COMPANY_NAME, "sender": identity["from_name"]}
     subject, body, ai_generated = render_draft(template, ctx, use_ai=use_ai, subject=subject, body=body)
 
+    # Sanitise the recipient so a mis-parsed address ("x@y.com Behance LinkedIn") doesn't get
+    # handed to SMTP and rejected — a common cause of silent "failed" sends.
+    clean_to = _clean_recipient(to_email)
+
     rec = models.EmailMessage(
         candidate_id=candidate_id,
         application_id=application_id,
-        to_email=to_email,
+        to_email=clean_to or to_email,
         to_name=to_name,
         template=template,
         subject=subject,
@@ -214,20 +257,15 @@ def compose(
         ai_generated=ai_generated,
     )
 
-    if not to_email:
+    if not clean_to:
         rec.status = "failed"
-        rec.error = "No recipient email address."
+        rec.error = f"No valid recipient email address (got {to_email!r})." if to_email else "No recipient email address."
     elif identity["configured"]:
-        try:
-            _smtp_send(identity, to_email, to_name, subject, body, ics=ics)
-            rec.status = "sent"
-        except Exception as exc:  # don't crash the request on a send failure
-            rec.status = "failed"
-            rec.error = str(exc)
+        rec.status, rec.error = _send_with_retry(identity, clean_to, to_name, subject, body, ics)
     else:
         rec.status = "logged"
         _safe_print(
-            f"\n[EMAIL · logged — SMTP not configured]\nTo: {to_email}\nSubject: {subject}\n{body}\n"
+            f"\n[EMAIL · logged — SMTP not configured]\nTo: {clean_to}\nSubject: {subject}\n{body}\n"
             + ("[+ calendar invite (.ics) attached]\n" if ics else "")
         )
 
