@@ -257,6 +257,30 @@ def _parse_job_line(line: str) -> dict[str, str] | None:
     m = re.match(r"^(.+?)\s+at\s+(.+?)(?:\s*\(([^)]+)\))?$", line, re.I)
     if m:
         return {"title": m.group(1).strip(), "name": m.group(2).strip(), "duration": (m.group(3) or "").strip()}
+    # Pipe-separated layout: "Lochan & Co. | Graphic Designer (PPT)   July '25 – Mar'26".
+    # Very common, and missed by the patterns above. Split on '|', peel off a trailing date range,
+    # then decide employer-vs-role by word content (role keyword => title; company marker => name).
+    if "|" in line:
+        dur, segs = "", []
+        for s in (p.strip() for p in line.split("|") if p.strip()):
+            # a segment that is basically a date range → treat as the duration
+            if not dur and re.fullmatch(r"[^A-Za-z]*(?:[A-Za-z]{3,9}\.?\s*)?['’]?\d{2,4}\s*[–\-].{0,30}", s):
+                dur = s
+                continue
+            # or a big-space-separated date glued onto a segment ("Designer   July '25 – Mar'26")
+            dm = re.search(r"\s{2,}((?:[A-Za-z]{3,9}\.?\s*)?['’]?\d{2,4}\s*[–\-].*)$", s)
+            if dm:
+                dur = dur or dm.group(1).strip()
+                s = s[:dm.start()].strip()
+            if s:
+                segs.append(s)
+        if len(segs) >= 2:
+            title = next((s for s in segs if _JOB_TITLE_WORDS.search(s)), "")
+            comp = (next((s for s in segs if s != title and _COMPANY_MARKER.search(s)), "")
+                    or next((s for s in segs if s != title), segs[0]))
+            if not title:
+                title = next((s for s in segs if s != comp), "")
+            return {"title": title, "name": comp, "duration": dur}
     if len(line) < 80 and re.search(
         r"\b(intern|engineer|developer|analyst|manager|lead|associate|scientist|consultant)\b",
         line,
