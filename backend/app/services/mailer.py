@@ -314,7 +314,8 @@ def compose(
         # HTTP API — the reliable path on Render (SMTP is blocked). Send FROM the verified sender
         # (EMAIL_FROM), stamped with the acting user's name, and reply-to the actual person.
         rec.status, rec.error = _sendgrid_with_retry(
-            settings.EMAIL_FROM or identity["from_email"], identity["from_name"],
+            settings.EMAIL_FROM or identity["from_email"],
+            settings.EMAIL_FROM_NAME or identity["from_name"],  # brand display name (e.g. "EZ People")
             clean_to, to_name, subject, body,
             identity.get("reply_to") or identity.get("from_email") or "", ics)
     elif identity["configured"]:
