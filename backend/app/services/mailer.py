@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import base64
 import re
 import smtplib
 import ssl
@@ -16,6 +17,7 @@ import time
 from email.message import EmailMessage as MimeEmail
 from typing import Any
 
+import httpx
 from sqlalchemy.orm import Session
 
 from .. import models
@@ -218,6 +220,54 @@ def _send_with_retry(identity: dict, to_email: str, to_name: str, subject: str, 
     return "failed", last
 
 
+def _sendgrid_send(from_email: str, from_name: str, to_email: str, to_name: str,
+                   subject: str, body: str, reply_to: str = "", ics: str | None = None) -> None:
+    """Send one email via SendGrid's HTTPS API — works on hosts (Render) that block SMTP.
+    `from_email` MUST be a SendGrid-verified sender (single-sender or verified domain)."""
+    payload: dict[str, Any] = {
+        "personalizations": [{"to": [{"email": to_email, **({"name": to_name} if to_name else {})}]}],
+        "from": {"email": from_email, "name": from_name or from_email},
+        "subject": subject,
+        "content": [{"type": "text/plain", "value": body}],
+    }
+    if reply_to and reply_to.lower() != from_email.lower():
+        payload["reply_to"] = {"email": reply_to}
+    if ics:
+        payload["attachments"] = [{
+            "content": base64.b64encode(ics.encode("utf-8")).decode("ascii"),
+            "type": "text/calendar; method=REQUEST",
+            "filename": "invite.ics",
+        }]
+    resp = httpx.post(
+        "https://api.sendgrid.com/v3/mail/send",
+        headers={"Authorization": f"Bearer {settings.SENDGRID_API_KEY}", "Content-Type": "application/json"},
+        json=payload, timeout=30,
+    )
+    resp.raise_for_status()
+
+
+def _sendgrid_with_retry(from_email: str, from_name: str, to_email: str, to_name: str, subject: str,
+                         body: str, reply_to: str, ics: str | None, attempts: int = 3) -> tuple[str, str]:
+    """Send via SendGrid, retrying transient (5xx/network) errors; 4xx (bad key / unverified
+    sender / bad request) fail fast since a retry can't help. Returns (status, error)."""
+    last = ""
+    for i in range(attempts):
+        try:
+            _sendgrid_send(from_email, from_name, to_email, to_name, subject, body, reply_to, ics)
+            return "sent", ""
+        except httpx.HTTPStatusError as exc:
+            code = exc.response.status_code
+            detail = (exc.response.text or "")[:200]
+            if 400 <= code < 500:
+                return "failed", f"SendGrid {code}: {detail}"
+            last = f"SendGrid {code}: {detail}"
+        except Exception as exc:
+            last = str(exc)
+        if i < attempts - 1:
+            time.sleep(1.2 * (i + 1))
+    return "failed", last
+
+
 def compose(
     db: Session,
     *,
@@ -260,6 +310,13 @@ def compose(
     if not clean_to:
         rec.status = "failed"
         rec.error = f"No valid recipient email address (got {to_email!r})." if to_email else "No recipient email address."
+    elif settings.SENDGRID_API_KEY:
+        # HTTP API — the reliable path on Render (SMTP is blocked). Send FROM the verified sender
+        # (EMAIL_FROM), stamped with the acting user's name, and reply-to the actual person.
+        rec.status, rec.error = _sendgrid_with_retry(
+            settings.EMAIL_FROM or identity["from_email"], identity["from_name"],
+            clean_to, to_name, subject, body,
+            identity.get("reply_to") or identity.get("from_email") or "", ics)
     elif identity["configured"]:
         rec.status, rec.error = _send_with_retry(identity, clean_to, to_name, subject, body, ics)
     else:

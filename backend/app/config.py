@@ -73,6 +73,10 @@ class Settings:
     SMTP_USER: str = os.getenv("SMTP_USER", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_STARTTLS: bool = os.getenv("SMTP_STARTTLS", "true").lower() == "true"
+    # HTTP email API (SendGrid) — used INSTEAD of SMTP when set. PaaS hosts (Render) block
+    # outbound SMTP ports, so this sends over HTTPS. From-address = EMAIL_FROM, which must be a
+    # SendGrid-verified sender (single-sender verification or a verified domain).
+    SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "talent@ez.works")
     EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "EZ Works Talent")
     COMPANY_NAME: str = os.getenv("COMPANY_NAME", "EZ Works")
@@ -171,7 +175,7 @@ class Settings:
 
     @property
     def email_configured(self) -> bool:
-        return bool(self.SMTP_HOST)
+        return bool(self.SMTP_HOST or self.SENDGRID_API_KEY)
 
     @property
     def secret_is_default(self) -> bool:
