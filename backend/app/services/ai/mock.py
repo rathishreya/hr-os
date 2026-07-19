@@ -658,7 +658,7 @@ def _assessment_email(ctx: dict[str, Any]) -> dict[str, Any]:
         + (f"{desc}\n\n" if desc else "")
         + "Please complete it at your convenience and reply to this email once you're done — and let us "
         "know if you have any questions.\n\n"
-        f"Best regards,\n{sender}\n{company}"
+        f"Best regards,\n{sender}"
     )
     return {"subject": subject, "body": body}
 

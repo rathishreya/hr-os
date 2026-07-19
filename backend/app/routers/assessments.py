@@ -44,7 +44,7 @@ def _default_body(a: "models.Assessment", role: str, company: str, link: str) ->
         f"step, please complete this assessment: {a.name}.\n\nAccess it here: {link}\n\n"
         + (f"{desc}\n\n" if desc else "")
         + "Please reply to this email once you're done, and let us know if you have any questions.\n\n"
-        f"Best regards,\n{settings.EMAIL_FROM_NAME}\n{company}"
+        f"Best regards,\n{settings.EMAIL_FROM_NAME}"
     )
 
 
