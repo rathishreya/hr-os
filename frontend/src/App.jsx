@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import { ToastProvider } from './components/Toast'
 import { AuthProvider, useAuth } from './contexts/auth'
+import ErrorBoundary from './components/ErrorBoundary'
 import AppShell from './components/layout/AppShell'
 import Login from './pages/Login'
 import PanelHome from './pages/PanelHome'
@@ -38,19 +39,23 @@ function RequireAuth({ children }) {
 function AppRoutes() {
   return (
     <AppShell>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/roles" element={<Roles />} />
-        <Route path="/roles/:id" element={<RoleDetail />} />
-        <Route path="/candidates" element={<Candidates />} />
-        <Route path="/distribution" element={<Distribution />} />
-        <Route path="/assessments" element={<Assessments />} />
-        <Route path="/offer-docs" element={<OfferDocs />} />
-        <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/analytics" element={<Suspense fallback={<Loading />}><Analytics /></Suspense>} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+      {/* A crash in any page/modal shows a recoverable error here instead of blanking the whole
+          app — the sidebar/nav stay usable. */}
+      <ErrorBoundary>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/roles" element={<Roles />} />
+          <Route path="/roles/:id" element={<RoleDetail />} />
+          <Route path="/candidates" element={<Candidates />} />
+          <Route path="/distribution" element={<Distribution />} />
+          <Route path="/assessments" element={<Assessments />} />
+          <Route path="/offer-docs" element={<OfferDocs />} />
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/analytics" element={<Suspense fallback={<Loading />}><Analytics /></Suspense>} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </ErrorBoundary>
     </AppShell>
   )
 }
@@ -59,14 +64,17 @@ export default function App() {
   return (
     <ToastProvider>
       <AuthProvider>
-        <Routes>
-          {/* Public candidate interview — no recruiter shell, no login */}
-          <Route path="/interview/:appId" element={<Suspense fallback={<Loading />}><VideoInterview /></Suspense>} />
-          {/* Public password-reset link target (no login) */}
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/*" element={<RequireAuth><AppRoutes /></RequireAuth>} />
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            {/* Public candidate interview — no recruiter shell, no login */}
+            <Route path="/interview/:appId" element={<Suspense fallback={<Loading />}><VideoInterview /></Suspense>} />
+            {/* Public password-reset link target (no login) */}
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/*" element={<RequireAuth><AppRoutes /></RequireAuth>} />
+          </Routes>
+        </ErrorBoundary>
       </AuthProvider>
     </ToastProvider>
   )
 }
+
