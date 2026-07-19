@@ -70,8 +70,13 @@ function formatSlot(iso) {
   if (!iso) return 'Slot not set'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
+  // Explicit components (NOT dateStyle/timeStyle) so we can also pass timeZoneName — combining the
+  // two styles with timeZoneName is spec-illegal and throws "Invalid option : option" in modern V8.
   // timeZoneName:'short' appends the resolved zone (e.g. "GMT+5:30") so times are unambiguous.
-  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZoneName: 'short' })
+  return d.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  })
 }
 
 // One-line outcome for a finished round, derived from panel feedback — shown as an at-a-glance
