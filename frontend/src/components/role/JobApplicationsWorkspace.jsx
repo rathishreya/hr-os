@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Search, Download, RefreshCw, Columns3, LayoutGrid, LayoutList,
-  UserPlus, Star, Pencil, X, ClipboardList, CalendarPlus, Check, Mail, FileDown,
+  UserPlus, Star, Pencil, X, ClipboardList, CalendarPlus, Mail, FileDown,
 } from 'lucide-react'
 import { Badge, Button, Modal, scoreTone, stageTone, cx, Spinner } from '../../ui'
 import { formatComp } from '../../utils/exportCsv'
@@ -9,6 +9,7 @@ import { INTERVIEW_TYPES } from '../../constants'
 import { useJobAppColumns } from '../../hooks/useJobAppColumns'
 import JobColumnSettings from './JobColumnSettings'
 import CandidateManageDrawer from './CandidateManageDrawer'
+import { RoundForm, EMPTY_ROUND } from './InterviewPlanningPanel'
 import SendAssessmentModal from './SendAssessmentModal'
 import BulkEmailModal from './BulkEmailModal'
 import AddCandidate from './AddCandidate'
@@ -65,12 +66,6 @@ function formatDateTime(d) {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
   })
 }
-
-// The viewer's local IANA timezone (e.g. "Asia/Kolkata") — surfaced next to scheduling inputs so
-// a chosen interview time is never ambiguous about which zone it's in.
-const LOCAL_TZ = (() => {
-  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || '' } catch { return '' }
-})()
 
 // Plain-English AI verdict shown beside the star rating. strong_yes/yes → Yes, maybe → Maybe, no → No.
 const AI_VERDICT = {
@@ -176,34 +171,61 @@ const FILTER_ACCESSORS = {
   },
 }
 
-// Create interview rounds for many candidates at once — selected, or ALL in the job.
-// Mounted only while open, so state initializes from props without an effect.
-function BulkRoundsModal({ onClose, allIds, selectedIds, defaultTypes, onDone }) {
+// Schedule an interview round for the selected candidate(s) using the SAME form as the
+// per-candidate Interview-plan panel (single round type, panelists, slot, invite) — so scheduling
+// looks and behaves identically whether you do it from a candidate's drawer or from the table.
+// The chosen round is created for each selected application; round numbers auto-continue per
+// candidate when more than one is selected. Mounted only while open.
+function ScheduleRoundsModal({ roleId, applicationIds, onClose, onDone }) {
   const { toast } = useToast()
-  const hasSel = selectedIds.length > 0
-  const [scope, setScope] = useState(hasSel ? 'selected' : 'all')
-  const [types, setTypes] = useState(defaultTypes || [])
-  const [duration, setDuration] = useState(60)
-  const [scheduledAt, setScheduledAt] = useState('')
-  const [link, setLink] = useState('')
-  const [sendInvite, setSendInvite] = useState(false)
+  const [form, setForm] = useState({ ...EMPTY_ROUND })
   const [busy, setBusy] = useState(false)
-  const ids = scope === 'selected' ? selectedIds : allIds
-  const toggle = (v) => setTypes((t) => (t.includes(v) ? t.filter((x) => x !== v) : [...t, v]))
+  const [panelSuggestions, setPanelSuggestions] = useState([])
+  const [sendAssessmentId, setSendAssessmentId] = useState(null)  // opens the send-assessment popup
+  const n = applicationIds.length
 
-  async function apply() {
-    if (!types.length) { toast('Pick at least one round', 'error'); return }
-    if (!ids.length) { toast('No candidates to apply to', 'error'); return }
-    if (sendInvite && !scheduledAt) { toast('Set a date & time to send invites', 'error'); return }
+  // Panelist suggestions: the role's interview panel + registered panellist users (same source the
+  // per-candidate planner uses, so the "+ name" chips match).
+  useEffect(() => {
+    let alive = true
+    Promise.all([
+      roleId ? api.getRole(roleId).catch(() => null) : Promise.resolve(null),
+      api.listUsers('panellist').catch(() => []),
+    ]).then(([role, users]) => {
+      if (!alive) return
+      const fromRole = (role?.interview_panel || []).filter(Boolean)
+      const fromUsers = (users || []).map((u) => u.name || u.email).filter(Boolean)
+      setPanelSuggestions([...new Set([...fromUsers, ...fromRole])])
+    })
+    return () => { alive = false }
+  }, [roleId])
+
+  async function save() {
+    if (!n) { toast('No candidates selected', 'error'); return }
+    if (form.send_invite && !form.scheduled_at) { toast('Set a date & time to send the invite', 'error'); return }
     setBusy(true)
+    // An assessment round with a chosen assessment → offer to email it right after (same as the
+    // per-candidate flow: preview + Send in the popup).
+    const offerSend = form.interview_type === 'assessment' ? form.assessment_id : null
     try {
-      const r = await api.bulkInterviewRounds({
-        application_ids: ids, interview_types: types, duration_minutes: Number(duration),
-        scheduled_at: scheduledAt, location_or_link: link.trim(), send_invite: sendInvite,
-      })
-      const invited = sendInvite ? ' · invites emailed' : ''
-      toast(`Added ${r.created} round${r.created !== 1 ? 's' : ''} across ${r.applications} candidate${r.applications !== 1 ? 's' : ''}${r.skipped ? ` · ${r.skipped} already existed` : ''}${invited}`)
-      onDone()
+      const results = await Promise.allSettled(applicationIds.map((id) =>
+        api.createInterviewRound({
+          application_id: id,
+          ...form,
+          // For >1 candidate, let each continue its own round numbering (never collide).
+          round_number: n > 1 ? 0 : form.round_number,
+        }),
+      ))
+      const ok = results.filter((r) => r.status === 'fulfilled').length
+      const failed = n - ok
+      const label = INTERVIEW_TYPES.find((t) => t.value === form.interview_type)?.label || 'Round'
+      const invited = form.send_invite && form.scheduled_at ? ' · invite emailed' : ''
+      toast(
+        `${label} scheduled for ${ok} candidate${ok !== 1 ? 's' : ''}${failed ? ` · ${failed} failed` : ''}${invited}`,
+        failed ? 'error' : 'success',
+      )
+      if (offerSend) setSendAssessmentId(offerSend)  // finish after the assessment popup closes
+      else onDone()
     } catch (e) {
       toast(e.message, 'error')
     } finally {
@@ -212,73 +234,31 @@ function BulkRoundsModal({ onClose, allIds, selectedIds, defaultTypes, onDone })
   }
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title="Plan interview rounds"
-      footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button><Button onClick={apply} disabled={busy}>{busy ? <Spinner /> : `Add to ${ids.length} candidate${ids.length !== 1 ? 's' : ''}`}</Button></>}
-    >
-      <div className="space-y-4">
-        {hasSel ? (
-          <div>
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Apply to</p>
-            <div className="inline-flex rounded-lg border border-slate-200 p-0.5">
-              <button type="button" onClick={() => setScope('selected')} className={cx('rounded-md px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-snappy', scope === 'selected' ? 'bg-brand-50 text-brand-800' : 'text-slate-500 hover:text-slate-700')}>Selected ({selectedIds.length})</button>
-              <button type="button" onClick={() => setScope('all')} className={cx('rounded-md px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-snappy', scope === 'all' ? 'bg-brand-50 text-brand-800' : 'text-slate-500 hover:text-slate-700')}>All in this job ({allIds.length})</button>
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-slate-600">Applies to <strong>all {allIds.length} candidate{allIds.length !== 1 ? 's' : ''}</strong> in this job.</p>
-        )}
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Rounds to add</p>
-          <div className="flex flex-wrap gap-1.5">
-            {INTERVIEW_TYPES.map((t) => {
-              const on = types.includes(t.value)
-              return (
-                <button
-                  key={t.value}
-                  type="button"
-                  onClick={() => toggle(t.value)}
-                  aria-pressed={on}
-                  className={cx(
-                    'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
-                    on ? 'border-brand-300 bg-brand-100 text-brand-800' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300',
-                  )}
-                >
-                  <span className={cx('flex h-3.5 w-3.5 items-center justify-center rounded-[4px] border', on ? 'border-current' : 'border-slate-300')}>
-                    {on && <Check className="h-2.5 w-2.5" />}
-                  </span>
-                  {t.label}
-                </button>
-              )
-            })}
-          </div>
-          <p className="mt-2 text-xs text-slate-400">A round a candidate already has is skipped, so this is safe to re-run.</p>
-        </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">Date &amp; time</span>
-            <input type="datetime-local" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
-            <span className="mt-1 block text-[11px] text-slate-400">{LOCAL_TZ ? `Times are in your timezone (${LOCAL_TZ})` : 'Times use your local timezone'}</span>
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">Duration</span>
-            <select className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" value={duration} onChange={(e) => setDuration(e.target.value)}>
-              {[30, 45, 60, 90, 120].map((d) => <option key={d} value={d}>{d} min</option>)}
-            </select>
-          </label>
-        </div>
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">Meeting link / location</span>
-          <input className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" placeholder="Zoom / Google Meet link, or office room" value={link} onChange={(e) => setLink(e.target.value)} />
-        </label>
-        <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm text-slate-700">
-          <input type="checkbox" checked={sendInvite} onChange={(e) => setSendInvite(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-          <span>Email each candidate the date, time &amp; meeting link with a calendar invite (.ics). <span className="text-slate-400">Requires a date &amp; time.</span></span>
-        </label>
-      </div>
-    </Modal>
+    <>
+      {/* Hidden while the follow-up send-assessment popup is showing, so the two don't stack. */}
+      <Modal
+        open={!sendAssessmentId}
+        onClose={onClose}
+        title={n > 1 ? `Schedule a round · ${n} candidates` : 'Schedule interview round'}
+      >
+        <RoundForm
+          form={form}
+          setForm={setForm}
+          panelSuggestions={panelSuggestions}
+          onSave={save}
+          onCancel={onClose}
+          busy={busy}
+          isNew
+          app={null}
+        />
+      </Modal>
+      <SendAssessmentModal
+        open={!!sendAssessmentId}
+        onClose={() => { setSendAssessmentId(null); onDone() }}
+        applicationIds={applicationIds}
+        assessmentId={sendAssessmentId}
+      />
+    </>
   )
 }
 
@@ -311,15 +291,9 @@ export default function JobApplicationsWorkspace({
   const [selected, setSelected] = useState(null)
   const [columnsOpen, setColumnsOpen] = useState(false)
   const [roundsOpen, setRoundsOpen] = useState(false)
-  const [roleTypes, setRoleTypes] = useState([])
   const [sort, setSort] = useState({ key: 'score', dir: 'desc' })
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
-
-  // The role's planned interview types (set at job creation) seed the bulk dialog.
-  useEffect(() => {
-    if (roleId) api.getRole(roleId).then((r) => setRoleTypes(r.interview_types || [])).catch(() => {})
-  }, [roleId])
 
   const tabFiltered = useMemo(() => {
     let list = [...(board || [])]
@@ -623,15 +597,8 @@ export default function JobApplicationsWorkspace({
           </span>
 
           <div className="ml-auto flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setRoundsOpen(true)}
-              title="Create interview rounds for candidates in this job"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200/80 transition duration-150 ease-snappy hover:bg-white hover:text-brand-600 hover:ring-brand-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
-            >
-              <CalendarPlus className="h-3.5 w-3.5" /> Interview rounds
-            </button>
-
+            {/* "Interview rounds" lives in the selection bar (below) alongside Send email / Send
+                assessment — select candidates first, then schedule. Kept single to avoid duplication. */}
             <div className="inline-flex rounded-lg bg-slate-100/80 p-0.5 ring-1 ring-slate-200/60">
               <button type="button" onClick={() => setView('list')} className={cx('rounded-md p-1.5 transition-transform duration-150 ease-snappy active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50', view === 'list' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-400')}><LayoutList className="h-3.5 w-3.5" /></button>
               <button type="button" onClick={() => setView('cards')} className={cx('rounded-md p-1.5 transition-transform duration-150 ease-snappy active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50', view === 'cards' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-400')}><LayoutGrid className="h-3.5 w-3.5" /></button>
@@ -814,11 +781,10 @@ export default function JobApplicationsWorkspace({
       </Modal>
 
       {roundsOpen && (
-        <BulkRoundsModal
+        <ScheduleRoundsModal
+          roleId={roleId}
+          applicationIds={selectedIds.size ? [...selectedIds] : (board || []).map((r) => r.id)}
           onClose={() => setRoundsOpen(false)}
-          allIds={(board || []).map((r) => r.id)}
-          selectedIds={[...selectedIds]}
-          defaultTypes={roleTypes}
           onDone={() => { setRoundsOpen(false); setSelectedIds(new Set()); onRefresh() }}
         />
       )}

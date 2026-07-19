@@ -38,7 +38,7 @@ function typeDescription(v) {
   return TYPE_DESCRIPTIONS[v] || 'Interview round.'
 }
 
-const EMPTY_ROUND = {
+export const EMPTY_ROUND = {
   round_number: 1,
   interview_type: 'technical',
   status: 'scheduled',
@@ -153,7 +153,7 @@ function PanelistInput({ panelists, suggestions, onChange }) {
   )
 }
 
-function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, busy, isNew, app }) {
+export function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, busy, isNew, app }) {
   const [assessments, setAssessments] = useState([])
   useEffect(() => {
     if (form.interview_type === 'assessment' && assessments.length === 0) {
