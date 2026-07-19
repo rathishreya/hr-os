@@ -1,6 +1,7 @@
 """FastAPI application entrypoint."""
 from __future__ import annotations
 
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -78,11 +79,22 @@ app.add_middleware(
 _PUBLIC_API = {"/api/auth/login", "/api/auth/signup", "/api/auth/can-signup", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/company", "/api/ai-status"}
 
 
-def _is_public_api(path: str) -> bool:
+_ASSESS_FILE_RE = re.compile(r"^/api/assessments/(\d+)/files?(?:/\d+)?$")
+
+
+def _is_public_api(request: Request) -> bool:
+    path = request.url.path
     if path in _PUBLIC_API:
         return True
     # Candidate-facing async video interview (no login — secured per-interview is a TODO).
     if path.startswith("/api/video-interview"):
+        return True
+    # Candidate assessment-file download via a SIGNED token (the link we email them). Recruiters
+    # hit the same route WITH an auth header (no token) and fall through to the normal gate below.
+    m = _ASSESS_FILE_RE.match(path)
+    if m and security.verify_resource(
+        f"assessment:{m.group(1)}:file", request.query_params.get("t", ""), settings.SECRET_KEY
+    ):
         return True
     return False
 
@@ -90,7 +102,7 @@ def _is_public_api(path: str) -> bool:
 @app.middleware("http")
 async def auth_gate(request: Request, call_next):
     path = request.url.path
-    if request.method == "OPTIONS" or not path.startswith("/api/") or _is_public_api(path):
+    if request.method == "OPTIONS" or not path.startswith("/api/") or _is_public_api(request):
         return await call_next(request)
     header = request.headers.get("authorization", "")
     token = header[7:].strip() if header[:7].lower() == "bearer " else ""

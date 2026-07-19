@@ -74,6 +74,18 @@ def decode_token(token: str, secret: str) -> int | None:
         return None
 
 
+# ── Signed public-resource links ──
+# A short HMAC over a resource id, so a candidate can open the exact link we emailed WITHOUT
+# logging in, but the URL can't be guessed or tampered with (no DB row / expiry needed).
+
+def sign_resource(resource: str, secret: str) -> str:
+    return _b64e(hmac.new(secret.encode(), f"resource|{resource}".encode(), hashlib.sha256).digest())[:24]
+
+
+def verify_resource(resource: str, token: str, secret: str) -> bool:
+    return bool(token) and hmac.compare_digest(token, sign_resource(resource, secret))
+
+
 # ── Password-reset tokens ──
 # Short-lived, single-use links for "forgot password". The signing key folds in the user's
 # CURRENT password_hash, so the moment the password changes (a successful reset, or any other

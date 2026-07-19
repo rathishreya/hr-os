@@ -229,6 +229,9 @@ def _sendgrid_send(from_email: str, from_name: str, to_email: str, to_name: str,
         "from": {"email": from_email, "name": from_name or from_email},
         "subject": subject,
         "content": [{"type": "text/plain", "value": body}],
+        # Send the real link, not a ct.sendgrid.net click-tracking wrapper (cleaner + less spammy).
+        "tracking_settings": {"click_tracking": {"enable": False, "enable_text": False},
+                              "open_tracking": {"enable": False}},
     }
     if reply_to and reply_to.lower() != from_email.lower():
         payload["reply_to"] = {"email": reply_to}

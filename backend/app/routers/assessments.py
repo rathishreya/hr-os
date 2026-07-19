@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models, schemas
 from ..config import settings
 from ..database import get_db
-from ..services import mailer
+from ..services import mailer, security
 from ..services.ai import ai
 from ..services.recruitment import log
 
@@ -26,8 +26,11 @@ _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 
 def _assessment_link(assessment_id: int) -> str:
+    # A SIGNED, PUBLIC link the candidate can open without logging in (the token is an HMAC of the
+    # assessment id, so it can't be guessed — see the auth-gate exception in main.py).
     base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
-    return f"{base}/api/assessments/{assessment_id}/file"
+    token = security.sign_resource(f"assessment:{assessment_id}:file", settings.SECRET_KEY)
+    return f"{base}/api/assessments/{assessment_id}/file?t={token}"
 
 
 def _default_subject(a: "models.Assessment", role: str) -> str:
