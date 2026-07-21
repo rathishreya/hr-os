@@ -237,6 +237,10 @@ export const api = {
   draftAssessmentEmail: (id, body) => req(`/assessments/${id}/draft-email`, { method: 'POST', body: JSON.stringify(body) }),
   sendAssessment: (id, body) => req(`/assessments/${id}/send`, { method: 'POST', body: JSON.stringify(body) }),
 
+  // Async AI video-interview invite email (recruiter action; the /interview/{id} link is public)
+  draftVideoInvite: (applicationId) => req(`/interview-invite/draft?application_id=${applicationId}`, { method: 'POST' }),
+  sendVideoInvite: (body) => req('/interview-invite/send', { method: 'POST', body: JSON.stringify(body) }),
+
   // Video interview (pre-defined questions, async one-way, open-source on-device transcription)
   setVideoQuestions: (jobId, questions) => req(`/jobs/${jobId}/video-questions`, { method: 'PATCH', body: JSON.stringify({ questions }) }),
   generateVideoQuestions: (applicationId) => req(`/video-interview/generate-questions?application_id=${applicationId}`, { method: 'POST' }),

@@ -9,6 +9,7 @@ import { useToast } from '../Toast'
 import { INTERVIEW_TYPES } from '../../constants'
 import ScreeningPanel from './ScreeningPanel'
 import SendAssessmentModal from './SendAssessmentModal'
+import SendVideoInviteModal from './SendVideoInviteModal'
 
 const STATUSES = [
   { value: 'draft', label: 'Draft', tone: 'gray' },
@@ -696,6 +697,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
   const [showVideo, setShowVideo] = useState(false)
   const [newRound, setNewRound] = useState({ ...EMPTY_ROUND })
   const [sendAssessmentId, setSendAssessmentId] = useState(null)  // opens the send-assessment modal
+  const [showVideoInvite, setShowVideoInvite] = useState(false)   // opens the video-interview invite modal
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -730,8 +732,10 @@ export default function InterviewPlanningPanel({ app, onChange }) {
 
   async function createRound() {
     setBusy(true)
-    // An assessment round with a chosen assessment → offer to email it to the candidate after.
+    // After creating: an assessment round → offer to email the assessment; an AI-interview round →
+    // offer to email the candidate their (public) interview link. Same preview-then-send popup.
     const offerSend = newRound.interview_type === 'assessment' ? newRound.assessment_id : null
+    const offerVideo = newRound.interview_type === 'ai_interview'
     try {
       await api.createInterviewRound({
         application_id: app.id,
@@ -743,6 +747,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
       await load()
       onChange?.()
       if (offerSend) setSendAssessmentId(offerSend)
+      else if (offerVideo) setShowVideoInvite(true)
     } catch (e) {
       toast(e.message, 'error')
     } finally {
@@ -853,6 +858,12 @@ export default function InterviewPlanningPanel({ app, onChange }) {
         onClose={() => setSendAssessmentId(null)}
         applicationIds={[app.id]}
         assessmentId={sendAssessmentId}
+      />
+
+      <SendVideoInviteModal
+        open={showVideoInvite}
+        onClose={() => setShowVideoInvite(false)}
+        applicationIds={[app.id]}
       />
     </div>
   )

@@ -11,6 +11,7 @@ import JobColumnSettings from './JobColumnSettings'
 import CandidateManageDrawer from './CandidateManageDrawer'
 import { RoundForm, EMPTY_ROUND } from './InterviewPlanningPanel'
 import SendAssessmentModal from './SendAssessmentModal'
+import SendVideoInviteModal from './SendVideoInviteModal'
 import BulkEmailModal from './BulkEmailModal'
 import AddCandidate from './AddCandidate'
 import AddFromPool from './AddFromPool'
@@ -182,6 +183,7 @@ function ScheduleRoundsModal({ roleId, applicationIds, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const [panelSuggestions, setPanelSuggestions] = useState([])
   const [sendAssessmentId, setSendAssessmentId] = useState(null)  // opens the send-assessment popup
+  const [showVideoInvite, setShowVideoInvite] = useState(false)   // opens the video-interview invite popup
   const n = applicationIds.length
 
   // Panelist suggestions: the role's interview panel + registered panellist users (same source the
@@ -204,9 +206,10 @@ function ScheduleRoundsModal({ roleId, applicationIds, onClose, onDone }) {
     if (!n) { toast('No candidates selected', 'error'); return }
     if (form.send_invite && !form.scheduled_at) { toast('Set a date & time to send the invite', 'error'); return }
     setBusy(true)
-    // An assessment round with a chosen assessment → offer to email it right after (same as the
-    // per-candidate flow: preview + Send in the popup).
+    // After creating: assessment round → offer to email the assessment; AI-interview round → offer
+    // to email the (public) interview link. Same preview-then-send popup as the per-candidate flow.
     const offerSend = form.interview_type === 'assessment' ? form.assessment_id : null
+    const offerVideo = form.interview_type === 'ai_interview'
     try {
       const results = await Promise.allSettled(applicationIds.map((id) =>
         api.createInterviewRound({
@@ -225,6 +228,7 @@ function ScheduleRoundsModal({ roleId, applicationIds, onClose, onDone }) {
         failed ? 'error' : 'success',
       )
       if (offerSend) setSendAssessmentId(offerSend)  // finish after the assessment popup closes
+      else if (offerVideo) setShowVideoInvite(true)  // finish after the video-invite popup closes
       else onDone()
     } catch (e) {
       toast(e.message, 'error')
@@ -235,9 +239,9 @@ function ScheduleRoundsModal({ roleId, applicationIds, onClose, onDone }) {
 
   return (
     <>
-      {/* Hidden while the follow-up send-assessment popup is showing, so the two don't stack. */}
+      {/* Hidden while a follow-up send popup (assessment / video invite) is showing, so they don't stack. */}
       <Modal
-        open={!sendAssessmentId}
+        open={!sendAssessmentId && !showVideoInvite}
         onClose={onClose}
         title={n > 1 ? `Schedule a round · ${n} candidates` : 'Schedule interview round'}
       >
@@ -257,6 +261,11 @@ function ScheduleRoundsModal({ roleId, applicationIds, onClose, onDone }) {
         onClose={() => { setSendAssessmentId(null); onDone() }}
         applicationIds={applicationIds}
         assessmentId={sendAssessmentId}
+      />
+      <SendVideoInviteModal
+        open={showVideoInvite}
+        onClose={() => { setShowVideoInvite(false); onDone() }}
+        applicationIds={applicationIds}
       />
     </>
   )
