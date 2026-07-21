@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Video, CheckCircle2, AlertTriangle, Loader, ShieldAlert, Mic, Volume2, Sun, Monitor } from 'lucide-react'
+import { Video, CheckCircle2, AlertTriangle, Loader, ShieldAlert, ShieldCheck, Mic, Volume2, Sun, Monitor } from 'lucide-react'
 import { api } from '../api'
 import { Button, Spinner, cx } from '../ui'
 import { useWhisper } from '../hooks/useWhisper'
@@ -50,8 +50,11 @@ export default function VideoInterview() {
   const [interview, setInterview] = useState(null)
   const [company, setCompany] = useState(null)
   const [err, setErr] = useState('')
-  const [phase, setPhase] = useState('intro')   // intro|live|processing|done
+  const [phase, setPhase] = useState('verify')  // verify|intro|live|processing|done|already
   const [idx, setIdx] = useState(0)
+  const [code, setCode] = useState('')          // access code from the invite email
+  const [verifying, setVerifying] = useState(false)
+  const [verifyErr, setVerifyErr] = useState('')
   const [elapsed, setElapsed] = useState(0)
   const [focusLost, setFocusLost] = useState(0)
   const [speaking, setSpeaking] = useState(false)
@@ -185,6 +188,20 @@ export default function VideoInterview() {
     }
   }
 
+  async function submitCode() {
+    const c = code.trim()
+    if (!c) return
+    setVerifying(true); setVerifyErr('')
+    try {
+      await api.verifyInterviewCode(appId, c)
+      setPhase('intro')
+    } catch (e) {
+      setVerifyErr(e.message || "That code doesn't match. Copy it exactly from your invite email.")
+    } finally {
+      setVerifying(false)
+    }
+  }
+
   async function startInterview() {
     let stream
     try { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }) }
@@ -248,6 +265,7 @@ export default function VideoInterview() {
       fd.append('timeline', JSON.stringify(timelineRef.current))
       fd.append('proctoring', JSON.stringify(proctorRef.current))
       fd.append('duration', String(duration))
+      fd.append('code', code.trim())  // re-checked server-side so only the verified candidate can submit
       if (blob.size) fd.append('file', blob, `interview-${appId}.webm`)
       await api.submitVideoRecording(interview.id, fd)
       cleanup(); setPhase('done')
@@ -289,6 +307,34 @@ export default function VideoInterview() {
             Your interview for <strong>{interview.role_position}</strong>{companyName ? <> at <strong>{companyName}</strong></> : ''} has been submitted. Our team will review your responses and get back to you with next steps.
           </p>
           <p className="mt-5 text-xs text-slate-400">You can safely close this tab.</p>
+        </div>
+      </Shell>
+    )
+  }
+
+  if (phase === 'verify') {
+    return (
+      <Shell company={company}>
+        <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600"><ShieldCheck className="h-7 w-7" /></div>
+          <h1 className="text-xl font-bold text-slate-900">Verify it&apos;s you</h1>
+          <p className="mx-auto mt-1.5 max-w-sm text-pretty text-sm leading-relaxed text-slate-500">
+            Enter the access code from your interview invite email to begin{firstName ? `, ${firstName}` : ''}.
+          </p>
+          <input
+            value={code}
+            onChange={(e) => { setCode(e.target.value.toUpperCase()); setVerifyErr('') }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && code.trim()) submitCode() }}
+            placeholder="Access code"
+            maxLength={12}
+            autoFocus
+            className="mt-5 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-center text-lg font-semibold uppercase tracking-[0.3em] text-slate-800 placeholder:tracking-normal placeholder:text-slate-300 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          />
+          {verifyErr && <p className="mt-2 text-sm text-rose-600">{verifyErr}</p>}
+          <Button className="mt-4 w-full justify-center py-3" onClick={submitCode} disabled={verifying || !code.trim()}>
+            {verifying ? <Spinner /> : 'Verify & continue'}
+          </Button>
+          <p className="mt-4 text-xs text-slate-400">Can&apos;t find the code? Check the interview invite email we sent you, or reply to it for help.</p>
         </div>
       </Shell>
     )

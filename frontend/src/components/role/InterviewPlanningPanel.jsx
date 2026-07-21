@@ -10,6 +10,7 @@ import { INTERVIEW_TYPES } from '../../constants'
 import ScreeningPanel from './ScreeningPanel'
 import SendAssessmentModal from './SendAssessmentModal'
 import SendVideoInviteModal from './SendVideoInviteModal'
+import SendInterviewInviteModal from './SendInterviewInviteModal'
 
 const STATUSES = [
   { value: 'draft', label: 'Draft', tone: 'gray' },
@@ -214,15 +215,9 @@ export function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, b
         </div>
         {isNew && (
           <div className="sm:col-span-2">
-            <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-white p-2.5 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={!!form.send_invite}
-                onChange={(e) => setForm({ ...form, send_invite: e.target.checked })}
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-              />
-              <span>Email the candidate the date, time &amp; meeting link with a calendar invite (.ics). <span className="text-slate-400">Needs a date &amp; time.</span></span>
-            </label>
+            <p className="rounded-lg border border-slate-200 bg-slate-50/60 p-2.5 text-xs text-slate-500">
+              After scheduling, you'll get a <strong className="font-medium text-slate-600">preview of the candidate email</strong> — with the date, time &amp; an auto-created meeting link — to review before it's sent.
+            </p>
           </div>
         )}
       </div>
@@ -698,6 +693,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
   const [newRound, setNewRound] = useState({ ...EMPTY_ROUND })
   const [sendAssessmentId, setSendAssessmentId] = useState(null)  // opens the send-assessment modal
   const [showVideoInvite, setShowVideoInvite] = useState(false)   // opens the video-interview invite modal
+  const [liveInviteRounds, setLiveInviteRounds] = useState(null)  // round ids → opens the schedule-email modal
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -732,12 +728,13 @@ export default function InterviewPlanningPanel({ app, onChange }) {
 
   async function createRound() {
     setBusy(true)
-    // After creating: an assessment round → offer to email the assessment; an AI-interview round →
-    // offer to email the candidate their (public) interview link. Same preview-then-send popup.
+    // After creating, ALWAYS preview the candidate email before sending: assessment → send the
+    // assessment; AI-interview → send the (public) interview link; any live round → send the
+    // schedule email with the auto-created meeting link + calendar invite.
     const offerSend = newRound.interview_type === 'assessment' ? newRound.assessment_id : null
     const offerVideo = newRound.interview_type === 'ai_interview'
     try {
-      await api.createInterviewRound({
+      const created = await api.createInterviewRound({
         application_id: app.id,
         ...newRound,
       })
@@ -748,6 +745,7 @@ export default function InterviewPlanningPanel({ app, onChange }) {
       onChange?.()
       if (offerSend) setSendAssessmentId(offerSend)
       else if (offerVideo) setShowVideoInvite(true)
+      else if (created?.id) setLiveInviteRounds([created.id])
     } catch (e) {
       toast(e.message, 'error')
     } finally {
@@ -864,6 +862,12 @@ export default function InterviewPlanningPanel({ app, onChange }) {
         open={showVideoInvite}
         onClose={() => setShowVideoInvite(false)}
         applicationIds={[app.id]}
+      />
+
+      <SendInterviewInviteModal
+        open={!!liveInviteRounds}
+        onClose={() => setLiveInviteRounds(null)}
+        roundIds={liveInviteRounds || []}
       />
     </div>
   )

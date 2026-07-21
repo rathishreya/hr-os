@@ -126,6 +126,11 @@ class Settings:
         os.getenv("PUBLIC_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or ""
     ).rstrip("/")
 
+    # Base URL for auto-created interview meeting rooms. Defaults to Jitsi Meet, which needs no
+    # account or API — a unique room is created on first visit. Override with e.g. a self-hosted
+    # Jitsi. A per-round unguessable room slug is appended (see security.meeting_room).
+    MEET_BASE_URL: str = (os.getenv("MEET_BASE_URL") or "https://meet.jit.si").rstrip("/")
+
     # ── Authentication ──────────────────────────────────────────────────────────
     # HMAC secret for signing session tokens. MUST be set to a strong random value in
     # production (otherwise tokens are forgeable). A default is used in dev with a warning.

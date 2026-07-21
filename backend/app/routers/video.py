@@ -14,7 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..config import settings
 from ..database import SessionLocal, get_db
+from ..services import security
 from ..services.ai import ai
 from ..services.recruitment import hr_to_dict, log, str_list, to_rating
 
@@ -247,6 +249,19 @@ def get_or_create(application_id: int, db: Session = Depends(get_db)):
     return out
 
 
+@router.post("/verify")
+def verify_access(application_id: int, code: str, db: Session = Depends(get_db)):
+    """Check the access code the candidate received in their invite email. The interview link is
+    enumerable (/interview/{id}), so this confirms the RIGHT person is taking it. Public (the
+    candidate isn't logged in), but the code is unguessable without the server secret."""
+    app = db.get(models.Application, application_id)
+    if not app:
+        raise HTTPException(404, "Application not found")
+    if not security.verify_interview_code(application_id, code, settings.SECRET_KEY):
+        raise HTTPException(403, "That access code doesn't match. Please copy it exactly from your invite email.")
+    return {"ok": True, "candidate_name": app.candidate.name if app.candidate else ""}
+
+
 @router.post("/{interview_id}/answer")
 def submit_answer(
     interview_id: int,
@@ -299,6 +314,7 @@ def submit_recording(
     timeline: str = Form("[]"),
     proctoring: str = Form("{}"),
     duration: float = Form(0),
+    code: str = Form(""),
     file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
@@ -308,6 +324,10 @@ def submit_recording(
     vi = db.get(models.VideoInterview, interview_id)
     if not vi:
         raise HTTPException(404, "Interview not found")
+    # Enforce the emailed access code server-side, so a client-side bypass can't submit an
+    # interview for someone else's (enumerable) link.
+    if not security.verify_interview_code(vi.application_id, code, settings.SECRET_KEY):
+        raise HTTPException(403, "Invalid or missing access code — re-open your invite link and enter the code from your email.")
     # One-time link: once an interview has been submitted (uploading/evaluating or finished),
     # reject any further submission so the same URL can't be used to record again. A recruiter
     # can DELETE the interview to deliberately allow a re-take.

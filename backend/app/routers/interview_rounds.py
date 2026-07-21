@@ -11,7 +11,7 @@ from .. import models, schemas
 from ..config import settings
 from ..database import get_db
 from ..deps import current_user
-from ..services import calendar_invite, mailer
+from ..services import calendar_invite, mailer, security
 from ..services.recruitment import log
 
 router = APIRouter(prefix="/api/interview-rounds", tags=["interview-rounds"])
@@ -19,6 +19,21 @@ router = APIRouter(prefix="/api/interview-rounds", tags=["interview-rounds"])
 
 def _round_label(round_no: int, itype: str) -> str:
     return f"Round {round_no} · {itype.replace('_', ' ').title()}"
+
+
+# Round types that happen as a live meeting → auto-create a meeting link when none is provided.
+# Assessment (a file) and AI interview (its own /interview link) don't get a meeting room.
+_NON_MEETING_TYPES = {"assessment", "ai_interview"}
+
+
+def _is_live(itype: str) -> bool:
+    return itype not in _NON_MEETING_TYPES
+
+
+def _meeting_link(application_id: int, round_number: int) -> str:
+    """A ready-to-join meeting URL (Jitsi by default) with an unguessable per-round room."""
+    room = security.meeting_room(application_id, round_number, settings.SECRET_KEY)
+    return f"{settings.MEET_BASE_URL}/{room}"
 
 
 def _send_interview_invite(
@@ -286,6 +301,11 @@ def create_round(body: schemas.InterviewRoundCreate, db: Session = Depends(get_d
     status = body.status if body.status in VALID_STATUS else "scheduled"
     round_no = body.round_number if body.round_number > 0 else _next_round_number(db, body.application_id)
 
+    # Auto-create a meeting link for a live round when the recruiter didn't supply one.
+    loc = body.location_or_link.strip()
+    if not loc and _is_live(itype):
+        loc = _meeting_link(body.application_id, round_no)
+
     row = models.InterviewRound(
         application_id=body.application_id,
         round_number=round_no,
@@ -294,7 +314,7 @@ def create_round(body: schemas.InterviewRoundCreate, db: Session = Depends(get_d
         scheduled_at=body.scheduled_at.strip(),
         duration_minutes=max(15, min(body.duration_minutes, 480)),
         panelists=[p.strip() for p in body.panelists if p and str(p).strip()],
-        location_or_link=body.location_or_link.strip(),
+        location_or_link=loc,
         notes=body.notes.strip(),
         feedback=body.feedback.strip(),
         assessment_id=body.assessment_id,
@@ -349,10 +369,11 @@ def bulk_create_rounds(body: schemas.BulkInterviewRoundsRequest, db: Session = D
             if body.skip_existing and t in existing:
                 skipped += 1
                 continue
+            loc = location_or_link or (_meeting_link(app_id, next_no) if _is_live(t) else "")
             db.add(models.InterviewRound(
                 application_id=app_id, round_number=next_no, interview_type=t,
                 status="scheduled", duration_minutes=duration, panelists=panelists,
-                scheduled_at=scheduled_at, location_or_link=location_or_link,
+                scheduled_at=scheduled_at, location_or_link=loc,
             ))
             existing.add(t)
             next_no += 1

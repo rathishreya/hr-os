@@ -12,6 +12,7 @@ import CandidateManageDrawer from './CandidateManageDrawer'
 import { RoundForm, EMPTY_ROUND } from './InterviewPlanningPanel'
 import SendAssessmentModal from './SendAssessmentModal'
 import SendVideoInviteModal from './SendVideoInviteModal'
+import SendInterviewInviteModal from './SendInterviewInviteModal'
 import BulkEmailModal from './BulkEmailModal'
 import AddCandidate from './AddCandidate'
 import AddFromPool from './AddFromPool'
@@ -184,6 +185,7 @@ function ScheduleRoundsModal({ roleId, applicationIds, onClose, onDone }) {
   const [panelSuggestions, setPanelSuggestions] = useState([])
   const [sendAssessmentId, setSendAssessmentId] = useState(null)  // opens the send-assessment popup
   const [showVideoInvite, setShowVideoInvite] = useState(false)   // opens the video-interview invite popup
+  const [liveInviteRounds, setLiveInviteRounds] = useState(null)  // round ids → opens the schedule-email popup
   const n = applicationIds.length
 
   // Panelist suggestions: the role's interview panel + registered panellist users (same source the
@@ -204,10 +206,10 @@ function ScheduleRoundsModal({ roleId, applicationIds, onClose, onDone }) {
 
   async function save() {
     if (!n) { toast('No candidates selected', 'error'); return }
-    if (form.send_invite && !form.scheduled_at) { toast('Set a date & time to send the invite', 'error'); return }
     setBusy(true)
-    // After creating: assessment round → offer to email the assessment; AI-interview round → offer
-    // to email the (public) interview link. Same preview-then-send popup as the per-candidate flow.
+    // After creating, ALWAYS preview the candidate email before sending: assessment → the assessment;
+    // AI-interview → the (public) interview link; any live round → the schedule email with the
+    // auto-created meeting link + calendar invite.
     const offerSend = form.interview_type === 'assessment' ? form.assessment_id : null
     const offerVideo = form.interview_type === 'ai_interview'
     try {
@@ -219,16 +221,17 @@ function ScheduleRoundsModal({ roleId, applicationIds, onClose, onDone }) {
           round_number: n > 1 ? 0 : form.round_number,
         }),
       ))
-      const ok = results.filter((r) => r.status === 'fulfilled').length
+      const created = results.filter((r) => r.status === 'fulfilled' && r.value?.id).map((r) => r.value.id)
+      const ok = created.length
       const failed = n - ok
       const label = INTERVIEW_TYPES.find((t) => t.value === form.interview_type)?.label || 'Round'
-      const invited = form.send_invite && form.scheduled_at ? ' · invite emailed' : ''
       toast(
-        `${label} scheduled for ${ok} candidate${ok !== 1 ? 's' : ''}${failed ? ` · ${failed} failed` : ''}${invited}`,
+        `${label} scheduled for ${ok} candidate${ok !== 1 ? 's' : ''}${failed ? ` · ${failed} failed` : ''}`,
         failed ? 'error' : 'success',
       )
-      if (offerSend) setSendAssessmentId(offerSend)  // finish after the assessment popup closes
-      else if (offerVideo) setShowVideoInvite(true)  // finish after the video-invite popup closes
+      if (offerSend) setSendAssessmentId(offerSend)       // finish after the assessment popup closes
+      else if (offerVideo) setShowVideoInvite(true)        // finish after the video-invite popup closes
+      else if (created.length) setLiveInviteRounds(created)  // finish after the schedule-email popup closes
       else onDone()
     } catch (e) {
       toast(e.message, 'error')
@@ -239,9 +242,9 @@ function ScheduleRoundsModal({ roleId, applicationIds, onClose, onDone }) {
 
   return (
     <>
-      {/* Hidden while a follow-up send popup (assessment / video invite) is showing, so they don't stack. */}
+      {/* Hidden while a follow-up send popup (assessment / video / schedule) is showing, so they don't stack. */}
       <Modal
-        open={!sendAssessmentId && !showVideoInvite}
+        open={!sendAssessmentId && !showVideoInvite && !liveInviteRounds}
         onClose={onClose}
         title={n > 1 ? `Schedule a round · ${n} candidates` : 'Schedule interview round'}
       >
@@ -266,6 +269,11 @@ function ScheduleRoundsModal({ roleId, applicationIds, onClose, onDone }) {
         open={showVideoInvite}
         onClose={() => { setShowVideoInvite(false); onDone() }}
         applicationIds={applicationIds}
+      />
+      <SendInterviewInviteModal
+        open={!!liveInviteRounds}
+        onClose={() => { setLiveInviteRounds(null); onDone() }}
+        roundIds={liveInviteRounds || []}
       />
     </>
   )

@@ -241,6 +241,13 @@ export const api = {
   draftVideoInvite: (applicationId) => req(`/interview-invite/draft?application_id=${applicationId}`, { method: 'POST' }),
   sendVideoInvite: (body) => req('/interview-invite/send', { method: 'POST', body: JSON.stringify(body) }),
 
+  // Live interview round: schedule email (date/time + auto meeting link + calendar .ics)
+  draftRoundInvite: (roundId) => req(`/interview-invite/round-draft?round_id=${roundId}`, { method: 'POST' }),
+  sendRoundInvite: (body) => req('/interview-invite/round-send', { method: 'POST', body: JSON.stringify(body) }),
+
+  // Candidate access-code check for the video interview (enumerable link → confirm it's them)
+  verifyInterviewCode: (applicationId, code) => req(`/video-interview/verify?application_id=${applicationId}&code=${encodeURIComponent(code)}`, { method: 'POST' }),
+
   // Video interview (pre-defined questions, async one-way, open-source on-device transcription)
   setVideoQuestions: (jobId, questions) => req(`/jobs/${jobId}/video-questions`, { method: 'PATCH', body: JSON.stringify({ questions }) }),
   generateVideoQuestions: (applicationId) => req(`/video-interview/generate-questions?application_id=${applicationId}`, { method: 'POST' }),

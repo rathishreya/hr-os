@@ -12,18 +12,19 @@ export default function SendVideoInviteModal({ open, onClose, applicationIds = [
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [link, setLink] = useState('')
+  const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
 
   const firstApp = applicationIds[0] || null
   const n = applicationIds.length
 
-  // Load the suggested draft (subject/body keep {name}/{link} tokens) + the resolved link for the
-  // first candidate, so the recruiter can preview and open it.
+  // Load the suggested draft (subject/body keep {name}/{link}/{code} tokens) + the resolved link and
+  // access code for the first candidate, so the recruiter can preview them.
   useEffect(() => {
     if (!open || !firstApp) return
     let alive = true
     api.draftVideoInvite(firstApp)
-      .then((d) => { if (alive) { setSubject(d.subject); setBody(d.body); setLink(d.link || '') } })
+      .then((d) => { if (alive) { setSubject(d.subject); setBody(d.body); setLink(d.link || ''); setCode(d.code || '') } })
       .catch(() => {})
     return () => { alive = false }
   }, [open, firstApp])
@@ -55,8 +56,13 @@ export default function SendVideoInviteModal({ open, onClose, applicationIds = [
       <div className="space-y-3">
         <div className="flex items-start gap-2 rounded-lg border border-brand-100 bg-brand-50/60 p-2.5 text-xs text-brand-800">
           <Video className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>The candidate opens the link and records answers on camera — <strong>no login needed</strong>. AI transcribes &amp; evaluates the responses for you. Set the questions on the round form; defaults are used otherwise.</span>
+          <span>The candidate opens the link and records answers on camera. To confirm it&apos;s really them, they must enter an <strong>access code</strong> (included in this email) before starting. AI transcribes &amp; evaluates the responses for you.</span>
         </div>
+        {code && (
+          <Field label="Access code the candidate must enter (personalized per candidate)">
+            <code className="inline-block rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-semibold tracking-[0.2em] text-slate-700">{code}</code>
+          </Field>
+        )}
         {link && (
           <Field label="Interview link (a personalized one is added to each candidate's email)">
             <div className="flex items-center gap-2">
@@ -77,7 +83,7 @@ export default function SendVideoInviteModal({ open, onClose, applicationIds = [
           <textarea className={`${inputClass} h-48 resize-y text-xs`} value={body} onChange={(e) => setBody(e.target.value)} />
         </Field>
         <p className="text-[11px] leading-relaxed text-slate-400">
-          <code className="rounded bg-slate-100 px-1">{'{name}'}</code> and <code className="rounded bg-slate-100 px-1">{'{link}'}</code> are personalized per candidate.
+          <code className="rounded bg-slate-100 px-1">{'{name}'}</code>, <code className="rounded bg-slate-100 px-1">{'{link}'}</code> and <code className="rounded bg-slate-100 px-1">{'{code}'}</code> are personalized per candidate.
           {n > 1 ? ` Sending to ${n} selected candidates.` : ''}
         </p>
       </div>

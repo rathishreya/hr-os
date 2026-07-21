@@ -86,6 +86,32 @@ def verify_resource(resource: str, token: str, secret: str) -> bool:
     return bool(token) and hmac.compare_digest(token, sign_resource(resource, secret))
 
 
+# ── Candidate video-interview access code ──
+# The interview link is /interview/{application_id} where the id is a small sequential int, so the
+# URL is enumerable. To be sure the RIGHT candidate is taking it, we email them a short code they
+# must enter to start (and which is enforced on submit). Deterministic (no DB row), unguessable
+# without the secret. Uses an unambiguous alphabet (no 0/O/1/I).
+_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # 32 chars, no look-alikes
+
+
+def interview_code(application_id: int, secret: str, length: int = 6) -> str:
+    digest = hmac.new(secret.encode(), f"interview-code|{int(application_id)}".encode(), hashlib.sha256).digest()
+    return "".join(_CODE_ALPHABET[b % len(_CODE_ALPHABET)] for b in digest[:length])
+
+
+def verify_interview_code(application_id: int, code: str, secret: str) -> bool:
+    return bool(code) and hmac.compare_digest(
+        (code or "").strip().upper(), interview_code(application_id, secret)
+    )
+
+
+def meeting_room(application_id: int, round_number: int, secret: str) -> str:
+    """Unguessable, stable room slug for an auto-created meeting link (e.g. Jitsi). Stable so the
+    same round always resolves to the same room; unguessable so an outsider can't join."""
+    h = hmac.new(secret.encode(), f"meet|{int(application_id)}|{int(round_number)}".encode(), hashlib.sha256).hexdigest()[:12]
+    return f"interview-{int(application_id)}-{h}"
+
+
 # ── Password-reset tokens ──
 # Short-lived, single-use links for "forgot password". The signing key folds in the user's
 # CURRENT password_hash, so the moment the password changes (a successful reset, or any other
