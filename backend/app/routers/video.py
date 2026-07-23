@@ -22,13 +22,18 @@ from ..services.recruitment import hr_to_dict, log, str_list, to_rating
 
 router = APIRouter(prefix="/api/video-interview", tags=["video-interview"])
 
-_MAX_VIDEO_BYTES = 200 * 1024 * 1024  # 200 MB per upload — guard the free-tier instance
+# The whole recording is read into memory and stored in a Postgres BYTEA column, so on the 512 MB
+# free-tier instance a big upload OOMs the worker (the request dies before anything is saved). Keep
+# the cap well within the instance's headroom; the client also records at a low bitrate now. If a
+# recording still exceeds this, the client re-submits WITHOUT the video (the transcript is enough
+# for evaluation), so the interview is never lost to an oversized file.
+_MAX_VIDEO_BYTES = 60 * 1024 * 1024  # 60 MB per upload
 
 
 def _read_capped(file: UploadFile) -> bytes:
     data = file.file.read(_MAX_VIDEO_BYTES + 1)
     if len(data) > _MAX_VIDEO_BYTES:
-        raise HTTPException(413, "Recording is too large (max 200 MB). Try a shorter answer.")
+        raise HTTPException(413, "Recording is too large to store (max 60 MB).")
     return data
 
 

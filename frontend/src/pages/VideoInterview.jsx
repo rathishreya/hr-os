@@ -204,15 +204,23 @@ export default function VideoInterview() {
 
   async function startInterview() {
     let stream
-    try { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }) }
-    catch { setErr('Camera/microphone access was denied. Please allow access and reload.'); return }
+    // Cap resolution/framerate at the source — a talking-head interview doesn't need more, and it
+    // keeps the file small enough to upload+store reliably (the recording is saved server-side).
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 } },
+        audio: true,
+      })
+    } catch { setErr('Camera/microphone access was denied. Please allow access and reload.'); return }
     streamRef.current = stream
     if (liveRef.current) { liveRef.current.srcObject = stream; liveRef.current.play().catch(() => {}) }
     try { await document.documentElement.requestFullscreen?.() } catch { /* optional */ }
 
     // continuous recording
     chunksRef.current = []
-    const rec = new MediaRecorder(stream, { mimeType: pickMime() })
+    // Low bitrate keeps a ~10-min recording around 20-35 MB, so it uploads reliably and fits the
+    // server's storage cap (video is held in Postgres on a small instance).
+    const rec = new MediaRecorder(stream, { mimeType: pickMime(), videoBitsPerSecond: 400_000, audioBitsPerSecond: 48_000 })
     rec.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data) }
     rec.onstop = onStopped
     recorderRef.current = rec
@@ -259,17 +267,30 @@ export default function VideoInterview() {
     let transcript = ''
     try { const pcm = await blobToPCM16k(blob); if (pcm) { const { text } = await transcribe(pcm); transcript = text || '' } }
     catch { /* recording still uploads */ }
-    try {
+    // code is re-checked server-side so only the verified candidate can submit.
+    const buildForm = (withVideo) => {
       const fd = new FormData()
       fd.append('transcript', transcript)
       fd.append('timeline', JSON.stringify(timelineRef.current))
       fd.append('proctoring', JSON.stringify(proctorRef.current))
       fd.append('duration', String(duration))
-      fd.append('code', code.trim())  // re-checked server-side so only the verified candidate can submit
-      if (blob.size) fd.append('file', blob, `interview-${appId}.webm`)
-      await api.submitVideoRecording(interview.id, fd)
+      fd.append('code', code.trim())
+      if (withVideo && blob.size) fd.append('file', blob, `interview-${appId}.webm`)
+      return fd
+    }
+    try {
+      await api.submitVideoRecording(interview.id, buildForm(true))
       cleanup(); setPhase('done')
-    } catch (e) { setErr(e.message) }
+    } catch (e) {
+      // The video upload failed (usually too large or a slow connection). Save the answers WITHOUT
+      // the video so the interview still counts — the AI evaluation only needs the transcript.
+      try {
+        await api.submitVideoRecording(interview.id, buildForm(false))
+        cleanup(); setPhase('done')
+      } catch (e2) {
+        setErr(e2.message || 'Could not submit your interview. Please check your connection and try again.')
+      }
+    }
   }
 
   // ---- render ----
