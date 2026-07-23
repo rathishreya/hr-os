@@ -329,7 +329,8 @@ class VideoInterview(Base):
     transcript: Mapped[str] = mapped_column(Text, default="")
     timeline: Mapped[list] = mapped_column(JSON, default=list)      # [{q_index, question, at}] seconds into the take
     proctoring: Mapped[dict] = mapped_column(JSON, default=dict)    # {focus_lost, fullscreen_exits, events:[...]}
-    recording: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    recording: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # DB fallback when S3 is off
+    recording_key: Mapped[str] = mapped_column(String(300), default="")          # S3 object key when S3 is on
     recording_mime: Mapped[str] = mapped_column(String(120), default="video/webm")
     duration: Mapped[float] = mapped_column(Float, default=0)
 

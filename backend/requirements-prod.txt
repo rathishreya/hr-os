@@ -4,3 +4,4 @@ psycopg[binary]>=3.1     # PostgreSQL driver
 pdfplumber>=0.11         # PDF resume parsing
 python-docx>=1.1         # DOCX resume parsing
 pyjwt[crypto]>=2.8       # Google Indexing API service-account JWT (RS256); optional — feature degrades gracefully if absent
+boto3>=1.34              # S3 (or S3-compatible) object storage for interview recordings; optional — falls back to DB storage if unconfigured

@@ -10,13 +10,14 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..config import settings
 from ..database import SessionLocal, get_db
-from ..services import security
+from ..services import security, storage
 from ..services.ai import ai
 from ..services.recruitment import hr_to_dict, log, str_list, to_rating
 
@@ -192,7 +193,7 @@ def _out(vi: models.VideoInterview) -> dict:
         "role_position": vi.role_position, "questions": vi.questions or [], "status": vi.status,
         "summary": vi.summary or "", "scores": vi.scores or {}, "evaluation": vi.evaluation or {},
         "transcript": vi.transcript or "", "timeline": vi.timeline or [], "proctoring": vi.proctoring or {},
-        "duration": vi.duration or 0, "has_recording": vi.recording is not None,
+        "duration": vi.duration or 0, "has_recording": bool(vi.recording is not None or getattr(vi, "recording_key", "")),
         "created_at": vi.created_at, "completed_at": vi.completed_at,
         "answers": [_answer_out(a) for a in answers],
     }
@@ -348,8 +349,21 @@ def submit_recording(
         vi.proctoring = {}
     vi.duration = duration or 0
     if file is not None and file.filename:
-        vi.recording = _read_capped(file)
-        vi.recording_mime = file.content_type or "video/webm"
+        mime = file.content_type or "video/webm"
+        if settings.s3_enabled:
+            # Stream straight to S3 (no full in-memory read) and keep only the object key in the DB.
+            # A storage hiccup must NOT lose the interview — the transcript below is enough to grade.
+            key = f"interviews/{vi.id}/recording.webm"
+            try:
+                storage.upload_stream(file.file, key, mime)
+                vi.recording_key = key
+                vi.recording = None
+                vi.recording_mime = mime
+            except Exception as exc:  # noqa: BLE001
+                log(db, "video_interview.recording_upload_failed", "video_interview", vi.id, {"error": str(exc)[:200]})
+        else:
+            vi.recording = _read_capped(file)
+            vi.recording_mime = mime
 
     # Keep the on-device (browser) transcript; transcription fallback + AI evaluation run
     # in the background. Mark "processing" until that finishes.
@@ -366,7 +380,13 @@ def submit_recording(
 @router.get("/{interview_id}/recording")
 def serve_recording(interview_id: int, db: Session = Depends(get_db)):
     vi = db.get(models.VideoInterview, interview_id)
-    if not vi or not vi.recording:
+    if not vi:
+        raise HTTPException(404, "No recording on record")
+    # S3-stored → redirect to a short-lived presigned URL (the browser <video> follows it). Older
+    # recordings stored in the DB are served inline as before.
+    if getattr(vi, "recording_key", ""):
+        return RedirectResponse(storage.presigned_get(vi.recording_key), status_code=307)
+    if not vi.recording:
         raise HTTPException(404, "No recording on record")
     return Response(content=vi.recording, media_type=vi.recording_mime or "video/webm",
                     headers={"Content-Disposition": f'inline; filename="interview-{interview_id}.webm"'})
@@ -416,6 +436,8 @@ def delete_interview(interview_id: int, db: Session = Depends(get_db)):
     vi = db.get(models.VideoInterview, interview_id)
     if not vi:
         raise HTTPException(404, "Interview not found")
+    if getattr(vi, "recording_key", ""):
+        storage.delete(vi.recording_key)  # best-effort: drop the S3 object too
     db.delete(vi)
     log(db, "video_interview.deleted", "video_interview", interview_id, {})
     db.commit()

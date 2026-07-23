@@ -131,6 +131,16 @@ class Settings:
     # Jitsi. A per-round unguessable room slug is appended (see security.meeting_room).
     MEET_BASE_URL: str = (os.getenv("MEET_BASE_URL") or "https://meet.jit.si").rstrip("/")
 
+    # ── Object storage (optional) ────────────────────────────────────────────────
+    # When set, large interview recordings are STREAMED to S3 (or any S3-compatible store) instead
+    # of being loaded into memory and stored as a Postgres BYTEA — which OOMs small instances. If
+    # unset, recordings fall back to DB storage, so the app works with zero config.
+    S3_BUCKET: str = os.getenv("S3_BUCKET", "")
+    S3_REGION: str = os.getenv("AWS_REGION") or os.getenv("S3_REGION") or "us-east-1"
+    S3_ACCESS_KEY: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    S3_SECRET_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", "")  # set for R2/MinIO; empty = AWS S3
+
     # ── Authentication ──────────────────────────────────────────────────────────
     # HMAC secret for signing session tokens. MUST be set to a strong random value in
     # production (otherwise tokens are forgeable). A default is used in dev with a warning.
@@ -185,6 +195,10 @@ class Settings:
     @property
     def secret_is_default(self) -> bool:
         return self.SECRET_KEY == "dev-insecure-change-me"
+
+    @property
+    def s3_enabled(self) -> bool:
+        return bool(self.S3_BUCKET and self.S3_ACCESS_KEY and self.S3_SECRET_KEY)
 
     @property
     def google_indexing_configured(self) -> bool:
