@@ -160,12 +160,15 @@ def resolve_identity(user: "models.User | None" = None) -> dict:
     }
 
 
-def _smtp_send(identity: dict, to_email: str, to_name: str, subject: str, body: str, ics: str | None = None) -> None:
+def _build_mime(from_email: str, from_name: str, to_email: str, to_name: str,
+                subject: str, body: str, reply_to: str = "", ics: str | None = None) -> MimeEmail:
+    """Build the RFC-822 message (plain body + optional .ics calendar invite). Shared by the SMTP
+    and SES send paths so both attach the invite identically."""
     msg = MimeEmail()
-    msg["From"] = f"{identity['from_name']} <{identity['from_email']}>"
+    msg["From"] = f"{from_name} <{from_email}>" if from_name else from_email
     msg["To"] = f"{to_name} <{to_email}>" if to_name else to_email
-    if identity.get("reply_to") and identity["reply_to"].lower() != (identity.get("from_email") or "").lower():
-        msg["Reply-To"] = identity["reply_to"]
+    if reply_to and reply_to.lower() != (from_email or "").lower():
+        msg["Reply-To"] = reply_to
     msg["Subject"] = subject
     msg.set_content(body)
     if ics:
@@ -174,7 +177,12 @@ def _smtp_send(identity: dict, to_email: str, to_name: str, subject: str, body: 
             ics.encode("utf-8"), maintype="text", subtype="calendar",
             filename="invite.ics", params={"method": "REQUEST", "name": "invite.ics"},
         )
+    return msg
 
+
+def _smtp_send(identity: dict, to_email: str, to_name: str, subject: str, body: str, ics: str | None = None) -> None:
+    msg = _build_mime(identity["from_email"], identity["from_name"], to_email, to_name, subject, body,
+                      identity.get("reply_to", ""), ics)
     with smtplib.SMTP(identity["host"], identity["port"], timeout=30) as server:
         if identity["starttls"]:
             server.starttls(context=ssl.create_default_context())
@@ -217,6 +225,57 @@ def _send_with_retry(identity: dict, to_email: str, to_name: str, subject: str, 
             last = str(exc)
             if i < attempts - 1:
                 time.sleep(1.2 * (i + 1))
+    return "failed", last
+
+
+_ses_client_obj = None
+
+
+def _ses_client():
+    """Lazily build the boto3 SES client (import kept lazy so the dep stays optional). Reuses the
+    shared AWS credentials (same IAM user as S3)."""
+    global _ses_client_obj
+    if _ses_client_obj is None:
+        import boto3  # lazy — only needed when SES is the chosen provider
+        _ses_client_obj = boto3.client(
+            "ses", region_name=settings.SES_REGION,
+            aws_access_key_id=settings.S3_ACCESS_KEY, aws_secret_access_key=settings.S3_SECRET_KEY,
+        )
+    return _ses_client_obj
+
+
+def _ses_send(from_email: str, from_name: str, to_email: str, to_name: str,
+              subject: str, body: str, reply_to: str = "", ics: str | None = None) -> None:
+    """Send one email via the Amazon SES API (HTTPS) — works on hosts that block SMTP (Render).
+    `from_email` MUST be an SES-verified identity (verified domain or address)."""
+    msg = _build_mime(from_email, from_name, to_email, to_name, subject, body, reply_to, ics)
+    _ses_client().send_raw_email(
+        Source=f"{from_name} <{from_email}>" if from_name else from_email,
+        Destinations=[to_email],
+        RawMessage={"Data": msg.as_bytes()},
+    )
+
+
+# SES errors a retry can't fix: unverified sender, sandbox recipient, paused account, rejected address.
+_SES_PERMANENT = ("MessageRejected", "MailFromDomainNotVerified", "not verified", "is not verified",
+                  "AccountSendingPaused", "Email address is not verified")
+
+
+def _ses_with_retry(from_email: str, from_name: str, to_email: str, to_name: str, subject: str,
+                    body: str, reply_to: str, ics: str | None, attempts: int = 3) -> tuple[str, str]:
+    """Send via SES, retrying transient (throttling/network) errors; permanent ones fail fast."""
+    last = ""
+    for i in range(attempts):
+        try:
+            _ses_send(from_email, from_name, to_email, to_name, subject, body, reply_to, ics)
+            return "sent", ""
+        except Exception as exc:  # noqa: BLE001
+            detail = str(exc)[:200]
+            if any(k in detail for k in _SES_PERMANENT):
+                return "failed", f"SES: {detail}"
+            last = f"SES: {detail}"
+        if i < attempts - 1:
+            time.sleep(1.2 * (i + 1))
     return "failed", last
 
 
@@ -313,6 +372,14 @@ def compose(
     if not clean_to:
         rec.status = "failed"
         rec.error = f"No valid recipient email address (got {to_email!r})." if to_email else "No recipient email address."
+    elif settings.ses_enabled:
+        # Amazon SES over HTTPS — the AWS-native path (also works on Render, which blocks SMTP).
+        # Send FROM the SES-verified sender (EMAIL_FROM), stamped with the acting user's name.
+        rec.status, rec.error = _ses_with_retry(
+            settings.EMAIL_FROM or identity["from_email"],
+            settings.EMAIL_FROM_NAME or identity["from_name"],
+            clean_to, to_name, subject, body,
+            identity.get("reply_to") or identity.get("from_email") or "", ics)
     elif settings.SENDGRID_API_KEY:
         # HTTP API — the reliable path on Render (SMTP is blocked). Send FROM the verified sender
         # (EMAIL_FROM), stamped with the acting user's name, and reply-to the actual person.

@@ -137,9 +137,16 @@ class Settings:
     # unset, recordings fall back to DB storage, so the app works with zero config.
     S3_BUCKET: str = os.getenv("S3_BUCKET", "")
     S3_REGION: str = os.getenv("AWS_REGION") or os.getenv("S3_REGION") or "us-east-1"
-    S3_ACCESS_KEY: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    S3_ACCESS_KEY: str = os.getenv("AWS_ACCESS_KEY_ID", "")   # shared AWS creds (also used by SES)
     S3_SECRET_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", "")  # set for R2/MinIO; empty = AWS S3
+
+    # ── Email provider ────────────────────────────────────────────────────────────
+    # EMAIL_PROVIDER selects the send path: "ses" (Amazon SES over HTTPS), "sendgrid", or ""
+    # (auto: SendGrid if its key is set, else SMTP, else log). Set EMAIL_PROVIDER=ses to cut over to
+    # SES once the sending domain is verified and the account is out of the SES sandbox.
+    EMAIL_PROVIDER: str = (os.getenv("EMAIL_PROVIDER") or "").strip().lower()
+    SES_REGION: str = os.getenv("SES_REGION") or os.getenv("AWS_REGION") or "us-east-1"
 
     # ── Authentication ──────────────────────────────────────────────────────────
     # HMAC secret for signing session tokens. MUST be set to a strong random value in
@@ -190,7 +197,7 @@ class Settings:
 
     @property
     def email_configured(self) -> bool:
-        return bool(self.SMTP_HOST or self.SENDGRID_API_KEY)
+        return bool(self.SMTP_HOST or self.SENDGRID_API_KEY or self.ses_enabled)
 
     @property
     def secret_is_default(self) -> bool:
@@ -199,6 +206,11 @@ class Settings:
     @property
     def s3_enabled(self) -> bool:
         return bool(self.S3_BUCKET and self.S3_ACCESS_KEY and self.S3_SECRET_KEY)
+
+    @property
+    def ses_enabled(self) -> bool:
+        # Amazon SES send path — explicit opt-in (EMAIL_PROVIDER=ses) + AWS creds present.
+        return self.EMAIL_PROVIDER == "ses" and bool(self.S3_ACCESS_KEY and self.S3_SECRET_KEY)
 
     @property
     def google_indexing_configured(self) -> bool:
