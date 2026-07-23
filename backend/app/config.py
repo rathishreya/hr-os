@@ -205,12 +205,14 @@ class Settings:
 
     @property
     def s3_enabled(self) -> bool:
-        return bool(self.S3_BUCKET and self.S3_ACCESS_KEY and self.S3_SECRET_KEY)
+        # Only the bucket is required — credentials come from env keys OR the compute's IAM role
+        # (boto3's default credential chain), so this works both on Render (keys) and AWS (role).
+        return bool(self.S3_BUCKET)
 
     @property
     def ses_enabled(self) -> bool:
-        # Amazon SES send path — explicit opt-in (EMAIL_PROVIDER=ses) + AWS creds present.
-        return self.EMAIL_PROVIDER == "ses" and bool(self.S3_ACCESS_KEY and self.S3_SECRET_KEY)
+        # Explicit opt-in; credentials come from env keys OR the compute's IAM role.
+        return self.EMAIL_PROVIDER == "ses"
 
     @property
     def google_indexing_configured(self) -> bool:

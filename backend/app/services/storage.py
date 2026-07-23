@@ -19,13 +19,12 @@ def _s3():
     global _client
     if _client is None:
         import boto3  # imported lazily — only needed when S3 is enabled
-        _client = boto3.client(
-            "s3",
-            region_name=settings.S3_REGION,
-            aws_access_key_id=settings.S3_ACCESS_KEY,
-            aws_secret_access_key=settings.S3_SECRET_KEY,
-            endpoint_url=settings.S3_ENDPOINT_URL or None,
-        )
+        kwargs = {"region_name": settings.S3_REGION, "endpoint_url": settings.S3_ENDPOINT_URL or None}
+        # Explicit keys if provided; otherwise boto3 falls back to the IAM role / default chain.
+        if settings.S3_ACCESS_KEY and settings.S3_SECRET_KEY:
+            kwargs["aws_access_key_id"] = settings.S3_ACCESS_KEY
+            kwargs["aws_secret_access_key"] = settings.S3_SECRET_KEY
+        _client = boto3.client("s3", **kwargs)
     return _client
 
 

@@ -237,10 +237,12 @@ def _ses_client():
     global _ses_client_obj
     if _ses_client_obj is None:
         import boto3  # lazy — only needed when SES is the chosen provider
-        _ses_client_obj = boto3.client(
-            "ses", region_name=settings.SES_REGION,
-            aws_access_key_id=settings.S3_ACCESS_KEY, aws_secret_access_key=settings.S3_SECRET_KEY,
-        )
+        kwargs = {"region_name": settings.SES_REGION}
+        # Explicit keys if provided; otherwise boto3 uses the compute's IAM role / default chain.
+        if settings.S3_ACCESS_KEY and settings.S3_SECRET_KEY:
+            kwargs["aws_access_key_id"] = settings.S3_ACCESS_KEY
+            kwargs["aws_secret_access_key"] = settings.S3_SECRET_KEY
+        _ses_client_obj = boto3.client("ses", **kwargs)
     return _ses_client_obj
 
 
