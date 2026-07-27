@@ -136,8 +136,20 @@ app.include_router(careers.router)  # public careers pages (no /api prefix)
 @app.get("/api/health")
 def health() -> dict:
     import os
-    # Expose the running commit (Render injects RENDER_GIT_COMMIT) so a deploy can be verified.
-    return {"status": "ok", "commit": (os.getenv("RENDER_GIT_COMMIT") or "")[:7]}
+    # Expose the running commit (Render injects RENDER_GIT_COMMIT) so a deploy can be verified,
+    # plus which integrations are ACTIVE (booleans/names only — never secrets) so env-var config
+    # can be confirmed with a single curl. The presence of these fields also proves a fresh image
+    # is running (older builds return only status+commit).
+    email = ("ses" if settings.ses_enabled
+             else "sendgrid" if settings.SENDGRID_API_KEY
+             else "smtp" if settings.SMTP_HOST else "log")
+    return {
+        "status": "ok",
+        "commit": (os.getenv("RENDER_GIT_COMMIT") or "")[:7],
+        "storage": "s3" if settings.s3_enabled else "db",
+        "email": email,
+        "aws_region": settings.S3_REGION,
+    }
 
 
 @app.get("/api/company")
