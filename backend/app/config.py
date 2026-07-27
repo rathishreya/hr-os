@@ -151,6 +151,11 @@ class Settings:
     # logged-in user's email is on one of these, mail is sent FROM their own address; otherwise it
     # falls back to EMAIL_FROM (with the user's name + reply-to). Comma-separated.
     EMAIL_SENDER_DOMAINS: str = os.getenv("EMAIL_SENDER_DOMAINS", "ezworks.io")
+    # Domains SendGrid is actually authenticated for (SendGrid domain-auth). SendGrid rejects a
+    # From on any other domain (403), so when a user's domain isn't here we send from EMAIL_FROM
+    # (still stamping their name + reply-to). Usually a SUBSET of EMAIL_SENDER_DOMAINS — e.g. SES
+    # may accept @ez.works individual identities that SendGrid can't send from. Comma-separated.
+    SENDGRID_SENDER_DOMAINS: str = os.getenv("SENDGRID_SENDER_DOMAINS", "ezworks.io")
 
     # ── Authentication ──────────────────────────────────────────────────────────
     # HMAC secret for signing session tokens. MUST be set to a strong random value in
@@ -221,6 +226,10 @@ class Settings:
     @property
     def email_sender_domains(self) -> set[str]:
         return {d.strip().lower() for d in self.EMAIL_SENDER_DOMAINS.split(",") if d.strip()}
+
+    @property
+    def sendgrid_sender_domains(self) -> set[str]:
+        return {d.strip().lower() for d in self.SENDGRID_SENDER_DOMAINS.split(",") if d.strip()}
 
     @property
     def google_indexing_configured(self) -> bool:

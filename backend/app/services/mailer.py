@@ -289,6 +289,17 @@ def _ses_with_retry(from_email: str, from_name: str, to_email: str, to_name: str
     return "failed", last
 
 
+def _sendgrid_from(from_email: str, from_name: str, reply_to: str) -> tuple[str, str, str]:
+    """Make a From safe for SendGrid. SendGrid can only send from domains it's authenticated for
+    (SENDGRID_SENDER_DOMAINS, e.g. ezworks.io) and 403s on anything else — so if the desired From
+    is on another domain (e.g. an SES-verified @ez.works address), send from the shared EMAIL_FROM
+    instead, but KEEP the person's name and route replies back to them. Mail always goes out."""
+    dom = (from_email or "").rsplit("@", 1)[-1].lower()
+    if dom and dom in settings.sendgrid_sender_domains:
+        return from_email, from_name, reply_to
+    return settings.EMAIL_FROM, from_name or settings.EMAIL_FROM_NAME, (reply_to or from_email or "")
+
+
 def _sendgrid_send(from_email: str, from_name: str, to_email: str, to_name: str,
                    subject: str, body: str, reply_to: str = "", ics: str | None = None) -> None:
     """Send one email via SendGrid's HTTPS API — works on hosts (Render) that block SMTP.
@@ -392,19 +403,23 @@ def compose(
         reply_to = identity.get("reply_to") or identity.get("from_email") or ""
         rec.status, rec.error = _ses_with_retry(frm, frm_name, clean_to, to_name, subject, body, reply_to, ics)
         if rec.status != "sent" and settings.SENDGRID_API_KEY:
-            sg_status, sg_error = _sendgrid_with_retry(frm, frm_name, clean_to, to_name, subject, body, reply_to, ics)
+            # SendGrid can't send from every domain SES can (e.g. @ez.works individual identities),
+            # so rewrite the From to an authenticated one when needed (name + reply-to preserved).
+            sg_frm, sg_name, sg_reply = _sendgrid_from(frm, frm_name, reply_to)
+            sg_status, sg_error = _sendgrid_with_retry(sg_frm, sg_name, clean_to, to_name, subject, body, sg_reply, ics)
             if sg_status == "sent":
                 rec.status, rec.error = "sent", f"[SES failed → sent via SendGrid] {rec.error}"[:480]
             else:
                 rec.status, rec.error = sg_status, f"SES: {rec.error} | SendGrid: {sg_error}"[:480]
     elif settings.SENDGRID_API_KEY:
         # HTTP API — the reliable path on Render (SMTP is blocked). Send FROM the logged-in user's
-        # address when sendable (else EMAIL_FROM), stamped with their name, reply-to the person.
-        rec.status, rec.error = _sendgrid_with_retry(
+        # address when SendGrid can (else EMAIL_FROM), stamped with their name, reply-to the person.
+        sg_frm, sg_name, sg_reply = _sendgrid_from(
             identity["from_email"] or settings.EMAIL_FROM,
             identity["from_name"] or settings.EMAIL_FROM_NAME,
-            clean_to, to_name, subject, body,
-            identity.get("reply_to") or identity.get("from_email") or "", ics)
+            identity.get("reply_to") or identity.get("from_email") or "")
+        rec.status, rec.error = _sendgrid_with_retry(
+            sg_frm, sg_name, clean_to, to_name, subject, body, sg_reply, ics)
     elif identity["configured"]:
         rec.status, rec.error = _send_with_retry(identity, clean_to, to_name, subject, body, ics)
     else:
