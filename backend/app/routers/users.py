@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..deps import current_user
 from ..config import settings
 from ..database import get_db
 from ..services import mailer, security
@@ -44,7 +45,8 @@ def list_users(role: str = "", active: bool | None = None, db: Session = Depends
 
 
 @router.post("", status_code=201)
-def create_user(payload: schemas.UserCreate, db: Session = Depends(get_db)):
+def create_user(payload: schemas.UserCreate, db: Session = Depends(get_db),
+                actor: models.User = Depends(current_user)):
     email = (payload.email or "").strip().lower()
     if not (payload.name or "").strip() or not email:
         raise HTTPException(422, "Name and email are required.")
@@ -76,7 +78,7 @@ def create_user(payload: schemas.UserCreate, db: Session = Depends(get_db)):
             f"Role(s): {', '.join(user.roles)}\n\n"
             f"Please keep these credentials safe.\n\n{settings.EMAIL_FROM_NAME}"
         )
-        rec = mailer.compose(db, to_email=email, to_name=user.name, template="custom", subject=subject, body=body)
+        rec = mailer.compose(db, to_email=email, to_name=user.name, template="custom", subject=subject, body=body, sender_user=actor)
         credentials_email = rec.status
 
     db.commit()

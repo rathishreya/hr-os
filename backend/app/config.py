@@ -147,6 +147,10 @@ class Settings:
     # SES once the sending domain is verified and the account is out of the SES sandbox.
     EMAIL_PROVIDER: str = (os.getenv("EMAIL_PROVIDER") or "").strip().lower()
     SES_REGION: str = os.getenv("SES_REGION") or os.getenv("AWS_REGION") or "us-east-1"
+    # Domains we're allowed to send FROM (SES-verified / SendGrid-authenticated). When the
+    # logged-in user's email is on one of these, mail is sent FROM their own address; otherwise it
+    # falls back to EMAIL_FROM (with the user's name + reply-to). Comma-separated.
+    EMAIL_SENDER_DOMAINS: str = os.getenv("EMAIL_SENDER_DOMAINS", "ezworks.io")
 
     # ── Authentication ──────────────────────────────────────────────────────────
     # HMAC secret for signing session tokens. MUST be set to a strong random value in
@@ -213,6 +217,10 @@ class Settings:
     def ses_enabled(self) -> bool:
         # Explicit opt-in; credentials come from env keys OR the compute's IAM role.
         return self.EMAIL_PROVIDER == "ses"
+
+    @property
+    def email_sender_domains(self) -> set[str]:
+        return {d.strip().lower() for d in self.EMAIL_SENDER_DOMAINS.split(",") if d.strip()}
 
     @property
     def google_indexing_configured(self) -> bool:

@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
+from ..deps import current_user
 from ..config import settings
 from ..database import get_db
 from ..services import mailer, security
@@ -271,7 +272,8 @@ def draft_email(assessment_id: int, req: schemas.DraftAssessmentEmailRequest, db
 
 
 @router.post("/{assessment_id}/send", response_model=schemas.SendAssessmentOut)
-def send_assessment(assessment_id: int, req: schemas.SendAssessmentRequest, db: Session = Depends(get_db)):
+def send_assessment(assessment_id: int, req: schemas.SendAssessmentRequest, db: Session = Depends(get_db),
+                    user: models.User = Depends(current_user)):
     """Send the assessment (as an email with the access link) to one or more candidates. The subject/body
     may use {name}, {role}, {company}, {assessment}, {link} placeholders — filled per candidate."""
     a = db.get(models.Assessment, assessment_id)
@@ -300,6 +302,7 @@ def send_assessment(assessment_id: int, req: schemas.SendAssessmentRequest, db: 
         rec = mailer.compose(
             db, to_email=cand.email or "", to_name=cand.name or "", template="assessment",
             role=role, subject=subject, body=body, candidate_id=cand.id, application_id=app.id,
+            sender_user=user,
         )
         counts[rec.status if rec.status in counts else "failed"] += 1
     log(db, "assessment.sent", "assessment", assessment_id, {"count": len(req.application_ids), **counts})

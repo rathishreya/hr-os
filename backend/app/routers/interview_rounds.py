@@ -38,7 +38,7 @@ def _meeting_link(application_id: int, round_number: int) -> str:
 
 def _send_interview_invite(
     db: Session, app: models.Application, *, scheduled_at: str, location_or_link: str,
-    duration_minutes: int, label: str,
+    duration_minutes: int, label: str, sender_user: "models.User | None" = None,
 ) -> None:
     """Email the candidate the interview date/time/link, with a calendar (.ics) invite attached.
     Best-effort: a candidate with no email, or an unparseable date, is simply skipped."""
@@ -79,7 +79,7 @@ def _send_interview_invite(
     mailer.compose(
         db, to_email=cand.email, to_name=cand.name or "", template="interview_invite",
         role=role, subject=subject, body=body,
-        candidate_id=cand.id, application_id=app.id, ics=ics,
+        candidate_id=cand.id, application_id=app.id, ics=ics, sender_user=sender_user,
     )
 
 
@@ -293,7 +293,8 @@ def submit_panel_feedback(round_id: int, body: schemas.PanelFeedbackRequest,
 
 
 @router.post("", response_model=schemas.InterviewRoundOut)
-def create_round(body: schemas.InterviewRoundCreate, db: Session = Depends(get_db)):
+def create_round(body: schemas.InterviewRoundCreate, db: Session = Depends(get_db),
+                 user: models.User = Depends(current_user)):
     app = db.get(models.Application, body.application_id)
     if not app:
         raise HTTPException(404, "Application not found")
@@ -329,7 +330,7 @@ def create_round(body: schemas.InterviewRoundCreate, db: Session = Depends(get_d
     if body.send_invite and row.scheduled_at:
         _send_interview_invite(
             db, app, scheduled_at=row.scheduled_at, location_or_link=row.location_or_link,
-            duration_minutes=row.duration_minutes, label=_round_label(round_no, itype),
+            duration_minutes=row.duration_minutes, label=_round_label(round_no, itype), sender_user=user,
         )
     db.commit()
     db.refresh(row)
@@ -337,7 +338,8 @@ def create_round(body: schemas.InterviewRoundCreate, db: Session = Depends(get_d
 
 
 @router.post("/bulk", response_model=schemas.BulkInterviewRoundsOut)
-def bulk_create_rounds(body: schemas.BulkInterviewRoundsRequest, db: Session = Depends(get_db)):
+def bulk_create_rounds(body: schemas.BulkInterviewRoundsRequest, db: Session = Depends(get_db),
+                       user: models.User = Depends(current_user)):
     """Apply a job-level interview plan (a set of types) to many candidates at once.
 
     Round numbers continue from each candidate's existing rounds. By default a type a
@@ -384,7 +386,7 @@ def bulk_create_rounds(body: schemas.BulkInterviewRoundsRequest, db: Session = D
             first = app_created_types[0].replace("_", " ").title()
             _send_interview_invite(
                 db, app, scheduled_at=scheduled_at, location_or_link=location_or_link,
-                duration_minutes=duration, label=f"Interview ({first})",
+                duration_minutes=duration, label=f"Interview ({first})", sender_user=user,
             )
             invited += 1
     log(db, "interview.rounds_bulk_created", "interview_round", None,

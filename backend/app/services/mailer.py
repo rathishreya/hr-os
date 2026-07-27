@@ -146,13 +146,21 @@ def resolve_identity(user: "models.User | None" = None) -> dict:
             "configured": bool(host),
             "personal": True,
         }
+    # Shared provider (SES/SendGrid). Send FROM the logged-in user's OWN address when their email
+    # is on a domain we're authorised to send from (SES-verified / SendGrid-authenticated); else
+    # fall back to EMAIL_FROM. Either way, stamp the user's name + reply-to so replies reach them.
+    from_email = settings.EMAIL_FROM
+    if user and (user.email or "").strip():
+        dom = user.email.rsplit("@", 1)[-1].lower()
+        if dom in settings.email_sender_domains:
+            from_email = user.email
     return {
         "host": settings.SMTP_HOST,
         "port": settings.SMTP_PORT,
         "starttls": settings.SMTP_STARTTLS,
         "smtp_user": settings.SMTP_USER,
         "smtp_password": settings.SMTP_PASSWORD,
-        "from_email": settings.EMAIL_FROM,
+        "from_email": from_email,
         "from_name": (user.name if user else "") or settings.EMAIL_FROM_NAME,
         "reply_to": (user.email if user else ""),
         "configured": bool(settings.SMTP_HOST),
@@ -379,8 +387,8 @@ def compose(
         # only; unverified sender domains rejected), so if SES fails AND SendGrid is configured,
         # fall back to SendGrid so no email is ever lost. As SES production access + domain
         # verification complete, more mail simply succeeds on the SES attempt — no code change.
-        frm = settings.EMAIL_FROM or identity["from_email"]
-        frm_name = settings.EMAIL_FROM_NAME or identity["from_name"]
+        frm = identity["from_email"] or settings.EMAIL_FROM          # the logged-in user's address when sendable
+        frm_name = identity["from_name"] or settings.EMAIL_FROM_NAME
         reply_to = identity.get("reply_to") or identity.get("from_email") or ""
         rec.status, rec.error = _ses_with_retry(frm, frm_name, clean_to, to_name, subject, body, reply_to, ics)
         if rec.status != "sent" and settings.SENDGRID_API_KEY:
@@ -390,11 +398,11 @@ def compose(
             else:
                 rec.status, rec.error = sg_status, f"SES: {rec.error} | SendGrid: {sg_error}"[:480]
     elif settings.SENDGRID_API_KEY:
-        # HTTP API — the reliable path on Render (SMTP is blocked). Send FROM the verified sender
-        # (EMAIL_FROM), stamped with the acting user's name, and reply-to the actual person.
+        # HTTP API — the reliable path on Render (SMTP is blocked). Send FROM the logged-in user's
+        # address when sendable (else EMAIL_FROM), stamped with their name, reply-to the person.
         rec.status, rec.error = _sendgrid_with_retry(
-            settings.EMAIL_FROM or identity["from_email"],
-            settings.EMAIL_FROM_NAME or identity["from_name"],  # brand display name (e.g. "EZ People")
+            identity["from_email"] or settings.EMAIL_FROM,
+            identity["from_name"] or settings.EMAIL_FROM_NAME,
             clean_to, to_name, subject, body,
             identity.get("reply_to") or identity.get("from_email") or "", ics)
     elif identity["configured"]:

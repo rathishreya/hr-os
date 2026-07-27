@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models
 from ..config import settings
 from ..database import get_db
+from ..deps import current_user
 from ..services import calendar_invite, mailer, security
 from ..services.recruitment import log
 
@@ -77,7 +78,7 @@ def draft_invite(application_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/send")
-def send_invite(req: SendVideoInviteRequest, db: Session = Depends(get_db)):
+def send_invite(req: SendVideoInviteRequest, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
     """Email the video-interview link to one or more candidates. subject/body may use
     {name}/{role}/{company}/{link} — filled per candidate (the link is per application)."""
     counts = {"sent": 0, "logged": 0, "failed": 0}
@@ -102,6 +103,7 @@ def send_invite(req: SendVideoInviteRequest, db: Session = Depends(get_db)):
         rec = mailer.compose(
             db, to_email=cand.email or "", to_name=cand.name or "", template="interview_invite",
             role=role, subject=subject, body=body, candidate_id=cand.id, application_id=app.id,
+            sender_user=user,
         )
         counts[rec.status if rec.status in counts else "failed"] += 1
     log(db, "video_interview.invited", "application", None,
@@ -167,7 +169,7 @@ def round_draft(round_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/round-send")
-def round_send(req: RoundInviteSendRequest, db: Session = Depends(get_db)):
+def round_send(req: RoundInviteSendRequest, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
     """Email the schedule (date/time + meeting link) to each round's candidate, with a calendar
     (.ics) invite attached. subject/body may use {name}/{role}/{company}/{round}/{when}/{where}."""
     counts = {"sent": 0, "logged": 0, "failed": 0}
@@ -212,6 +214,7 @@ def round_send(req: RoundInviteSendRequest, db: Session = Depends(get_db)):
         rec = mailer.compose(
             db, to_email=cand.email or "", to_name=cand.name or "", template="interview_invite",
             role=role, subject=subject, body=body, candidate_id=cand.id, application_id=app.id, ics=ics,
+            sender_user=user,
         )
         counts[rec.status if rec.status in counts else "failed"] += 1
     log(db, "interview.invite_sent", "interview_round", None, {"count": len(req.round_ids), **counts})
