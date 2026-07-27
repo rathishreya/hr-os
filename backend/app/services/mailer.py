@@ -351,6 +351,47 @@ def _sendgrid_with_retry(from_email: str, from_name: str, to_email: str, to_name
     return "failed", last
 
 
+def _shared_send(identity: dict, to_email: str, to_name: str, subject: str, body: str,
+                 ics: str | None) -> tuple[str, str]:
+    """Send via the shared workspace provider (NOT the user's personal mailbox): SES-first with a
+    SendGrid fallback, else SendGrid, else shared SMTP, else log. Returns (status, error)."""
+    if settings.ses_enabled:
+        # SES can't deliver to everyone yet (sandbox → verified recipients only), so fall back to
+        # SendGrid on failure — no email is ever lost. As SES production access completes, more mail
+        # simply succeeds on the SES attempt with no code change.
+        frm = identity["from_email"] or settings.EMAIL_FROM          # the logged-in user's address when sendable
+        frm_name = identity["from_name"] or settings.EMAIL_FROM_NAME
+        reply_to = identity.get("reply_to") or identity.get("from_email") or ""
+        status, error = _ses_with_retry(frm, frm_name, to_email, to_name, subject, body, reply_to, ics)
+        if status != "sent" and settings.SENDGRID_API_KEY:
+            # SendGrid can't send from every domain SES can (e.g. @ez.works individual identities),
+            # so rewrite the From to an authenticated one when needed (name + reply-to preserved).
+            sg_frm, sg_name, sg_reply = _sendgrid_from(frm, frm_name, reply_to)
+            sg_status, sg_error = _sendgrid_with_retry(sg_frm, sg_name, to_email, to_name, subject, body, sg_reply, ics)
+            if sg_status == "sent":
+                return "sent", f"[SES failed → sent via SendGrid] {error}"[:480]
+            return sg_status, f"SES: {error} | SendGrid: {sg_error}"[:480]
+        return status, error
+    if settings.SENDGRID_API_KEY:
+        # HTTP API — the reliable path on Render (SMTP is blocked). Send FROM the user's address when
+        # SendGrid can (else EMAIL_FROM), stamped with their name, reply-to the person.
+        sg_frm, sg_name, sg_reply = _sendgrid_from(
+            identity["from_email"] or settings.EMAIL_FROM,
+            identity["from_name"] or settings.EMAIL_FROM_NAME,
+            identity.get("reply_to") or identity.get("from_email") or "")
+        return _sendgrid_with_retry(sg_frm, sg_name, to_email, to_name, subject, body, sg_reply, ics)
+    if settings.SMTP_HOST:
+        # Shared workspace SMTP account (not a personal mailbox).
+        shared = {**identity, "smtp_user": settings.SMTP_USER, "smtp_password": settings.SMTP_PASSWORD,
+                  "host": settings.SMTP_HOST, "port": settings.SMTP_PORT, "starttls": settings.SMTP_STARTTLS}
+        return _send_with_retry(shared, to_email, to_name, subject, body, ics)
+    _safe_print(
+        f"\n[EMAIL · logged — no provider configured]\nTo: {to_email}\nSubject: {subject}\n{body}\n"
+        + ("[+ calendar invite (.ics) attached]\n" if ics else "")
+    )
+    return "logged", ""
+
+
 def compose(
     db: Session,
     *,
@@ -393,41 +434,20 @@ def compose(
     if not clean_to:
         rec.status = "failed"
         rec.error = f"No valid recipient email address (got {to_email!r})." if to_email else "No recipient email address."
-    elif settings.ses_enabled:
-        # Try Amazon SES first. SES can't deliver to everyone yet (sandbox → verified recipients
-        # only; unverified sender domains rejected), so if SES fails AND SendGrid is configured,
-        # fall back to SendGrid so no email is ever lost. As SES production access + domain
-        # verification complete, more mail simply succeeds on the SES attempt — no code change.
-        frm = identity["from_email"] or settings.EMAIL_FROM          # the logged-in user's address when sendable
-        frm_name = identity["from_name"] or settings.EMAIL_FROM_NAME
-        reply_to = identity.get("reply_to") or identity.get("from_email") or ""
-        rec.status, rec.error = _ses_with_retry(frm, frm_name, clean_to, to_name, subject, body, reply_to, ics)
-        if rec.status != "sent" and settings.SENDGRID_API_KEY:
-            # SendGrid can't send from every domain SES can (e.g. @ez.works individual identities),
-            # so rewrite the From to an authenticated one when needed (name + reply-to preserved).
-            sg_frm, sg_name, sg_reply = _sendgrid_from(frm, frm_name, reply_to)
-            sg_status, sg_error = _sendgrid_with_retry(sg_frm, sg_name, clean_to, to_name, subject, body, sg_reply, ics)
-            if sg_status == "sent":
-                rec.status, rec.error = "sent", f"[SES failed → sent via SendGrid] {rec.error}"[:480]
-            else:
-                rec.status, rec.error = sg_status, f"SES: {rec.error} | SendGrid: {sg_error}"[:480]
-    elif settings.SENDGRID_API_KEY:
-        # HTTP API — the reliable path on Render (SMTP is blocked). Send FROM the logged-in user's
-        # address when SendGrid can (else EMAIL_FROM), stamped with their name, reply-to the person.
-        sg_frm, sg_name, sg_reply = _sendgrid_from(
-            identity["from_email"] or settings.EMAIL_FROM,
-            identity["from_name"] or settings.EMAIL_FROM_NAME,
-            identity.get("reply_to") or identity.get("from_email") or "")
-        rec.status, rec.error = _sendgrid_with_retry(
-            sg_frm, sg_name, clean_to, to_name, subject, body, sg_reply, ics)
-    elif identity["configured"]:
+    elif identity["personal"]:
+        # The user connected their OWN Gmail/Workspace mailbox (App Password). Send THROUGH it so the
+        # message lands in their real Sent folder and is genuinely from their address — SES/SendGrid
+        # never touch Gmail, so they can't do that. Fall back to the shared provider on failure so no
+        # email is ever lost (e.g. a wrong/expired App Password).
         rec.status, rec.error = _send_with_retry(identity, clean_to, to_name, subject, body, ics)
+        if rec.status != "sent":
+            fb_status, fb_error = _shared_send(identity, clean_to, to_name, subject, body, ics)
+            if fb_status == "sent":
+                rec.status, rec.error = "sent", f"[your mailbox failed → sent via shared provider] {rec.error}"[:480]
+            else:
+                rec.status, rec.error = fb_status, f"your mailbox: {rec.error} | shared: {fb_error}"[:480]
     else:
-        rec.status = "logged"
-        _safe_print(
-            f"\n[EMAIL · logged — SMTP not configured]\nTo: {clean_to}\nSubject: {subject}\n{body}\n"
-            + ("[+ calendar invite (.ics) attached]\n" if ics else "")
-        )
+        rec.status, rec.error = _shared_send(identity, clean_to, to_name, subject, body, ics)
 
     db.add(rec)
     db.flush()
