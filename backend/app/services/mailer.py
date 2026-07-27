@@ -375,13 +375,20 @@ def compose(
         rec.status = "failed"
         rec.error = f"No valid recipient email address (got {to_email!r})." if to_email else "No recipient email address."
     elif settings.ses_enabled:
-        # Amazon SES over HTTPS — the AWS-native path (also works on Render, which blocks SMTP).
-        # Send FROM the SES-verified sender (EMAIL_FROM), stamped with the acting user's name.
-        rec.status, rec.error = _ses_with_retry(
-            settings.EMAIL_FROM or identity["from_email"],
-            settings.EMAIL_FROM_NAME or identity["from_name"],
-            clean_to, to_name, subject, body,
-            identity.get("reply_to") or identity.get("from_email") or "", ics)
+        # Try Amazon SES first. SES can't deliver to everyone yet (sandbox → verified recipients
+        # only; unverified sender domains rejected), so if SES fails AND SendGrid is configured,
+        # fall back to SendGrid so no email is ever lost. As SES production access + domain
+        # verification complete, more mail simply succeeds on the SES attempt — no code change.
+        frm = settings.EMAIL_FROM or identity["from_email"]
+        frm_name = settings.EMAIL_FROM_NAME or identity["from_name"]
+        reply_to = identity.get("reply_to") or identity.get("from_email") or ""
+        rec.status, rec.error = _ses_with_retry(frm, frm_name, clean_to, to_name, subject, body, reply_to, ics)
+        if rec.status != "sent" and settings.SENDGRID_API_KEY:
+            sg_status, sg_error = _sendgrid_with_retry(frm, frm_name, clean_to, to_name, subject, body, reply_to, ics)
+            if sg_status == "sent":
+                rec.status, rec.error = "sent", f"[SES failed → sent via SendGrid] {rec.error}"[:480]
+            else:
+                rec.status, rec.error = sg_status, f"SES: {rec.error} | SendGrid: {sg_error}"[:480]
     elif settings.SENDGRID_API_KEY:
         # HTTP API — the reliable path on Render (SMTP is blocked). Send FROM the verified sender
         # (EMAIL_FROM), stamped with the acting user's name, and reply-to the actual person.
