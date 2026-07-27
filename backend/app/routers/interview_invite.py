@@ -20,6 +20,7 @@ from ..database import get_db
 from ..deps import current_user
 from ..services import calendar_invite, mailer, security
 from ..services.recruitment import log
+from .interview_rounds import panelist_ccs
 
 router = APIRouter(prefix="/api/interview-invite", tags=["interview-invite"])
 
@@ -165,6 +166,7 @@ def round_draft(round_id: int, db: Session = Depends(get_db)):
         "when": _fmt_when(r.scheduled_at or ""),
         "where": r.location_or_link or "",
         "round": _round_label(r),
+        "cc": panelist_ccs(db, r.panelists),   # panelists copied on the invite — shown in the preview
     }
 
 
@@ -214,7 +216,7 @@ def round_send(req: RoundInviteSendRequest, db: Session = Depends(get_db), user:
         rec = mailer.compose(
             db, to_email=cand.email or "", to_name=cand.name or "", template="interview_invite",
             role=role, subject=subject, body=body, candidate_id=cand.id, application_id=app.id, ics=ics,
-            sender_user=user,
+            sender_user=user, cc=panelist_ccs(db, r.panelists),
         )
         counts[rec.status if rec.status in counts else "failed"] += 1
     log(db, "interview.invite_sent", "interview_round", None, {"count": len(req.round_ids), **counts})

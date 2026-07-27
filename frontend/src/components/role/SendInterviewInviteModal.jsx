@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Send, ExternalLink, Calendar, Video } from 'lucide-react'
+import { Send, ExternalLink, Calendar, Video, Users } from 'lucide-react'
 import { api } from '../../api'
 import { Modal, Button, Spinner, Field, inputClass } from '../../ui'
 import { useToast } from '../Toast'
@@ -14,6 +14,7 @@ export default function SendInterviewInviteModal({ open, onClose, roundIds = [],
   const [when, setWhen] = useState('')
   const [where, setWhere] = useState('')
   const [roundLabel, setRoundLabel] = useState('')
+  const [cc, setCc] = useState([])
   const [busy, setBusy] = useState(false)
 
   const firstRound = roundIds[0] || null
@@ -27,7 +28,7 @@ export default function SendInterviewInviteModal({ open, onClose, roundIds = [],
       .then((d) => {
         if (!alive) return
         setSubject(d.subject); setBody(d.body)
-        setWhen(d.when || ''); setWhere(d.where || ''); setRoundLabel(d.round || '')
+        setWhen(d.when || ''); setWhere(d.where || ''); setRoundLabel(d.round || ''); setCc(d.cc || [])
       })
       .catch(() => {})
     return () => { alive = false }
@@ -73,7 +74,10 @@ export default function SendInterviewInviteModal({ open, onClose, roundIds = [],
               <span>{where || 'A meeting link will be created automatically'}</span>
             )}
           </div>
-          {n > 1 && <p className="text-[11px] text-brand-700/80">Each of the {n} candidates gets their own meeting link &amp; calendar invite.</p>}
+          {cc.length > 0 && (
+            <div className="flex items-start gap-2"><Users className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>Cc: {cc.join(', ')}</span></div>
+          )}
+          {n > 1 && <p className="text-[11px] text-brand-700/80">Each of the {n} candidates gets their own meeting link &amp; calendar invite.{cc.length > 0 ? ' Panelists shown are for the first round.' : ''}</p>}
         </div>
 
         <Field label="Subject"><input className={inputClass} value={subject} onChange={(e) => setSubject(e.target.value)} /></Field>

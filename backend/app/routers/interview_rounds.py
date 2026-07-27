@@ -21,6 +21,22 @@ def _round_label(round_no: int, itype: str) -> str:
     return f"Round {round_no} · {itype.replace('_', ' ').title()}"
 
 
+def panelist_ccs(db: Session, panelists: "list[str] | None") -> list[str]:
+    """Addresses to CC on the candidate invite for a round's panelists. A panelist stored as an
+    email is used directly; one stored as a bare name (e.g. picked from the suggestion chips) is
+    resolved to that user's email when we can match it by name."""
+    emails = mailer.emails_only(panelists)                       # panelists typed as an email
+    named = [str(p).strip() for p in (panelists or []) if str(p).strip() and "@" not in str(p)]
+    if named:
+        lowered = {n.lower() for n in named}
+        for u in db.scalars(select(models.User)).all():
+            if (u.name or "").strip().lower() in lowered:
+                e = (u.email or "").strip()
+                if e and e not in emails:
+                    emails.append(e)
+    return emails
+
+
 # Round types that happen as a live meeting → auto-create a meeting link when none is provided.
 # Assessment (a file) and AI interview (its own /interview link) don't get a meeting room.
 _NON_MEETING_TYPES = {"assessment", "ai_interview"}
@@ -39,9 +55,11 @@ def _meeting_link(application_id: int, round_number: int) -> str:
 def _send_interview_invite(
     db: Session, app: models.Application, *, scheduled_at: str, location_or_link: str,
     duration_minutes: int, label: str, sender_user: "models.User | None" = None,
+    panelists: "list[str] | None" = None,
 ) -> None:
     """Email the candidate the interview date/time/link, with a calendar (.ics) invite attached.
-    Best-effort: a candidate with no email, or an unparseable date, is simply skipped."""
+    Any panelist that was added as an email is CC'd on the invite. Best-effort: a candidate with
+    no email, or an unparseable date, is simply skipped."""
     cand = db.get(models.Candidate, app.candidate_id)
     if not cand or not (cand.email or "").strip():
         return
@@ -80,6 +98,7 @@ def _send_interview_invite(
         db, to_email=cand.email, to_name=cand.name or "", template="interview_invite",
         role=role, subject=subject, body=body,
         candidate_id=cand.id, application_id=app.id, ics=ics, sender_user=sender_user,
+        cc=panelist_ccs(db, panelists),
     )
 
 
@@ -331,6 +350,7 @@ def create_round(body: schemas.InterviewRoundCreate, db: Session = Depends(get_d
         _send_interview_invite(
             db, app, scheduled_at=row.scheduled_at, location_or_link=row.location_or_link,
             duration_minutes=row.duration_minutes, label=_round_label(round_no, itype), sender_user=user,
+            panelists=row.panelists,
         )
     db.commit()
     db.refresh(row)
@@ -387,6 +407,7 @@ def bulk_create_rounds(body: schemas.BulkInterviewRoundsRequest, db: Session = D
             _send_interview_invite(
                 db, app, scheduled_at=scheduled_at, location_or_link=location_or_link,
                 duration_minutes=duration, label=f"Interview ({first})", sender_user=user,
+                panelists=panelists,
             )
             invited += 1
     log(db, "interview.rounds_bulk_created", "interview_round", None,
