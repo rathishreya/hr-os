@@ -148,6 +148,10 @@ function PanelistInput({ panelists, suggestions, onChange }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+          // Commit a typed-but-not-"Add"ed panelist when focus leaves the field — e.g. the user
+          // types an email then clicks "Schedule round" directly. Without this the draft was
+          // silently dropped, so that panelist never got saved or CC'd on the invite.
+          onBlur={() => add()}
         />
         <Button type="button" variant="ghost" className="shrink-0 text-xs" onClick={() => add()}>Add</Button>
       </div>
