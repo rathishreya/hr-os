@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Mail, Users as UsersIcon, GraduationCap, Plus, Trash2, RefreshCw, Eye, EyeOff,
   ChevronDown, Check, Phone, Building2, MapPin, Globe, Pencil, Power,
-  Send, CheckCircle2, AlertTriangle, XCircle, Download, KeyRound, Briefcase,
+  Send, CheckCircle2, AlertTriangle, XCircle, Download, KeyRound, Briefcase, Video,
 } from 'lucide-react'
 import { api } from '../api'
 import { Card, Button, Badge, Spinner, Modal, Field, inputClass, Tabs, PageHeader, EmptyState, IconButton, Avatar } from '../ui'
@@ -477,6 +477,83 @@ function MyMailboxCard() {
   )
 }
 
+// Connect the user's Google account so scheduled interview rounds get a REAL Google Meet link
+// (+ a calendar event). OAuth: the browser is sent to Google's consent screen and redirected back.
+function GoogleCalendarCard() {
+  const { toast } = useToast()
+  const [info, setInfo] = useState(null)   // { configured, connected, email }
+  const [busy, setBusy] = useState(false)
+
+  const load = () => api.googleStatus().then(setInfo).catch(() => setInfo(null))
+  useEffect(() => { load() }, [])
+
+  // Handle the OAuth redirect back into the app (…/?google=connected|error) with a toast.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get('google')
+    if (!p) return
+    if (p === 'connected') toast('Google Calendar connected — interview rounds now get a Google Meet link')
+    else toast('Google connection failed — please try again', 'error')
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+    load()
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function connect() {
+    setBusy(true)
+    try {
+      const { auth_url } = await api.googleConnect()
+      if (auth_url) window.location.href = auth_url
+      else toast('Google Calendar isn’t configured on the server yet', 'error')
+    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
+  }
+
+  async function disconnect() {
+    if (!window.confirm('Disconnect Google Calendar? New interview rounds will use a Jitsi link instead of Google Meet.')) return
+    setBusy(true)
+    try { await api.googleDisconnect(); toast('Google Calendar disconnected'); await load() }
+    catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
+  }
+
+  if (!info) return null
+  const { configured, connected, email } = info
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-start gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${connected ? 'bg-emerald-100 text-emerald-600' : 'bg-brand-100 text-brand-600'}`}>
+          <Video className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-800">Google Meet for interview rounds</h3>
+            <Badge tone={connected ? 'green' : 'gray'}>{connected ? 'Connected' : 'Not connected'}</Badge>
+          </div>
+          <p className="mt-1 text-pretty text-sm text-slate-500">
+            Connect your Google account so a scheduled interview round gets a <strong>real Google Meet link</strong> and a calendar event on your calendar — the candidate &amp; panelists are added automatically.
+            {!connected && ' Until you connect, rounds use a no-login Jitsi link.'}
+          </p>
+
+          {!configured ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Google Calendar isn’t set up on the server yet — the Google OAuth credentials need to be added on the server.
+            </div>
+          ) : (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {!connected ? (
+                <Button onClick={connect} disabled={busy}>{busy ? <Spinner /> : <><Video className="h-4 w-4" /> Connect Google Calendar</>}</Button>
+              ) : (
+                <>
+                  <span className="text-sm text-slate-500">Connected as <span className="font-medium text-slate-700">{email}</span></span>
+                  <Button variant="ghost" onClick={disconnect} disabled={busy} className="text-rose-600 hover:text-rose-700"><Trash2 className="h-4 w-4" /> Disconnect</Button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 function EmailTab() {
   const { toast } = useToast()
   const [info, setInfo] = useState(null)        // { email_configured, from, templates }
@@ -522,6 +599,9 @@ function EmailTab() {
 
       {/* Per-user mailbox — the primary path for sending as yourself. */}
       <MyMailboxCard />
+
+      {/* Connect Google for real Meet links on interview rounds. */}
+      <GoogleCalendarCard />
 
       <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Workspace default (fallback)</p>
       {/* Status of the shared workspace SMTP — used when a user hasn't connected their own mailbox.
@@ -644,7 +724,9 @@ const TABS = [
 
 export default function Settings() {
   usePageTitle('Settings')
-  const [tab, setTab] = useState('account')
+  // Land on the Email tab after a Google Calendar OAuth redirect (…/settings?google=…).
+  const [tab, setTab] = useState(() =>
+    new URLSearchParams(window.location.search).get('google') ? 'email' : 'account')
   return (
     <div className="space-y-6">
       <PageHeader title="Settings" subtitle="Manage your team, placement cells & hiring vendors, and workspace configuration." />

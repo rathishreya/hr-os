@@ -173,6 +173,10 @@ export const api = {
   getMyMailbox: () => req('/comms/my-mailbox'),
   setMyMailbox: (app_password) => req('/comms/my-mailbox', { method: 'PUT', body: JSON.stringify({ app_password }) }),
   testMyMailbox: () => req('/comms/my-mailbox/test', { method: 'POST' }),
+  // Google Calendar / Meet (connect your Google account for real Meet links on interview rounds)
+  googleStatus: () => req('/google/status'),
+  googleConnect: () => req('/google/connect'),
+  googleDisconnect: () => req('/google/disconnect', { method: 'DELETE' }),
   previewEmail: (body) => req('/comms/preview', { method: 'POST', body: JSON.stringify(body) }),
   sendEmail: (body) => req('/comms/send', { method: 'POST', body: JSON.stringify(body) }),
   sendBulkEmail: (body) => req('/comms/send-bulk', { method: 'POST', body: JSON.stringify(body) }),

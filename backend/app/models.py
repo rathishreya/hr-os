@@ -423,6 +423,10 @@ class User(Base):
     # user's candidate emails authenticate as their login email and are sent FROM it (true
     # send-from). Empty → fall back to the shared workspace SMTP. Never returned by the API.
     smtp_password: Mapped[str] = mapped_column(String(255), default="")
+    # OAuth refresh token for the user's connected Google account — used to create a real Google
+    # Meet link + calendar event for scheduled interview rounds. Empty → fall back to Jitsi. Never
+    # returned by the API.
+    google_refresh_token: Mapped[str] = mapped_column(String(512), default="")
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 

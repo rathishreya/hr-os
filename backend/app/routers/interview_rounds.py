@@ -11,7 +11,7 @@ from .. import models, schemas
 from ..config import settings
 from ..database import get_db
 from ..deps import current_user
-from ..services import calendar_invite, mailer, security
+from ..services import calendar_invite, gcal, mailer, security
 from ..services.recruitment import log
 
 router = APIRouter(prefix="/api/interview-rounds", tags=["interview-rounds"])
@@ -50,6 +50,35 @@ def _meeting_link(application_id: int, round_number: int) -> str:
     """A ready-to-join meeting URL (Jitsi by default) with an unguessable per-round room."""
     room = security.meeting_room(application_id, round_number, settings.SECRET_KEY)
     return f"{settings.MEET_BASE_URL}/{room}"
+
+
+def _meeting_link_for(db: Session, user: "models.User | None", app: models.Application,
+                      round_no: int, scheduled_at: str, itype: str, duration: int,
+                      panelists: "list[str] | None") -> str:
+    """Best meeting link for a live round. If the scheduling user has connected their Google account
+    AND we have a date/time, create a REAL Google Meet link (+ a calendar event on their calendar,
+    with the candidate & panelists as attendees). Any failure falls back to the Jitsi room — a link
+    is always returned, so scheduling never breaks."""
+    start = calendar_invite.parse_local_dt(scheduled_at or "")
+    if user and (user.google_refresh_token or "").strip() and _is_live(itype) and start:
+        cand = db.get(models.Candidate, app.candidate_id)
+        hr = db.get(models.HiringRequest, app.hiring_request_id)
+        role = hr.position if hr else "the role"
+        attendees = ([cand.email] if cand and (cand.email or "").strip() else []) + panelist_ccs(db, panelists)
+        try:
+            link = gcal.create_meet_event(
+                user.google_refresh_token,
+                summary=f"{_round_label(round_no, itype)} — {role}",
+                start=start, duration_minutes=duration,
+                description=f"Interview for {role} at {settings.COMPANY_NAME}.",
+                attendees=attendees,
+                request_id=f"hros-{app.id}-{round_no}-{start.strftime('%Y%m%dT%H%M%S')}",
+            )
+            if link:
+                return link
+        except Exception:
+            pass  # fall through to Jitsi — never block scheduling on a Google hiccup
+    return _meeting_link(app.id, round_no)
 
 
 def _send_interview_invite(
@@ -320,11 +349,13 @@ def create_round(body: schemas.InterviewRoundCreate, db: Session = Depends(get_d
     itype = body.interview_type if body.interview_type in VALID_TYPES else "other"
     status = body.status if body.status in VALID_STATUS else "scheduled"
     round_no = body.round_number if body.round_number > 0 else _next_round_number(db, body.application_id)
+    duration = max(15, min(body.duration_minutes, 480))
 
-    # Auto-create a meeting link for a live round when the recruiter didn't supply one.
+    # Auto-create a meeting link for a live round when the recruiter didn't supply one — a real
+    # Google Meet link if they've connected Google Calendar, else a Jitsi room.
     loc = body.location_or_link.strip()
     if not loc and _is_live(itype):
-        loc = _meeting_link(body.application_id, round_no)
+        loc = _meeting_link_for(db, user, app, round_no, body.scheduled_at.strip(), itype, duration, body.panelists)
 
     row = models.InterviewRound(
         application_id=body.application_id,
@@ -332,7 +363,7 @@ def create_round(body: schemas.InterviewRoundCreate, db: Session = Depends(get_d
         interview_type=itype,
         status=status,
         scheduled_at=body.scheduled_at.strip(),
-        duration_minutes=max(15, min(body.duration_minutes, 480)),
+        duration_minutes=duration,
         panelists=[p.strip() for p in body.panelists if p and str(p).strip()],
         location_or_link=loc,
         notes=body.notes.strip(),

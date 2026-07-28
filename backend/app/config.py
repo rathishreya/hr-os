@@ -131,6 +131,15 @@ class Settings:
     # Jitsi. A per-round unguessable room slug is appended (see security.meeting_room).
     MEET_BASE_URL: str = (os.getenv("MEET_BASE_URL") or "https://meet.jit.si").rstrip("/")
 
+    # Google Calendar / Meet (OAuth). When a recruiter connects their Google account, a scheduled
+    # interview round gets a REAL Google Meet link + a calendar event created on their calendar
+    # (falls back to MEET_BASE_URL/Jitsi otherwise). One-time setup: create an OAuth client in
+    # Google Cloud (an "Internal" consent screen on a Workspace domain needs no Google review).
+    GOOGLE_OAUTH_CLIENT_ID: str = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+    GOOGLE_OAUTH_CLIENT_SECRET: str = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    # Timezone applied to Google Calendar event start/end (scheduled_at is a naive local time).
+    COMPANY_TIMEZONE: str = os.getenv("COMPANY_TIMEZONE", "Asia/Kolkata")
+
     # ── Object storage (optional) ────────────────────────────────────────────────
     # When set, large interview recordings are STREAMED to S3 (or any S3-compatible store) instead
     # of being loaded into memory and stored as a Postgres BYTEA — which OOMs small instances. If
@@ -234,6 +243,10 @@ class Settings:
     @property
     def google_indexing_configured(self) -> bool:
         return bool(self.GOOGLE_INDEXING_SA_FILE or self.GOOGLE_INDEXING_SA_JSON)
+
+    @property
+    def google_oauth_configured(self) -> bool:
+        return bool(self.GOOGLE_OAUTH_CLIENT_ID and self.GOOGLE_OAUTH_CLIENT_SECRET)
 
     @property
     def linkedin_configured(self) -> bool:

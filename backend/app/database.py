@@ -106,6 +106,7 @@ def _ensure_sqlite_columns() -> None:
         ],
         "users": [
             ("smtp_password", "VARCHAR DEFAULT ''"),
+            ("google_refresh_token", "VARCHAR DEFAULT ''"),
         ],
     }
     with engine.begin() as conn:
@@ -169,6 +170,7 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE onboarding_plans ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb",
             "ALTER TABLE tpos ADD COLUMN IF NOT EXISTS kind VARCHAR DEFAULT 'college'",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS smtp_password VARCHAR DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_refresh_token VARCHAR DEFAULT ''",
         ):
             conn.execute(text(stmt))
 

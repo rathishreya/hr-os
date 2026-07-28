@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from .config import settings
 from .database import SessionLocal, init_db
-from .routers import admin, auth, assessments, candidates, careers, comms, distribution, documents, hiring_requests, interview_invite, interview_rounds, jobs, onboarding, outreach, pipeline, screening, tpos, users, video
+from .routers import admin, auth, assessments, candidates, careers, comms, distribution, documents, google_oauth, hiring_requests, interview_invite, interview_rounds, jobs, onboarding, outreach, pipeline, screening, tpos, users, video
 from .services import embeddings, security
 from .services.ai import ai
 
@@ -76,7 +76,7 @@ app.add_middleware(
 # Require a valid token on every /api/* route except the public allowlist. Non-/api
 # paths (the careers pages, the static UI, the candidate video-interview flow) are
 # public by design. Sets request.state.user_id for the current_user dependency.
-_PUBLIC_API = {"/api/auth/login", "/api/auth/signup", "/api/auth/can-signup", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/company", "/api/ai-status"}
+_PUBLIC_API = {"/api/auth/login", "/api/auth/signup", "/api/auth/can-signup", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/company", "/api/ai-status", "/api/google/callback"}
 
 
 _ASSESS_FILE_RE = re.compile(r"^/api/assessments/(\d+)/files?(?:/\d+)?$")
@@ -122,6 +122,7 @@ app.include_router(comms.router)
 app.include_router(screening.router)
 app.include_router(interview_rounds.router)
 app.include_router(interview_invite.router)
+app.include_router(google_oauth.router)
 app.include_router(documents.router)
 app.include_router(onboarding.router)
 app.include_router(assessments.router)
