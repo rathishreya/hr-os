@@ -140,6 +140,17 @@ class Settings:
     # Timezone applied to Google Calendar event start/end (scheduled_at is a naive local time).
     COMPANY_TIMEZONE: str = os.getenv("COMPANY_TIMEZONE", "Asia/Kolkata")
 
+    # Google Workspace DOMAIN-WIDE DELEGATION (admin-authorized service account). When set, the
+    # server sends candidate email + creates Meet events AS each user by impersonation — so mail
+    # lands in every user's Sent folder from their real address with NO per-user "Connect Google".
+    # A Workspace super-admin must authorize this SA's client id for the gmail.send + calendar.events
+    # scopes (Admin console → Security → API controls → Domain-wide delegation). Provide the SA key
+    # JSON inline or as a file path.
+    GOOGLE_DELEGATION_SA_JSON: str = os.getenv("GOOGLE_DELEGATION_SA_JSON", "")
+    GOOGLE_DELEGATION_SA_FILE: str = os.getenv("GOOGLE_DELEGATION_SA_FILE", "")
+    # Domains the delegation SA is authorized for — impersonation is only attempted for these.
+    GOOGLE_WORKSPACE_DOMAINS: str = os.getenv("GOOGLE_WORKSPACE_DOMAINS", "ez.works,ezworks.io")
+
     # ── Object storage (optional) ────────────────────────────────────────────────
     # When set, large interview recordings are STREAMED to S3 (or any S3-compatible store) instead
     # of being loaded into memory and stored as a Postgres BYTEA — which OOMs small instances. If
@@ -247,6 +258,14 @@ class Settings:
     @property
     def google_oauth_configured(self) -> bool:
         return bool(self.GOOGLE_OAUTH_CLIENT_ID and self.GOOGLE_OAUTH_CLIENT_SECRET)
+
+    @property
+    def google_delegation_configured(self) -> bool:
+        return bool(self.GOOGLE_DELEGATION_SA_JSON or self.GOOGLE_DELEGATION_SA_FILE)
+
+    @property
+    def google_workspace_domains(self) -> set[str]:
+        return {d.strip().lower() for d in self.GOOGLE_WORKSPACE_DOMAINS.split(",") if d.strip()}
 
     @property
     def linkedin_configured(self) -> bool:

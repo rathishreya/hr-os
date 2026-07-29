@@ -514,7 +514,27 @@ function GoogleCalendarCard() {
   }
 
   if (!info) return null
-  const { configured, connected, email, can_send } = info
+  const { configured, connected, email, can_send, delegated } = info
+
+  // Workspace admin enabled domain-wide delegation → everything already works, nothing to connect.
+  if (delegated) {
+    return (
+      <Card className="p-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600"><Video className="h-5 w-5" /></div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold text-slate-800">Google (Meet + send as you)</h3>
+              <Badge tone="green">Enabled by your workspace</Badge>
+            </div>
+            <p className="mt-1 text-pretty text-sm text-slate-500">
+              Nothing to do here — your workspace admin set this up for everyone. Your candidate emails go out <strong>from your Gmail and are saved in your Sent folder</strong>, and interview rounds get a <strong>real Google Meet link</strong> automatically.
+            </p>
+          </div>
+        </div>
+      </Card>
+    )
+  }
 
   return (
     <Card className="p-5">

@@ -468,29 +468,40 @@ def compose(
         ai_generated=ai_generated,
     )
 
+    sender_email = (sender_user.email if sender_user else "") or ""
+    sender_domain = sender_email.rsplit("@", 1)[-1].lower() if "@" in sender_email else ""
+    # Workspace domain-wide delegation: send AS the user with zero per-user setup.
+    delegate = bool(sender_user and gcal.delegation_available() and sender_domain in settings.google_workspace_domains)
+    # The user's OWN Google connection (per-user OAuth) with the gmail.send scope granted.
     google_send = bool(
         sender_user and (sender_user.google_refresh_token or "").strip()
         and "gmail.send" in (sender_user.google_scope or "")
     )
 
-    if not clean_to:
-        rec.status = "failed"
-        rec.error = f"No valid recipient email address (got {to_email!r})." if to_email else "No recipient email address."
-    elif google_send:
-        # Send THROUGH the user's connected Google account (Gmail API) so the message lands in their
-        # real Sent folder and comes from their true address — SES/SendGrid never touch Gmail. Fall
-        # back to the shared provider on any failure so no email is ever lost.
-        msg = _build_mime(sender_user.email, sender_user.name or settings.EMAIL_FROM_NAME,
-                          clean_to, to_name, subject, body, sender_user.email, ics, clean_cc)
+    def _via_gmail(send_fn) -> None:
+        # Build the message FROM the user and push it through their Gmail (delegation or own OAuth)
+        # so it lands in their Sent folder; fall back to the shared provider on any failure.
+        msg = _build_mime(sender_email or settings.EMAIL_FROM, (sender_user.name if sender_user else "") or settings.EMAIL_FROM_NAME,
+                          clean_to, to_name, subject, body, sender_email, ics, clean_cc)
         try:
-            gcal.gmail_send(sender_user.google_refresh_token, msg.as_bytes())
+            send_fn(msg.as_bytes())
             rec.status, rec.error = "sent", ""
         except Exception as exc:  # noqa: BLE001
             fb_status, fb_error = _shared_send(identity, clean_to, to_name, subject, body, ics, clean_cc)
             if fb_status == "sent":
-                rec.status, rec.error = "sent", f"[your Google send failed → shared provider] {str(exc)[:120]}"[:480]
+                rec.status, rec.error = "sent", f"[Gmail send failed → shared provider] {str(exc)[:120]}"[:480]
             else:
-                rec.status, rec.error = fb_status, f"Google: {str(exc)[:100]} | shared: {fb_error}"[:480]
+                rec.status, rec.error = fb_status, f"Gmail: {str(exc)[:100]} | shared: {fb_error}"[:480]
+
+    if not clean_to:
+        rec.status = "failed"
+        rec.error = f"No valid recipient email address (got {to_email!r})." if to_email else "No recipient email address."
+    elif delegate:
+        # Impersonate the user via the admin-authorized service account — no per-user connection.
+        _via_gmail(lambda raw: gcal.gmail_send_as(sender_email, raw))
+    elif google_send:
+        # The user connected their own Google account (Gmail API).
+        _via_gmail(lambda raw: gcal.gmail_send(sender_user.google_refresh_token, raw))
     elif identity["personal"]:
         # The user connected their OWN Gmail/Workspace mailbox (App Password). Send THROUGH it so the
         # message lands in their real Sent folder and is genuinely from their address — SES/SendGrid

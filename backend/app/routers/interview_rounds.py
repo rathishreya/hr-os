@@ -60,24 +60,30 @@ def _meeting_link_for(db: Session, user: "models.User | None", app: models.Appli
     with the candidate & panelists as attendees). Any failure falls back to the Jitsi room — a link
     is always returned, so scheduling never breaks."""
     start = calendar_invite.parse_local_dt(scheduled_at or "")
-    if user and (user.google_refresh_token or "").strip() and _is_live(itype) and start:
+    email = (user.email if user else "") or ""
+    domain = email.rsplit("@", 1)[-1].lower() if "@" in email else ""
+    can_delegate = bool(user and gcal.delegation_available() and domain in settings.google_workspace_domains)
+    can_oauth = bool(user and (user.google_refresh_token or "").strip())
+    if _is_live(itype) and start and (can_delegate or can_oauth):
         cand = db.get(models.Candidate, app.candidate_id)
         hr = db.get(models.HiringRequest, app.hiring_request_id)
         role = hr.position if hr else "the role"
         attendees = ([cand.email] if cand and (cand.email or "").strip() else []) + panelist_ccs(db, panelists)
+        kw = dict(
+            summary=f"{_round_label(round_no, itype)} — {role}",
+            start=start, duration_minutes=duration,
+            description=f"Interview for {role} at {settings.COMPANY_NAME}.",
+            attendees=attendees,
+            request_id=f"hros-{app.id}-{round_no}-{start.strftime('%Y%m%dT%H%M%S')}",
+        )
         try:
-            link = gcal.create_meet_event(
-                user.google_refresh_token,
-                summary=f"{_round_label(round_no, itype)} — {role}",
-                start=start, duration_minutes=duration,
-                description=f"Interview for {role} at {settings.COMPANY_NAME}.",
-                attendees=attendees,
-                request_id=f"hros-{app.id}-{round_no}-{start.strftime('%Y%m%dT%H%M%S')}",
-            )
+            # Admin-authorized delegation first (works for everyone, no per-user connect); else the
+            # scheduler's own Google connection. Any failure falls through to Jitsi.
+            link = gcal.create_meet_event_as(email, **kw) if can_delegate else gcal.create_meet_event(user.google_refresh_token, **kw)
             if link:
                 return link
         except Exception:
-            pass  # fall through to Jitsi — never block scheduling on a Google hiccup
+            pass  # never block scheduling on a Google hiccup
     return _meeting_link(app.id, round_no)
 
 

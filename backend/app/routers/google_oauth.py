@@ -17,6 +17,13 @@ from ..database import get_db
 from ..deps import current_user
 from ..services import gcal, security
 
+
+def _domain_delegated(email: str) -> bool:
+    """True when Workspace domain-wide delegation is active AND covers this user's domain — then no
+    per-user 'Connect Google' is needed (the server acts as them automatically)."""
+    dom = (email or "").rsplit("@", 1)[-1].lower() if "@" in (email or "") else ""
+    return bool(gcal.delegation_available() and dom in settings.google_workspace_domains)
+
 router = APIRouter(prefix="/api/google", tags=["google"])
 
 
@@ -33,6 +40,9 @@ def status(user: models.User = Depends(current_user)) -> dict:
         "configured": settings.google_oauth_configured,
         "connected": bool((user.google_refresh_token or "").strip()),
         "can_send": "gmail.send" in (user.google_scope or ""),
+        # When true, the workspace admin set up domain-wide delegation → email + Meet already work
+        # for this user with nothing to connect.
+        "delegated": _domain_delegated(user.email),
         "email": user.email,
     }
 
