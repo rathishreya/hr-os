@@ -478,42 +478,47 @@ def compose(
         and "gmail.send" in (sender_user.google_scope or "")
     )
 
-    def _via_gmail(send_fn) -> None:
-        # Build the message FROM the user and push it through their Gmail (delegation or own OAuth)
-        # so it lands in their Sent folder; fall back to the shared provider on any failure.
-        msg = _build_mime(sender_email or settings.EMAIL_FROM, (sender_user.name if sender_user else "") or settings.EMAIL_FROM_NAME,
-                          clean_to, to_name, subject, body, sender_email, ics, clean_cc)
-        try:
-            send_fn(msg.as_bytes())
-            rec.status, rec.error = "sent", ""
-        except Exception as exc:  # noqa: BLE001
-            fb_status, fb_error = _shared_send(identity, clean_to, to_name, subject, body, ics, clean_cc)
-            if fb_status == "sent":
-                rec.status, rec.error = "sent", f"[Gmail send failed → shared provider] {str(exc)[:120]}"[:480]
-            else:
-                rec.status, rec.error = fb_status, f"Gmail: {str(exc)[:100]} | shared: {fb_error}"[:480]
+    # Ordered "send AS the user" channels (each lands the message in the user's own Sent folder,
+    # from their real address). We try them in order and only fall back to the shared SES/SendGrid
+    # provider if EVERY user-owned channel is unavailable/failing — so e.g. a not-yet-authorized
+    # delegation never hijacks a user who has their own Gmail/App-Password connected.
+    gmail_attempts: list = []
+    if delegate:
+        gmail_attempts.append(("delegation", lambda raw: gcal.gmail_send_as(sender_email, raw)))
+    if google_send:
+        gmail_attempts.append(("your Google", lambda raw: gcal.gmail_send(sender_user.google_refresh_token, raw)))
 
     if not clean_to:
         rec.status = "failed"
         rec.error = f"No valid recipient email address (got {to_email!r})." if to_email else "No recipient email address."
-    elif delegate:
-        # Impersonate the user via the admin-authorized service account — no per-user connection.
-        _via_gmail(lambda raw: gcal.gmail_send_as(sender_email, raw))
-    elif google_send:
-        # The user connected their own Google account (Gmail API).
-        _via_gmail(lambda raw: gcal.gmail_send(sender_user.google_refresh_token, raw))
-    elif identity["personal"]:
-        # The user connected their OWN Gmail/Workspace mailbox (App Password). Send THROUGH it so the
-        # message lands in their real Sent folder and is genuinely from their address — SES/SendGrid
-        # never touch Gmail, so they can't do that. Fall back to the shared provider on failure so no
-        # email is ever lost (e.g. a wrong/expired App Password).
-        rec.status, rec.error = _send_with_retry(identity, clean_to, to_name, subject, body, ics, clean_cc)
-        if rec.status != "sent":
-            fb_status, fb_error = _shared_send(identity, clean_to, to_name, subject, body, ics, clean_cc)
-            if fb_status == "sent":
-                rec.status, rec.error = "sent", f"[your mailbox failed → sent via shared provider] {rec.error}"[:480]
+    elif gmail_attempts or identity["personal"]:
+        errs: list[str] = []
+        # 1) Gmail API channels (delegation, then the user's own OAuth) — build the message once.
+        if gmail_attempts:
+            raw = _build_mime(sender_email or settings.EMAIL_FROM,
+                              (sender_user.name if sender_user else "") or settings.EMAIL_FROM_NAME,
+                              clean_to, to_name, subject, body, sender_email, ics, clean_cc).as_bytes()
+            for label, fn in gmail_attempts:
+                try:
+                    fn(raw)
+                    rec.status, rec.error = "sent", ""
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    errs.append(f"{label}: {str(exc)[:90]}")
+        # 2) The user's own mailbox (App Password → Gmail SMTP), also lands in their Sent.
+        if rec.status != "sent" and identity["personal"]:
+            st, er = _send_with_retry(identity, clean_to, to_name, subject, body, ics, clean_cc)
+            if st == "sent":
+                rec.status, rec.error = "sent", ""
             else:
-                rec.status, rec.error = fb_status, f"your mailbox: {rec.error} | shared: {fb_error}"[:480]
+                errs.append(f"mailbox: {er}")
+        # 3) Shared provider (SES/SendGrid) — only if none of the user's own channels worked.
+        if rec.status != "sent":
+            st, er = _shared_send(identity, clean_to, to_name, subject, body, ics, clean_cc)
+            if st == "sent":
+                rec.status, rec.error = "sent", f"[your Gmail unavailable → shared provider] {' | '.join(errs)}"[:480]
+            else:
+                rec.status, rec.error = st, f"{' | '.join(errs)} | shared: {er}"[:480]
     else:
         rec.status, rec.error = _shared_send(identity, clean_to, to_name, subject, body, ics, clean_cc)
 
