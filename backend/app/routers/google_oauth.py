@@ -27,10 +27,12 @@ def _app_redirect(status: str) -> RedirectResponse:
 
 @router.get("/status")
 def status(user: models.User = Depends(current_user)) -> dict:
-    """Whether Google Calendar is set up server-side, and whether THIS user has connected it."""
+    """Whether Google Calendar is set up server-side, whether THIS user connected it, and whether
+    their connection can also send email (gmail.send scope granted)."""
     return {
         "configured": settings.google_oauth_configured,
         "connected": bool((user.google_refresh_token or "").strip()),
+        "can_send": "gmail.send" in (user.google_scope or ""),
         "email": user.email,
     }
 
@@ -64,7 +66,10 @@ def callback(state: str = "", code: str = "", error: str = "", db: Session = Dep
         return _app_redirect("error")
     if refresh:                      # Google omits it if the user had already consented — keep the old one then.
         user.google_refresh_token = refresh
-        db.commit()
+    # Record the granted scopes so email sending only uses Gmail when gmail.send was actually granted.
+    if tokens.get("scope"):
+        user.google_scope = tokens.get("scope", "")[:512]
+    db.commit()
     return _app_redirect("connected")
 
 

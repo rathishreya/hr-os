@@ -9,6 +9,7 @@ Only stdlib + httpx (already a dep) — no google client libraries needed.
 """
 from __future__ import annotations
 
+import base64
 import urllib.parse
 from datetime import datetime, timedelta
 
@@ -19,8 +20,12 @@ from ..config import settings
 _AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 _TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 _EVENTS_ENDPOINT = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
-# calendar.events lets us create the event + its Meet conference. (No read of other calendars.)
-_SCOPE = "https://www.googleapis.com/auth/calendar.events"
+_GMAIL_SEND_ENDPOINT = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+# calendar.events → create the interview event + its Meet conference (no read of other calendars).
+# gmail.send → send the candidate email THROUGH the user's Gmail so it lands in their Sent folder,
+# from their real address. Both are allowed without Google verification on an Internal Workspace app.
+_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
+_SCOPE = f"https://www.googleapis.com/auth/calendar.events {_SEND_SCOPE}"
 
 
 def redirect_uri() -> str:
@@ -68,6 +73,20 @@ def _access_token(refresh_token: str) -> str:
     }, timeout=30)
     resp.raise_for_status()
     return resp.json()["access_token"]
+
+
+def gmail_send(refresh_token: str, raw_message: bytes) -> None:
+    """Send a pre-built RFC-822 message THROUGH the user's Gmail (Gmail API). Unlike SES/SendGrid,
+    this lands a copy in the user's Sent folder and goes out from their real address. Raises on
+    error (caller falls back to the shared provider). `raw_message` is msg.as_bytes()."""
+    access = _access_token(refresh_token)
+    raw = base64.urlsafe_b64encode(raw_message).decode("ascii")
+    resp = httpx.post(
+        _GMAIL_SEND_ENDPOINT,
+        headers={"Authorization": f"Bearer {access}", "Content-Type": "application/json"},
+        json={"raw": raw}, timeout=30,
+    )
+    resp.raise_for_status()
 
 
 def create_meet_event(

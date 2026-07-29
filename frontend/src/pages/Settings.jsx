@@ -514,7 +514,7 @@ function GoogleCalendarCard() {
   }
 
   if (!info) return null
-  const { configured, connected, email } = info
+  const { configured, connected, email, can_send } = info
 
   return (
     <Card className="p-5">
@@ -524,29 +524,37 @@ function GoogleCalendarCard() {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-slate-800">Google Meet for interview rounds</h3>
+            <h3 className="text-sm font-semibold text-slate-800">Connect Google (Meet + send as you)</h3>
             <Badge tone={connected ? 'green' : 'gray'}>{connected ? 'Connected' : 'Not connected'}</Badge>
           </div>
           <p className="mt-1 text-pretty text-sm text-slate-500">
-            Connect your Google account so a scheduled interview round gets a <strong>real Google Meet link</strong> and a calendar event on your calendar — the candidate &amp; panelists are added automatically.
-            {!connected && ' Until you connect, rounds use a no-login Jitsi link.'}
+            One click connects your Google account so that: candidate emails you send go out <strong>through your Gmail — from your address and saved in your Sent folder</strong>, and scheduled interview rounds get a <strong>real Google Meet link</strong> + a calendar event (candidate &amp; panelists added automatically).
+            {!connected && ' Until you connect, emails go from the shared account and rounds use a Jitsi link.'}
           </p>
 
           {!configured ? (
             <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Google Calendar isn’t set up on the server yet — the Google OAuth credentials need to be added on the server.
+              Google isn’t set up on the server yet — the Google OAuth credentials need to be added on the server.
             </div>
           ) : (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {!connected ? (
-                <Button onClick={connect} disabled={busy}>{busy ? <Spinner /> : <><Video className="h-4 w-4" /> Connect Google Calendar</>}</Button>
-              ) : (
-                <>
-                  <span className="text-sm text-slate-500">Connected as <span className="font-medium text-slate-700">{email}</span></span>
-                  <Button variant="ghost" onClick={disconnect} disabled={busy} className="text-rose-600 hover:text-rose-700"><Trash2 className="h-4 w-4" /> Disconnect</Button>
-                </>
+            <>
+              {connected && !can_send && (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  Your connection is calendar-only. <strong>Reconnect</strong> to also send emails from your Gmail (so they land in your Sent folder).
+                </div>
               )}
-            </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {!connected ? (
+                  <Button onClick={connect} disabled={busy}>{busy ? <Spinner /> : <><Video className="h-4 w-4" /> Connect Google</>}</Button>
+                ) : (
+                  <>
+                    <span className="text-sm text-slate-500">Connected as <span className="font-medium text-slate-700">{email}</span>{can_send ? ' · emails send from your Gmail' : ''}</span>
+                    {!can_send && <Button onClick={connect} disabled={busy}>{busy ? <Spinner /> : <><Video className="h-4 w-4" /> Reconnect</>}</Button>}
+                    <Button variant="ghost" onClick={disconnect} disabled={busy} className="text-rose-600 hover:text-rose-700"><Trash2 className="h-4 w-4" /> Disconnect</Button>
+                  </>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>

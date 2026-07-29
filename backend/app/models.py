@@ -427,6 +427,10 @@ class User(Base):
     # Meet link + calendar event for scheduled interview rounds. Empty → fall back to Jitsi. Never
     # returned by the API.
     google_refresh_token: Mapped[str] = mapped_column(String(512), default="")
+    # The OAuth scopes the user actually granted (space-separated). We send their candidate email
+    # via the Gmail API only when this includes gmail.send — so a calendar-only connection never
+    # breaks their sending.
+    google_scope: Mapped[str] = mapped_column(String(512), default="")
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 

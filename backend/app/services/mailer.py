@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..config import settings
+from . import gcal
 from .ai import ai
 from .recruitment import log
 
@@ -467,9 +468,29 @@ def compose(
         ai_generated=ai_generated,
     )
 
+    google_send = bool(
+        sender_user and (sender_user.google_refresh_token or "").strip()
+        and "gmail.send" in (sender_user.google_scope or "")
+    )
+
     if not clean_to:
         rec.status = "failed"
         rec.error = f"No valid recipient email address (got {to_email!r})." if to_email else "No recipient email address."
+    elif google_send:
+        # Send THROUGH the user's connected Google account (Gmail API) so the message lands in their
+        # real Sent folder and comes from their true address — SES/SendGrid never touch Gmail. Fall
+        # back to the shared provider on any failure so no email is ever lost.
+        msg = _build_mime(sender_user.email, sender_user.name or settings.EMAIL_FROM_NAME,
+                          clean_to, to_name, subject, body, sender_user.email, ics, clean_cc)
+        try:
+            gcal.gmail_send(sender_user.google_refresh_token, msg.as_bytes())
+            rec.status, rec.error = "sent", ""
+        except Exception as exc:  # noqa: BLE001
+            fb_status, fb_error = _shared_send(identity, clean_to, to_name, subject, body, ics, clean_cc)
+            if fb_status == "sent":
+                rec.status, rec.error = "sent", f"[your Google send failed → shared provider] {str(exc)[:120]}"[:480]
+            else:
+                rec.status, rec.error = fb_status, f"Google: {str(exc)[:100]} | shared: {fb_error}"[:480]
     elif identity["personal"]:
         # The user connected their OWN Gmail/Workspace mailbox (App Password). Send THROUGH it so the
         # message lands in their real Sent folder and is genuinely from their address — SES/SendGrid
