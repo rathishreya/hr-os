@@ -20,7 +20,7 @@ from ..database import get_db
 from ..deps import current_user
 from ..services import calendar_invite, mailer, security
 from ..services.recruitment import log
-from .interview_rounds import panelist_ccs
+from .interview_rounds import panelist_ccs, resume_attachment
 
 router = APIRouter(prefix="/api/interview-invite", tags=["interview-invite"])
 
@@ -160,6 +160,7 @@ def round_draft(round_id: int, db: Session = Depends(get_db)):
     role = app.hiring_request.position if (app and app.hiring_request) else ""
     company = settings.COMPANY_NAME
     const = {"role": role, "company": company, "sender": settings.EMAIL_FROM_NAME}
+    resume = resume_attachment(app.candidate if app else None)
     return {
         "subject": _fill(_invite_subject(role, company), const),
         "body": _fill(_invite_body(), const),
@@ -167,6 +168,7 @@ def round_draft(round_id: int, db: Session = Depends(get_db)):
         "where": r.location_or_link or "",
         "round": _round_label(r),
         "cc": panelist_ccs(db, r.panelists),   # panelists copied on the invite — shown in the preview
+        "resume": resume[0]["filename"] if resume else "",   # candidate résumé attached to the invite
     }
 
 
@@ -216,7 +218,7 @@ def round_send(req: RoundInviteSendRequest, db: Session = Depends(get_db), user:
         rec = mailer.compose(
             db, to_email=cand.email or "", to_name=cand.name or "", template="interview_invite",
             role=role, subject=subject, body=body, candidate_id=cand.id, application_id=app.id, ics=ics,
-            sender_user=user, cc=panelist_ccs(db, r.panelists),
+            sender_user=user, cc=panelist_ccs(db, r.panelists), attachments=resume_attachment(cand),
         )
         counts[rec.status if rec.status in counts else "failed"] += 1
     log(db, "interview.invite_sent", "interview_round", None, {"count": len(req.round_ids), **counts})

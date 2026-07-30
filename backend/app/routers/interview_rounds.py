@@ -21,6 +21,18 @@ def _round_label(round_no: int, itype: str) -> str:
     return f"Round {round_no} · {itype.replace('_', ' ').title()}"
 
 
+def resume_attachment(cand: "models.Candidate | None") -> list[dict]:
+    """The candidate's resume as an email attachment (empty list if they have no file on record, or
+    it's implausibly large). Attached to interview invites so panelists have it for the interview."""
+    content = getattr(cand, "resume_file", None) if cand else None
+    if not content or len(content) > 15 * 1024 * 1024:   # stay well under provider size limits
+        return []
+    mime = (cand.resume_mime or "application/pdf").strip()
+    ext = ".pdf" if "pdf" in mime else (".docx" if ("word" in mime or "officedocument" in mime) else "")
+    fname = (cand.resume_filename or "").strip() or f"{(cand.name or 'candidate').strip().replace(' ', '_')}_resume{ext}"
+    return [{"filename": fname, "content": content, "mimetype": mime}]
+
+
 def panelist_ccs(db: Session, panelists: "list[str] | None") -> list[str]:
     """Addresses to CC on the candidate invite for a round's panelists. A panelist stored as an
     email is used directly; one stored as a bare name (e.g. picked from the suggestion chips) is
@@ -133,7 +145,7 @@ def _send_interview_invite(
         db, to_email=cand.email, to_name=cand.name or "", template="interview_invite",
         role=role, subject=subject, body=body,
         candidate_id=cand.id, application_id=app.id, ics=ics, sender_user=sender_user,
-        cc=panelist_ccs(db, panelists),
+        cc=panelist_ccs(db, panelists), attachments=resume_attachment(cand),
     )
 
 

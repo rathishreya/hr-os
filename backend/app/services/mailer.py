@@ -171,9 +171,10 @@ def resolve_identity(user: "models.User | None" = None) -> dict:
 
 def _build_mime(from_email: str, from_name: str, to_email: str, to_name: str,
                 subject: str, body: str, reply_to: str = "", ics: str | None = None,
-                cc: list[str] | None = None) -> MimeEmail:
-    """Build the RFC-822 message (plain body + optional .ics calendar invite). Shared by the SMTP
-    and SES send paths so both attach the invite identically."""
+                cc: list[str] | None = None, attachments: list[dict] | None = None) -> MimeEmail:
+    """Build the RFC-822 message (plain body + optional .ics calendar invite + optional file
+    attachments). Shared by the SMTP, SES and Gmail-API send paths so all attach identically.
+    Each attachment is {'filename': str, 'content': bytes, 'mimetype': str}."""
     msg = MimeEmail()
     msg["From"] = f"{from_name} <{from_email}>" if from_name else from_email
     msg["To"] = f"{to_name} <{to_email}>" if to_name else to_email
@@ -189,13 +190,21 @@ def _build_mime(from_email: str, from_name: str, to_email: str, to_name: str,
             ics.encode("utf-8"), maintype="text", subtype="calendar",
             filename="invite.ics", params={"method": "REQUEST", "name": "invite.ics"},
         )
+    for att in (attachments or []):
+        content = att.get("content")
+        if not content:
+            continue
+        ctype = att.get("mimetype") or "application/octet-stream"
+        maintype, _, subtype = ctype.partition("/")
+        msg.add_attachment(content, maintype=maintype or "application", subtype=subtype or "octet-stream",
+                           filename=att.get("filename") or "attachment")
     return msg
 
 
 def _smtp_send(identity: dict, to_email: str, to_name: str, subject: str, body: str,
-               ics: str | None = None, cc: list[str] | None = None) -> None:
+               ics: str | None = None, cc: list[str] | None = None, attachments: list[dict] | None = None) -> None:
     msg = _build_mime(identity["from_email"], identity["from_name"], to_email, to_name, subject, body,
-                      identity.get("reply_to", ""), ics, cc)
+                      identity.get("reply_to", ""), ics, cc, attachments)
     with smtplib.SMTP(identity["host"], identity["port"], timeout=30) as server:
         if identity["starttls"]:
             server.starttls(context=ssl.create_default_context())
@@ -234,14 +243,15 @@ def emails_only(values: "list[str] | None") -> list[str]:
 
 
 def _send_with_retry(identity: dict, to_email: str, to_name: str, subject: str, body: str,
-                     ics: str | None, cc: list[str] | None = None, attempts: int = 3) -> tuple[str, str]:
+                     ics: str | None, cc: list[str] | None = None, attachments: list[dict] | None = None,
+                     attempts: int = 3) -> tuple[str, str]:
     """Send, retrying only TRANSIENT failures (disconnects, timeouts, greylisting) with a short
     backoff, so a temporary Gmail/SMTP blip isn't recorded as a permanent 'failed'. Returns
     (status, error). Permanent errors (auth / rejected recipient) fail immediately."""
     last = ""
     for i in range(attempts):
         try:
-            _smtp_send(identity, to_email, to_name, subject, body, ics=ics, cc=cc)
+            _smtp_send(identity, to_email, to_name, subject, body, ics=ics, cc=cc, attachments=attachments)
             return "sent", ""
         except _PERMANENT_SMTP as exc:
             return "failed", str(exc)
@@ -272,10 +282,10 @@ def _ses_client():
 
 def _ses_send(from_email: str, from_name: str, to_email: str, to_name: str,
               subject: str, body: str, reply_to: str = "", ics: str | None = None,
-              cc: list[str] | None = None) -> None:
+              cc: list[str] | None = None, attachments: list[dict] | None = None) -> None:
     """Send one email via the Amazon SES API (HTTPS) — works on hosts that block SMTP (Render).
     `from_email` MUST be an SES-verified identity (verified domain or address)."""
-    msg = _build_mime(from_email, from_name, to_email, to_name, subject, body, reply_to, ics, cc)
+    msg = _build_mime(from_email, from_name, to_email, to_name, subject, body, reply_to, ics, cc, attachments)
     _ses_client().send_raw_email(
         Source=f"{from_name} <{from_email}>" if from_name else from_email,
         # SES delivers to every address in Destinations; the Cc header (set in _build_mime) makes
@@ -292,12 +302,12 @@ _SES_PERMANENT = ("MessageRejected", "MailFromDomainNotVerified", "not verified"
 
 def _ses_with_retry(from_email: str, from_name: str, to_email: str, to_name: str, subject: str,
                     body: str, reply_to: str, ics: str | None, cc: list[str] | None = None,
-                    attempts: int = 3) -> tuple[str, str]:
+                    attachments: list[dict] | None = None, attempts: int = 3) -> tuple[str, str]:
     """Send via SES, retrying transient (throttling/network) errors; permanent ones fail fast."""
     last = ""
     for i in range(attempts):
         try:
-            _ses_send(from_email, from_name, to_email, to_name, subject, body, reply_to, ics, cc)
+            _ses_send(from_email, from_name, to_email, to_name, subject, body, reply_to, ics, cc, attachments)
             return "sent", ""
         except Exception as exc:  # noqa: BLE001
             detail = str(exc)[:200]
@@ -322,7 +332,7 @@ def _sendgrid_from(from_email: str, from_name: str, reply_to: str) -> tuple[str,
 
 def _sendgrid_send(from_email: str, from_name: str, to_email: str, to_name: str,
                    subject: str, body: str, reply_to: str = "", ics: str | None = None,
-                   cc: list[str] | None = None) -> None:
+                   cc: list[str] | None = None, attachments: list[dict] | None = None) -> None:
     """Send one email via SendGrid's HTTPS API — works on hosts (Render) that block SMTP.
     `from_email` MUST be a SendGrid-verified sender (single-sender or verified domain)."""
     personalization: dict[str, Any] = {"to": [{"email": to_email, **({"name": to_name} if to_name else {})}]}
@@ -339,12 +349,22 @@ def _sendgrid_send(from_email: str, from_name: str, to_email: str, to_name: str,
     }
     if reply_to and reply_to.lower() != from_email.lower():
         payload["reply_to"] = {"email": reply_to}
+    atts = []
     if ics:
-        payload["attachments"] = [{
+        atts.append({
             "content": base64.b64encode(ics.encode("utf-8")).decode("ascii"),
             "type": "text/calendar; method=REQUEST",
             "filename": "invite.ics",
-        }]
+        })
+    for att in (attachments or []):
+        if att.get("content"):
+            atts.append({
+                "content": base64.b64encode(att["content"]).decode("ascii"),
+                "type": att.get("mimetype") or "application/octet-stream",
+                "filename": att.get("filename") or "attachment",
+            })
+    if atts:
+        payload["attachments"] = atts
     resp = httpx.post(
         "https://api.sendgrid.com/v3/mail/send",
         headers={"Authorization": f"Bearer {settings.SENDGRID_API_KEY}", "Content-Type": "application/json"},
@@ -355,13 +375,13 @@ def _sendgrid_send(from_email: str, from_name: str, to_email: str, to_name: str,
 
 def _sendgrid_with_retry(from_email: str, from_name: str, to_email: str, to_name: str, subject: str,
                          body: str, reply_to: str, ics: str | None, cc: list[str] | None = None,
-                         attempts: int = 3) -> tuple[str, str]:
+                         attachments: list[dict] | None = None, attempts: int = 3) -> tuple[str, str]:
     """Send via SendGrid, retrying transient (5xx/network) errors; 4xx (bad key / unverified
     sender / bad request) fail fast since a retry can't help. Returns (status, error)."""
     last = ""
     for i in range(attempts):
         try:
-            _sendgrid_send(from_email, from_name, to_email, to_name, subject, body, reply_to, ics, cc)
+            _sendgrid_send(from_email, from_name, to_email, to_name, subject, body, reply_to, ics, cc, attachments)
             return "sent", ""
         except httpx.HTTPStatusError as exc:
             code = exc.response.status_code
@@ -377,7 +397,7 @@ def _sendgrid_with_retry(from_email: str, from_name: str, to_email: str, to_name
 
 
 def _shared_send(identity: dict, to_email: str, to_name: str, subject: str, body: str,
-                 ics: str | None, cc: list[str] | None = None) -> tuple[str, str]:
+                 ics: str | None, cc: list[str] | None = None, attachments: list[dict] | None = None) -> tuple[str, str]:
     """Send via the shared workspace provider (NOT the user's personal mailbox): SES-first with a
     SendGrid fallback, else SendGrid, else shared SMTP, else log. Returns (status, error)."""
     if settings.ses_enabled:
@@ -387,12 +407,12 @@ def _shared_send(identity: dict, to_email: str, to_name: str, subject: str, body
         frm = identity["from_email"] or settings.EMAIL_FROM          # the logged-in user's address when sendable
         frm_name = identity["from_name"] or settings.EMAIL_FROM_NAME
         reply_to = identity.get("reply_to") or identity.get("from_email") or ""
-        status, error = _ses_with_retry(frm, frm_name, to_email, to_name, subject, body, reply_to, ics, cc)
+        status, error = _ses_with_retry(frm, frm_name, to_email, to_name, subject, body, reply_to, ics, cc, attachments)
         if status != "sent" and settings.SENDGRID_API_KEY:
             # SendGrid can't send from every domain SES can (e.g. @ez.works individual identities),
             # so rewrite the From to an authenticated one when needed (name + reply-to preserved).
             sg_frm, sg_name, sg_reply = _sendgrid_from(frm, frm_name, reply_to)
-            sg_status, sg_error = _sendgrid_with_retry(sg_frm, sg_name, to_email, to_name, subject, body, sg_reply, ics, cc)
+            sg_status, sg_error = _sendgrid_with_retry(sg_frm, sg_name, to_email, to_name, subject, body, sg_reply, ics, cc, attachments)
             if sg_status == "sent":
                 return "sent", f"[SES failed → sent via SendGrid] {error}"[:480]
             return sg_status, f"SES: {error} | SendGrid: {sg_error}"[:480]
@@ -404,12 +424,12 @@ def _shared_send(identity: dict, to_email: str, to_name: str, subject: str, body
             identity["from_email"] or settings.EMAIL_FROM,
             identity["from_name"] or settings.EMAIL_FROM_NAME,
             identity.get("reply_to") or identity.get("from_email") or "")
-        return _sendgrid_with_retry(sg_frm, sg_name, to_email, to_name, subject, body, sg_reply, ics, cc)
+        return _sendgrid_with_retry(sg_frm, sg_name, to_email, to_name, subject, body, sg_reply, ics, cc, attachments)
     if settings.SMTP_HOST:
         # Shared workspace SMTP account (not a personal mailbox).
         shared = {**identity, "smtp_user": settings.SMTP_USER, "smtp_password": settings.SMTP_PASSWORD,
                   "host": settings.SMTP_HOST, "port": settings.SMTP_PORT, "starttls": settings.SMTP_STARTTLS}
-        return _send_with_retry(shared, to_email, to_name, subject, body, ics, cc)
+        return _send_with_retry(shared, to_email, to_name, subject, body, ics, cc, attachments)
     _safe_print(
         f"\n[EMAIL · logged — no provider configured]\nTo: {to_email}\nSubject: {subject}\n{body}\n"
         + ("[+ calendar invite (.ics) attached]\n" if ics else "")
@@ -432,11 +452,13 @@ def compose(
     ics: str | None = None,
     sender_user: "models.User | None" = None,
     cc: list[str] | None = None,
+    attachments: list[dict] | None = None,
 ) -> models.EmailMessage:
     """Build (optionally with AI), send-or-log, and persist an email. `ics`, if given, is
     attached as a calendar invite (.ics). `sender_user` is the logged-in user — when they've
     set up their own mailbox the email is sent FROM their address (see resolve_identity).
-    `cc`, if given, is a list of addresses copied on the message (e.g. interview panelists)."""
+    `cc`, if given, is a list of addresses copied on the message (e.g. interview panelists).
+    `attachments`, if given, are files to attach — each {'filename', 'content': bytes, 'mimetype'}."""
     identity = resolve_identity(sender_user)
     # Sign templated emails with the sending person's name (their own mailbox or, on the shared
     # account, still the logged-in user) rather than a generic workspace label.
@@ -497,7 +519,7 @@ def compose(
         if gmail_attempts:
             raw = _build_mime(sender_email or settings.EMAIL_FROM,
                               (sender_user.name if sender_user else "") or settings.EMAIL_FROM_NAME,
-                              clean_to, to_name, subject, body, sender_email, ics, clean_cc).as_bytes()
+                              clean_to, to_name, subject, body, sender_email, ics, clean_cc, attachments).as_bytes()
             for label, fn in gmail_attempts:
                 try:
                     fn(raw)
@@ -507,20 +529,20 @@ def compose(
                     errs.append(f"{label}: {str(exc)[:90]}")
         # 2) The user's own mailbox (App Password → Gmail SMTP), also lands in their Sent.
         if rec.status != "sent" and identity["personal"]:
-            st, er = _send_with_retry(identity, clean_to, to_name, subject, body, ics, clean_cc)
+            st, er = _send_with_retry(identity, clean_to, to_name, subject, body, ics, clean_cc, attachments)
             if st == "sent":
                 rec.status, rec.error = "sent", ""
             else:
                 errs.append(f"mailbox: {er}")
         # 3) Shared provider (SES/SendGrid) — only if none of the user's own channels worked.
         if rec.status != "sent":
-            st, er = _shared_send(identity, clean_to, to_name, subject, body, ics, clean_cc)
+            st, er = _shared_send(identity, clean_to, to_name, subject, body, ics, clean_cc, attachments)
             if st == "sent":
                 rec.status, rec.error = "sent", f"[your Gmail unavailable → shared provider] {' | '.join(errs)}"[:480]
             else:
                 rec.status, rec.error = st, f"{' | '.join(errs)} | shared: {er}"[:480]
     else:
-        rec.status, rec.error = _shared_send(identity, clean_to, to_name, subject, body, ics, clean_cc)
+        rec.status, rec.error = _shared_send(identity, clean_to, to_name, subject, body, ics, clean_cc, attachments)
 
     db.add(rec)
     db.flush()
