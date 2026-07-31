@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Pencil, Globe, Phone, Mail, MapPin, Download, Columns3, LayoutList, LayoutGrid, Sparkles, Check,
+  Pencil, Globe, Phone, Mail, MapPin, Download, Columns3, LayoutList, LayoutGrid, Sparkles, Check, Copy,
 } from 'lucide-react'
 import { Badge, Button, Avatar, scoreTone, stageTone, cx } from '../../ui'
 import { useTalentPoolColumns } from '../../hooks/useTalentPoolColumns'
@@ -51,6 +51,29 @@ function ContactIcon({ value, label, icon: Icon }) {
   )
 }
 
+// Opens a URL in a new tab (used for the LinkedIn profile, alongside a copy-link button).
+function OpenLinkIcon({ url, label, icon: Icon }) {
+  if (!url) {
+    return (
+      <span title="Not available" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 text-slate-300">
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+    )
+  }
+  return (
+    <a
+      href={url}
+      title={label}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition duration-150 ease-snappy hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-95"
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </a>
+  )
+}
+
 // Talent-pool compensation values come from two paths: résumé-parsed figures already carry
 // '₹…LPA' (backend _norm_money), but applicant-typed values pre-fix were stored raw ("12",
 // "18 LPA"). Stamp a ₹/LPA label on any value that still lacks a currency token so the column
@@ -85,7 +108,7 @@ const COL_WIDTH = {
   idx: 'w-12',
   edit: 'w-12',
   name: 'min-w-[200px]',
-  contact: 'w-[120px]',
+  contact: 'w-[156px]',
   role: 'min-w-[180px]',
   education: 'min-w-[180px]',
   comp: 'min-w-[150px]',
@@ -234,7 +257,13 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
       case 'contact':
         return (
           <div className="flex items-center gap-1">
-            <ContactIcon value={row.linkedin || ''} label="LinkedIn" icon={Globe} />
+            {/* LinkedIn: open the profile, or copy the link. */}
+            <OpenLinkIcon
+              url={row.linkedin ? (row.linkedin.startsWith('http') ? row.linkedin : `https://${row.linkedin}`) : ''}
+              label="Open LinkedIn"
+              icon={Globe}
+            />
+            <ContactIcon value={row.linkedin || ''} label="LinkedIn link" icon={Copy} />
             <ContactIcon value={row.phone || ''} label="Phone" icon={Phone} />
             <ContactIcon value={row.email || ''} label="Email" icon={Mail} />
           </div>
