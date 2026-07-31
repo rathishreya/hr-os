@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Pencil, Globe, Phone, Mail, MapPin, Download, Columns3, LayoutList, LayoutGrid, Sparkles,
+  Pencil, Globe, Phone, Mail, MapPin, Download, Columns3, LayoutList, LayoutGrid, Sparkles, Check,
 } from 'lucide-react'
 import { Badge, Button, Avatar, scoreTone, stageTone, cx } from '../../ui'
 import { useTalentPoolColumns } from '../../hooks/useTalentPoolColumns'
@@ -9,25 +9,45 @@ import { useColumnFilters, ColumnFilter, distinctValues } from '../tableFilters'
 import TalentPoolColumnSettings from './TalentPoolColumnSettings'
 import { exportTalentPoolCsv } from '../../utils/exportCsv'
 
-function ContactIcon({ href, title, icon: Icon, external }) {
-  if (!href) {
+// Clicking a contact icon COPIES the value (email / phone / LinkedIn) to the clipboard rather than
+// opening a mailto:/tel:/link — a recruiter wants to grab the value, not launch their mail client.
+function ContactIcon({ value, label, icon: Icon }) {
+  const [copied, setCopied] = useState(false)
+  if (!value) {
     return (
       <span title="Not available" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 text-slate-300">
         <Icon className="h-3.5 w-3.5" />
       </span>
     )
   }
+  const copy = (e) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1200) }
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(value).then(done).catch(() => {})
+    } else {
+      // Fallback for non-secure contexts where the async Clipboard API is unavailable.
+      const ta = document.createElement('textarea'); ta.value = value; ta.style.position = 'fixed'; ta.style.opacity = '0'
+      document.body.appendChild(ta); ta.select()
+      try { document.execCommand('copy'); done() } catch { /* ignore */ }
+      document.body.removeChild(ta)
+    }
+  }
   return (
-    <a
-      href={href}
-      title={title}
-      target={external ? '_blank' : undefined}
-      rel={external ? 'noreferrer' : undefined}
-      onClick={(e) => e.stopPropagation()}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition duration-150 ease-snappy hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-95"
+    <button
+      type="button"
+      title={copied ? 'Copied!' : `Copy ${label}: ${value}`}
+      onClick={copy}
+      className={cx(
+        'inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-95',
+        copied
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+          : 'border-slate-200 bg-white text-slate-500 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700',
+      )}
     >
-      <Icon className="h-3.5 w-3.5" />
-    </a>
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}
+    </button>
   )
 }
 
@@ -214,14 +234,9 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
       case 'contact':
         return (
           <div className="flex items-center gap-1">
-            <ContactIcon
-              href={row.linkedin ? (row.linkedin.startsWith('http') ? row.linkedin : `https://${row.linkedin}`) : ''}
-              title="LinkedIn"
-              icon={Globe}
-              external
-            />
-            <ContactIcon href={row.phone ? `tel:${row.phone}` : ''} title={row.phone} icon={Phone} />
-            <ContactIcon href={row.email ? `mailto:${row.email}` : ''} title={row.email} icon={Mail} />
+            <ContactIcon value={row.linkedin || ''} label="LinkedIn" icon={Globe} />
+            <ContactIcon value={row.phone || ''} label="Phone" icon={Phone} />
+            <ContactIcon value={row.email || ''} label="Email" icon={Mail} />
           </div>
         )
       case 'role':
