@@ -333,7 +333,7 @@ export default function PanelHome() {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-fuchsia-600 text-base font-black text-white">H</div>
           <div className="leading-tight">
             <div className="text-sm font-bold tracking-tight text-slate-900">Interview panel</div>
-            <div className="text-[11px] text-slate-400">HR-OS by EZ Works</div>
+            <div className="text-[11px] text-slate-400">HR-OS by EZ</div>
           </div>
           <div className="ml-auto flex items-center gap-2 text-sm text-slate-500">
             <span className="hidden sm:inline">{user?.name || user?.email}</span>

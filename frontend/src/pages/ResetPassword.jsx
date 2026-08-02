@@ -40,7 +40,7 @@ export default function ResetPassword() {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-fuchsia-600 text-lg font-black text-white shadow-sm shadow-brand-600/30 ring-1 ring-inset ring-white/20">H</div>
           <div className="leading-tight">
             <div className="text-base font-bold tracking-tight text-slate-900">HR-OS</div>
-            <div className="text-xs text-slate-400">by EZ Works</div>
+            <div className="text-xs text-slate-400">by EZ</div>
           </div>
         </div>
 

@@ -79,7 +79,7 @@ class Settings:
     SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "talent@ez.works")
     EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "EZ People")
-    COMPANY_NAME: str = os.getenv("COMPANY_NAME", "EZ Works")
+    COMPANY_NAME: str = os.getenv("COMPANY_NAME", "EZ")
     COMPANY_WEBSITE: str = os.getenv("COMPANY_WEBSITE", "https://www.ez.works")  # shown on careers/feeds
     COMPANY_COUNTRY: str = os.getenv("COMPANY_COUNTRY", "India")
     # Fixed company block injected into EVERY job description (and the careers page / public

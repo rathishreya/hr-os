@@ -50,32 +50,53 @@ function verdictLabel(app) {
   return s >= 65 ? 'Yes' : s >= 50 ? 'Maybe' : 'No'
 }
 
-export function exportTalentPoolCsv(rows) {
-  const headers = [
-    'Name', 'Email', 'Phone', 'LinkedIn', 'GitHub', 'Current Title', 'Current Company',
-    'Education', 'Institution', 'Current CTC', 'Expected CTC', 'Experience (Yrs)',
-    'Source', 'Sub-source', 'Location', 'Top Score', 'Latest Stage', 'Date Added',
-  ]
-  const data = rows.map((r) => [
-    r.name || '',
-    r.email || '',
-    r.phone || '',
-    r.linkedin || '',
-    r.github || '',
-    r.current_title || '',
-    r.current_company || '',
-    r.education_degree || '',
-    r.education_institution || '',
-    r.current_ctc || '',
-    r.salary_expectation || '',
-    r.total_yoe ?? '',
-    r.source || '',
-    r.sub_source || '',
-    r.location || '',
-    Math.round(r.top_score || 0),
-    r.latest_stage || '',
-    r.created_at ? new Date(r.created_at).toLocaleDateString() : '',
-  ])
+// Each talent-pool table column id → the export (header, value) pairs it expands to. Multi-value
+// cells (Contact, Current role, Compensation…) split into their natural sub-columns. Keyed by the
+// same ids as TALENT_POOL_COLUMNS so the export mirrors exactly what's shown in the table.
+const TP_EXPORT_MAP = {
+  name: [['Candidate', (r) => r.name || '']],
+  contact: [
+    ['Email', (r) => r.email || ''],
+    ['Phone', (r) => r.phone || ''],
+    ['LinkedIn', (r) => r.linkedin || ''],
+  ],
+  role: [
+    ['Current Title', (r) => r.current_title || ''],
+    ['Current Company', (r) => r.current_company || ''],
+  ],
+  education: [
+    ['Education', (r) => r.education_degree || ''],
+    ['Institution', (r) => r.education_institution || ''],
+  ],
+  comp: [
+    ['Current CTC', (r) => formatComp(r.current_ctc)],
+    ['Expected CTC', (r) => formatComp(r.salary_expectation)],
+  ],
+  exp: [['Experience (Yrs)', (r) => r.total_yoe ?? '']],
+  source: [['Source', (r) => r.source || '']],
+  sub_source: [['Sub-source', (r) => r.sub_source || '']],
+  location: [['Location', (r) => r.location || '']],
+  suggested_role: [
+    ['AI suggested role', (r) => r.suggested_role || ''],
+    ['Match %', (r) => (r.suggested_role_score != null ? Math.round(r.suggested_role_score) : '')],
+  ],
+  pipeline: [
+    ['Pipeline role', (r) => r.primary_role || ''],
+    ['Pipeline stage', (r) => r.primary_stage || ''],
+    ['Pipeline score', (r) => (r.primary_score != null ? Math.round(r.primary_score) : '')],
+  ],
+  added: [['Date added', (r) => (r.created_at ? new Date(r.created_at).toLocaleDateString() : '')]],
+}
+
+// Export the SAME columns that are currently visible in the table (in table order), so the CSV
+// always matches what the recruiter sees. `activeColumns` are the visible column ids; if omitted,
+// every data column is exported.
+export function exportTalentPoolCsv(rows, activeColumns) {
+  const ids = (activeColumns && activeColumns.length ? activeColumns : Object.keys(TP_EXPORT_MAP))
+    .filter((id) => TP_EXPORT_MAP[id])          // skip non-data columns (#, edit)
+  const pairs = ids.flatMap((id) => TP_EXPORT_MAP[id])
+  const headers = pairs.map(([h]) => h)
+  const data = rows.map((r) => pairs.map(([, fn]) => fn(r)))
   return downloadCsv([headers, ...data], 'talent_pool.csv')
 }
 

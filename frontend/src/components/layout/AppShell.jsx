@@ -48,7 +48,7 @@ function SidebarContent({ onNavigate }) {
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-fuchsia-600 text-lg font-black text-white shadow-sm shadow-brand-600/30 ring-1 ring-inset ring-white/20">H</div>
         <div>
           <div className="text-sm font-bold tracking-tight text-slate-900">HR-OS</div>
-          <div className="text-[10px] font-medium text-slate-500">by EZ Works</div>
+          <div className="text-[10px] font-medium text-slate-500">by EZ</div>
         </div>
       </div>
 

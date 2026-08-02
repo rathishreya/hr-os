@@ -51,7 +51,7 @@ export default function Dashboard() {
 
   const hour = new Date().getHours()
   const greeting = `Good ${hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'}`
-  const companyName = company?.name || 'EZ Works'
+  const companyName = company?.name || 'EZ'
 
   // Per-role funnel: 'all' shows the global funnel; otherwise pull the selected role's stage counts.
   const funnelByRole = data?.funnel_by_role || []

@@ -136,6 +136,18 @@ def _compose_ctc(amount: str, currency: str) -> str:
     return f"{sym}{amt}" if sym else f"{amt} {cur}"
 
 
+def _compose_phone(code: str, number: str) -> str:
+    """Combine the country-code dropdown + number into one stored phone string ('+91 98765…')."""
+    number = (number or "").strip()
+    if not number:
+        return ""
+    code = (code or "").strip()
+    # If the applicant already typed a leading '+<code>', don't double-prefix it.
+    if number.startswith("+") or not code:
+        return number
+    return f"{code} {number}"
+
+
 def _compose_location(city: str, country: str, pin: str) -> str:
     """Single-line location for the talent-pool 'Location' column from the split fields."""
     city, country, pin = (city or "").strip(), (country or "").strip(), (pin or "").strip()
@@ -714,17 +726,34 @@ def _source_options(selected: str) -> str:
     )
 
 
-def _gender_field(v: dict) -> str:
+def _gender_field(v: dict, *, required: bool = False) -> str:
+    req = ' <span class="req">*</span>' if required else ""
+    req_attr = " required" if required else ""
     return (
-        '<div class="field"><label class="lbl">Gender</label>'
-        f'<select class="inp" name="gender">{_gender_options(v.get("gender"))}</select></div>'
+        f'<div class="field"><label class="lbl">Gender{req}</label>'
+        f'<select class="inp" name="gender"{req_attr}>{_gender_options(v.get("gender"))}</select></div>'
+    )
+
+
+# Common dialling codes for the phone country-code dropdown (India default).
+_PHONE_CODES = ["+91", "+1", "+44", "+971", "+65", "+61", "+49", "+33", "+81", "+86",
+                "+92", "+880", "+960", "+977", "+94", "+27", "+55", "+7", "+62", "+63"]
+
+
+def _phone_code_options(selected: str) -> str:
+    sel = selected if selected in _PHONE_CODES else "+91"
+    return "".join(
+        f'<option value="{c}"{" selected" if c == sel else ""}>{c}</option>' for c in _PHONE_CODES
     )
 
 
 def _phone_field(v: dict) -> str:
     return (
         '<div class="field"><label class="lbl">Phone <span class="req">*</span></label>'
-        f'<input class="inp" name="phone" value="{_e(v.get("phone"))}" required></div>'
+        '<div class="row2">'
+        f'<select class="inp cur" name="phone_code">{_phone_code_options(v.get("phone_code"))}</select>'
+        f'<input class="inp" type="tel" name="phone" value="{_e(v.get("phone"))}" placeholder="phone number" required>'
+        '</div></div>'
     )
 
 
@@ -773,7 +802,7 @@ def _apply_form(job: models.Job, *, values: dict | None = None, error: str = "",
         f'<div class="field"><label class="lbl">Email <span class="req">*</span></label>'
         f'<input class="inp" type="email" name="email" value="{_e(v.get("email"))}" required></div>'
         f'{_phone_field(v)}'
-        f'{_gender_field(v)}'
+        f'{_gender_field(v, required=True)}'
         f'{_location_fields(v)}'
         f'{_comp_field("Current Annual Total Compensation", "current_ctc", v, required=True)}'
         f'{_comp_field("Expected Annual Total Compensation", "expected_ctc", v, required=True)}'
@@ -812,6 +841,7 @@ async def submit_application(
     name: str = Form(""),
     email: str = Form(""),
     phone: str = Form(""),
+    phone_code: str = Form("+91"),
     gender: str = Form(""),
     city: str = Form(""),
     country: str = Form(""),
@@ -833,8 +863,9 @@ async def submit_application(
     hr = job.hiring_request
     current_ctc = _compose_ctc(current_ctc_amount, current_ctc_currency)
     expected_ctc = _compose_ctc(expected_ctc_amount, expected_ctc_currency)
+    full_phone = _compose_phone(phone_code, phone)
     values = {
-        "name": name, "email": email, "phone": phone, "gender": gender,
+        "name": name, "email": email, "phone": phone, "phone_code": phone_code, "gender": gender,
         "city": city, "country": country, "pin": pin, "resume_text": resume_text,
         "current_ctc_amount": current_ctc_amount, "current_ctc_currency": current_ctc_currency,
         "expected_ctc_amount": expected_ctc_amount, "expected_ctc_currency": expected_ctc_currency,
@@ -860,6 +891,8 @@ async def submit_application(
         return HTMLResponse(_apply_form(job, values=values, error="Please enter your name and email.", src=src), status_code=400)
     if not phone.strip():
         return HTMLResponse(_apply_form(job, values=values, error="Please enter your phone number.", src=src), status_code=400)
+    if not gender.strip():
+        return HTMLResponse(_apply_form(job, values=values, error="Please select your gender.", src=src), status_code=400)
     if not city.strip() or not country.strip():
         return HTMLResponse(_apply_form(job, values=values, error="Please enter your city and country.", src=src), status_code=400)
     if not current_ctc_amount.strip() or not expected_ctc_amount.strip() or not notice_period.strip():
@@ -892,7 +925,7 @@ async def submit_application(
     # or scoring chokes on an odd résumé; roll back and show a friendly retry instead.
     try:
         cand = recruitment.ingest_candidate(
-            db, name=name.strip(), email=email.strip(), phone=phone.strip(),
+            db, name=name.strip(), email=email.strip(), phone=full_phone,
             source=chosen_source, resume_text=text,
             file_bytes=file_bytes, filename=filename, mime=mime,
         )
@@ -963,17 +996,17 @@ def _general_apply_form(*, values: dict | None = None, error: str = "", src: str
         f'<div class="field"><label class="lbl">Email <span class="req">*</span></label>'
         f'<input class="inp" type="email" name="email" value="{_e(v.get("email"))}" required></div>'
         f'{_phone_field(v)}'
-        f'{_gender_field(v)}'
+        f'{_gender_field(v, required=True)}'
         f'<div class="field"><label class="lbl">Role you&rsquo;re interested in</label>'
         f'<input class="inp" name="desired_role" list="role_list" value="{_e(v.get("desired_role"))}" '
         f'placeholder="Pick an open role or type your own">'
         f'{_role_datalist(roles)}'
         f'<p class="hint">Optional — choose from our open roles or tell us the kind of role you want.</p></div>'
         f'{_location_fields(v)}'
-        f'{_comp_field("Current Annual Total Compensation", "current_ctc", v, required=False)}'
-        f'{_comp_field("Expected Annual Total Compensation", "expected_ctc", v, required=False)}'
-        f'<div class="field"><label class="lbl">Notice Period (Days)</label>'
-        f'<input class="inp" type="number" min="0" name="notice_period" value="{_e(v.get("notice_period"))}" placeholder="e.g. 30"></div>'
+        f'{_comp_field("Current Annual Total Compensation", "current_ctc", v, required=True)}'
+        f'{_comp_field("Expected Annual Total Compensation", "expected_ctc", v, required=True)}'
+        f'<div class="field"><label class="lbl">Notice Period (Days) <span class="req">*</span></label>'
+        f'<input class="inp" type="number" min="0" name="notice_period" value="{_e(v.get("notice_period"))}" placeholder="e.g. 30" required></div>'
         f'<div class="field"><label class="lbl">Résumé <span class="req">*</span></label>'
         f'<input class="inp" type="file" name="file" accept=".pdf,.docx,.doc,.txt">'
         f'<p class="hint">PDF, DOCX or TXT — we parse it automatically so recruiters can match you to open roles. '
@@ -1001,6 +1034,7 @@ async def submit_general_application(
     name: str = Form(""),
     email: str = Form(""),
     phone: str = Form(""),
+    phone_code: str = Form("+91"),
     gender: str = Form(""),
     desired_role: str = Form(""),
     city: str = Form(""),
@@ -1019,8 +1053,9 @@ async def submit_general_application(
     roles = _published_titles(db)
     current_ctc = _compose_ctc(current_ctc_amount, current_ctc_currency)
     expected_ctc = _compose_ctc(expected_ctc_amount, expected_ctc_currency)
+    full_phone = _compose_phone(phone_code, phone)
     values = {
-        "name": name, "email": email, "phone": phone, "gender": gender,
+        "name": name, "email": email, "phone": phone, "phone_code": phone_code, "gender": gender,
         "desired_role": desired_role, "city": city, "country": country, "pin": pin,
         "resume_text": resume_text,
         "current_ctc_amount": current_ctc_amount, "current_ctc_currency": current_ctc_currency,
@@ -1031,8 +1066,12 @@ async def submit_general_application(
         return HTMLResponse(_general_apply_form(values=values, error="Please enter your name and email.", src=src, roles=roles), status_code=400)
     if not phone.strip():
         return HTMLResponse(_general_apply_form(values=values, error="Please enter your phone number.", src=src, roles=roles), status_code=400)
+    if not gender.strip():
+        return HTMLResponse(_general_apply_form(values=values, error="Please select your gender.", src=src, roles=roles), status_code=400)
     if not city.strip() or not country.strip():
         return HTMLResponse(_general_apply_form(values=values, error="Please enter your city and country.", src=src, roles=roles), status_code=400)
+    if not current_ctc_amount.strip() or not expected_ctc_amount.strip() or not notice_period.strip():
+        return HTMLResponse(_general_apply_form(values=values, error="Please fill current & expected compensation and notice period.", src=src, roles=roles), status_code=400)
 
     file_bytes = None
     filename = mime = ""
@@ -1061,7 +1100,7 @@ async def submit_general_application(
     # Talent-pool entrants are not tied to a role: create the Candidate, skip apply_candidate.
     try:
         cand = recruitment.ingest_candidate(
-            db, name=name.strip(), email=email.strip(), phone=phone.strip(),
+            db, name=name.strip(), email=email.strip(), phone=full_phone,
             source="careers", resume_text=text,
             file_bytes=file_bytes, filename=filename, mime=mime,
         )

@@ -431,7 +431,7 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
           <Button variant="ghost" className="text-xs" onClick={() => setSettingsOpen(true)}>
             <Columns3 className="h-4 w-4" /> Columns
           </Button>
-          <Button variant="ghost" className="text-xs" onClick={() => exportTalentPoolCsv(sorted)}>
+          <Button variant="ghost" className="text-xs" onClick={() => exportTalentPoolCsv(sorted, activeColumns.map((c) => c.id))}>
             <Download className="h-4 w-4" /> Export
           </Button>
         </div>

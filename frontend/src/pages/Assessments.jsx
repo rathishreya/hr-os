@@ -376,6 +376,7 @@ export default function Assessments() {
                     <div className="truncate text-sm font-semibold text-slate-900">{a.name}</div>
                     <div className="text-xs text-slate-400">
                       {fileList.length} file{fileList.length !== 1 ? 's' : ''}{totalSize ? ` · ${fmtSize(totalSize)}` : ''}
+                      {a.created_at && ` · Created ${new Date(a.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`}
                     </div>
                   </div>
                   <div className="-mr-1 -mt-1 flex shrink-0 items-center gap-0.5">

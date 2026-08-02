@@ -13,12 +13,19 @@ import { HIRE_TYPES } from '../constants'
 const VIEW_KEY = 'hr-os-jobs-view'
 
 const EMPTY = {
-  position: '', department: '', team: '', hire_type: '', budget_ctc: '', yoe_min: 0, yoe_max: 0,
+  position: '', department: '', team: '', hire_type: 'new', budget_ctc: '', yoe_min: 0, yoe_max: 0,
   mandatory_skills: [], preferred_skills: [], priority: 'medium',
   hiring_deadline: '', location: '', work_mode: 'hybrid', num_openings: 1,
   start_hiring_date: '', application_questions: [], interview_types: [],
   hiring_manager: '', recruiter: '', panelists: [], role_brief: '',
 }
+
+// Core hiring fields that must be filled before a job can be posted (field key → label).
+const REQUIRED_ROLE_FIELDS = [
+  ['position', 'Role'], ['department', 'Department'], ['team', 'Team'],
+  ['hire_type', 'New / Replacement'], ['budget_ctc', 'Budget / CTC'], ['location', 'Location'],
+  ['hiring_manager', 'Hiring manager'], ['recruiter', 'Recruiter'],
+]
 
 // Priority as a leading dot, not a colored side-stripe (side-stripes read as templated).
 const PRIORITY_DOT = { urgent: 'bg-rose-500', high: 'bg-amber-500', medium: 'bg-sky-500', low: 'bg-slate-300' }
@@ -211,6 +218,16 @@ function NewRoleForm({ onCreated, onCancel }) {
 
   async function submit(e) {
     e.preventDefault()
+    // Core hiring fields are mandatory. YOE (min/max) and openings default to numbers, so they're
+    // always present; validate the text/select fields that could be left blank.
+    const missing = REQUIRED_ROLE_FIELDS.filter(([k]) => !String(f[k] ?? '').trim()).map(([, l]) => l)
+    if (Number(f.yoe_max) <= 0) missing.push('Max YOE')
+    if (Number(f.num_openings) < 1) missing.push('Openings')
+    if (missing.length) {
+      const msg = `Please fill all required fields: ${missing.join(', ')}`
+      setErr(msg); toast(msg, 'error')
+      return
+    }
     setBusy(true); setErr('')
     try {
       const role = await api.createRole({
@@ -246,7 +263,7 @@ function NewRoleForm({ onCreated, onCancel }) {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Role *"><input required className={inputClass} value={f.position} onChange={set('position')} placeholder="Senior Backend Engineer" /></Field>
           <ComboField
-            label="Department"
+            label="Department *"
             listId="dept-options"
             value={f.department}
             onChange={(v) => setF((p) => ({ ...p, department: v }))}
@@ -254,31 +271,31 @@ function NewRoleForm({ onCreated, onCancel }) {
             placeholder="Engineering — pick or type to add"
           />
           <ComboField
-            label="Team"
+            label="Team *"
             listId="team-options"
             value={f.team}
             onChange={(v) => setF((p) => ({ ...p, team: v }))}
             options={teamFieldOptions}
             placeholder="Platform — pick or type to add"
           />
-          <Field label="New / Replacement" hint="Is this new headcount or backfilling a leaver?">
+          <Field label="New / Replacement *" hint="Is this new headcount or backfilling a leaver?">
             <select className={inputClass} value={f.hire_type} onChange={set('hire_type')}>
               {HIRE_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </Field>
           <div className="sm:col-span-2">
-            <BudgetCtcField value={f.budget_ctc} onChange={(v) => setF((p) => ({ ...p, budget_ctc: v }))} />
+            <BudgetCtcField label="Budget / CTC *" value={f.budget_ctc} onChange={(v) => setF((p) => ({ ...p, budget_ctc: v }))} />
           </div>
           <ComboField
-            label="Location"
+            label="Location *"
             listId="location-options"
             value={f.location}
             onChange={(v) => setF((p) => ({ ...p, location: v }))}
             options={locationOptions}
             placeholder="Bengaluru — pick or type to add"
           />
-          <Field label="Min YOE"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_min} onChange={set('yoe_min')} /></Field>
-          <Field label="Max YOE"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_max} onChange={set('yoe_max')} /></Field>
+          <Field label="Min YOE *"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_min} onChange={set('yoe_min')} /></Field>
+          <Field label="Max YOE *"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_max} onChange={set('yoe_max')} /></Field>
           <Field label="Priority">
             <select className={inputClass} value={f.priority} onChange={set('priority')}>
               <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
@@ -291,7 +308,7 @@ function NewRoleForm({ onCreated, onCancel }) {
           </Field>
           <Field label="Hiring deadline"><input type="date" className={inputClass} value={f.hiring_deadline} onChange={set('hiring_deadline')} /></Field>
           <Field label="Hiring start date" hint="When the team begins actively sourcing candidates"><input type="date" className={inputClass} value={f.start_hiring_date} onChange={set('start_hiring_date')} /></Field>
-          <Field label="Openings"><input type="number" min="1" className={inputClass} value={f.num_openings} onChange={set('num_openings')} /></Field>
+          <Field label="Openings *"><input type="number" min="1" className={inputClass} value={f.num_openings} onChange={set('num_openings')} /></Field>
         </div>
 
         <RoleBriefField value={f.role_brief} onChange={(v) => setF((p) => ({ ...p, role_brief: v }))} />
@@ -300,13 +317,13 @@ function NewRoleForm({ onCreated, onCancel }) {
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team</h3>
           <p className="text-xs text-slate-400">Mapped from people in Settings → Users &amp; roles.</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Field label="Hiring manager">
+            <Field label="Hiring manager *">
               <select className={inputClass} value={f.hiring_manager} onChange={set('hiring_manager')}>
                 <option value="">Select…</option>
                 {teamOpts.hm.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </Field>
-            <Field label="Recruiter">
+            <Field label="Recruiter *">
               <select className={inputClass} value={f.recruiter} onChange={set('recruiter')}>
                 <option value="">Select…</option>
                 {teamOpts.rec.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}

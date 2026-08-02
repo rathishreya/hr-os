@@ -62,7 +62,6 @@ export const TEAM_SEEDS = [
 
 // Whether a requisition is a brand-new headcount or backfilling someone who left.
 export const HIRE_TYPES = [
-  { value: '', label: 'Not set' },
   { value: 'new', label: 'New' },
   { value: 'replacement', label: 'Replacement' },
 ]

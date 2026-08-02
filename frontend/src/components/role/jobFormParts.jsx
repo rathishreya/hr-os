@@ -56,12 +56,13 @@ export function ComboField({ label, hint, value, onChange, options, placeholder,
 // "INR 20-28 LPA" or "USD 90,000-1,20,000 per year". Parsing back is best-effort for editing.
 // Units are currency-aware: "LPA" (lakhs per annum) only makes sense for INR. Other currencies
 // get plain per-year / per-month / "K / year" units so a USD/SGD range never reads "90 LPA".
-const INR_UNITS = ['LPA', 'per month', 'per year']
-const OTHER_UNITS = ['per year', 'per month', 'K / year']
-const DEFAULT_UNIT = 'LPA'
-// Every unit string we might emit — used by the parser to detect the unit out of the saved text.
-const ALL_UNITS = [...new Set([...INR_UNITS, ...OTHER_UNITS])]
-const unitsFor = (currency) => (currency === 'INR' ? INR_UNITS : OTHER_UNITS)
+// Per the product decision, only two units are OFFERED: per annum / per month.
+const UNITS = ['per annum', 'per month']
+const DEFAULT_UNIT = 'per annum'
+// Legacy units ("… LPA", "… per year", "K / year") are still PARSED so editing an older job reads
+// its amounts correctly; on save we always normalize to one of UNITS above.
+const ALL_UNITS = [...new Set(['LPA', 'per year', 'K / year', ...UNITS])]
+const unitsFor = () => UNITS
 
 function groupThousands(raw) {
   // Keep only digits, then group in the Indian style the rest of the app uses (en-IN).
@@ -74,9 +75,10 @@ export function parseBudgetCtc(str) {
   const s = String(str || '').trim()
   const cur = CURRENCIES.find((c) => new RegExp(`(^|\\b)(${c.code}|\\${c.symbol})`, 'i').test(s))
   const currency = cur?.code || 'INR'
-  // "LPA" first so "per year"/"K / year" don't shadow it; fall back to the currency's default unit.
+  // Detect any (incl. legacy) unit in the saved text, then normalize to an offered unit: anything
+  // annual (LPA / per year / K per year / per annum) → "per annum"; monthly → "per month".
   const found = ALL_UNITS.find((u) => s.toLowerCase().includes(u.toLowerCase()))
-  const unit = found || (currency === 'INR' ? DEFAULT_UNIT : OTHER_UNITS[0])
+  const unit = /per month/i.test(found || '') ? 'per month' : DEFAULT_UNIT
   const nums = s.replace(/,/g, '').match(/\d+(?:\.\d+)?/g) || []
   return {
     currency,
