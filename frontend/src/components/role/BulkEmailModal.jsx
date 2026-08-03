@@ -79,12 +79,6 @@ export default function BulkEmailModal({ open, onClose, applicationIds = [], onS
       )}
     >
       <div className="space-y-3">
-        {!configured && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-            SMTP not configured — emails will be logged, not delivered. Configure it in Settings → Email.
-          </div>
-        )}
-
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-[200px] flex-1">
             <Field label="Email type">

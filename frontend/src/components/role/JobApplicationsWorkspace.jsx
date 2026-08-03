@@ -157,6 +157,10 @@ const FILTER_ACCESSORS = {
   applied_by: (r) => r.applied_by || '',
   changed: (r) => formatDateTime(r.stage_changed_at),
   activity: (r) => r.meta?.activity || '',
+  ai_interview: (r) => {
+    const s = r.meta?.ai_interview_status
+    return s === 'done' ? 'Done' : s === 'pending' ? 'Pending' : '—'
+  },
   email: (r) => (r.meta?.email_count ? String(r.meta.email_count) : ''),
   last_email: (r) => {
     const m = r.meta || {}

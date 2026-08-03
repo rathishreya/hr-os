@@ -88,13 +88,10 @@ const TP_EXPORT_MAP = {
   added: [['Date added', (r) => (r.created_at ? new Date(r.created_at).toLocaleDateString() : '')]],
 }
 
-// Export the SAME columns that are currently visible in the table (in table order), so the CSV
-// always matches what the recruiter sees. `activeColumns` are the visible column ids; if omitted,
-// every data column is exported.
-export function exportTalentPoolCsv(rows, activeColumns) {
-  const ids = (activeColumns && activeColumns.length ? activeColumns : Object.keys(TP_EXPORT_MAP))
-    .filter((id) => TP_EXPORT_MAP[id])          // skip non-data columns (#, edit)
-  const pairs = ids.flatMap((id) => TP_EXPORT_MAP[id])
+// Export EVERY column (not just the visible ones) so the CSV always has the full picture — nothing
+// is left out even if a column is hidden in the table.
+export function exportTalentPoolCsv(rows) {
+  const pairs = Object.values(TP_EXPORT_MAP).flat()
   const headers = pairs.map(([h]) => h)
   const data = rows.map((r) => pairs.map(([, fn]) => fn(r)))
   return downloadCsv([headers, ...data], 'talent_pool.csv')
@@ -102,9 +99,10 @@ export function exportTalentPoolCsv(rows, activeColumns) {
 
 export function exportPipelineCsv(apps, roleTitle = 'pipeline') {
   const headers = [
-    'Name', 'Email', 'Phone', 'LinkedIn', 'GitHub', 'Source', 'Stage', 'Score', 'Rating/5', 'AI verdict', 'Recommendation',
+    'Name', 'Email', 'Phone', 'LinkedIn', 'GitHub', 'Source', 'Sub-source', 'Stage', 'Score', 'Rating/5', 'AI verdict', 'Recommendation',
     'Current Title', 'Current Company', 'Education', 'Institution',
-    'Current CTC', 'Expected CTC', 'YOE', 'Location', 'Notice', 'Last email', 'Applied', 'Status Changed', 'Notes',
+    'Current CTC', 'Expected CTC', 'YOE', 'Location', 'Notice',
+    'Interview', 'AI interview', 'Activity', 'Emails', 'Last email', 'Applied', 'Applied by', 'Status Changed', 'Notes',
   ]
   const rows = apps.map((app) => {
     const c = app.candidate || {}
@@ -113,6 +111,10 @@ export function exportPipelineCsv(apps, roleTitle = 'pipeline') {
     const lastEmail = m.last_email_at
       ? `${m.last_email_template || 'email'} · ${m.last_email_status || 'sent'} · ${new Date(m.last_email_at).toLocaleDateString()}`
       : ''
+    const interview = m.interview_rounds_scheduled > 0
+      ? `R${m.interview_next_round || '?'}`
+      : (m.screening_status === 'completed' ? 'Screened' : m.screening_status === 'in_progress' ? 'Live' : '')
+    const aiInterview = m.ai_interview_status === 'done' ? 'Done' : m.ai_interview_status === 'pending' ? 'Pending' : ''
     return [
       c.name || '',
       c.email || '',
@@ -120,6 +122,7 @@ export function exportPipelineCsv(apps, roleTitle = 'pipeline') {
       p.linkedin || '',
       p.github || '',
       c.source || '',
+      p.sub_source || '',
       app.stage || '',
       Math.round(app.score_overall || 0),
       ((app.score_overall || 0) / 20).toFixed(1),
@@ -134,8 +137,13 @@ export function exportPipelineCsv(apps, roleTitle = 'pipeline') {
       p.total_yoe ?? '',
       p.location || '',
       p.notice_period || '',
+      interview,
+      aiInterview,
+      m.activity || '',
+      m.email_count || 0,
       lastEmail,
       app.created_at ? new Date(app.created_at).toLocaleDateString() : '',
+      app.applied_by || '',
       app.stage_changed_at ? new Date(app.stage_changed_at).toLocaleString() : '',
       (app.notes || '').replace(/\n/g, ' '),
     ]
