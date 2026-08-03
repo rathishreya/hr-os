@@ -1,7 +1,22 @@
+import { useEffect, useState } from 'react'
 import { Button, Modal } from '../../ui'
 import { TALENT_POOL_COLUMNS } from '../../hooks/useTalentPoolColumns'
 
-export default function TalentPoolColumnSettings({ open, onClose, visible, onToggle, onReset }) {
+const ALL_ON = Object.fromEntries(TALENT_POOL_COLUMNS.map((c) => [c.id, true]))
+
+// Column chooser. Edits are buffered in a local DRAFT and only applied when the user clicks
+// "Done" — so toggling checkboxes doesn't reshape the table live. Closing without Done (X /
+// backdrop / Cancel) discards the draft.
+export default function TalentPoolColumnSettings({ open, onClose, visible, onApply, onReset }) {
+  const [draft, setDraft] = useState(visible)
+
+  // Start each session from the current live visibility, so re-opening reflects what's applied.
+  useEffect(() => { if (open) setDraft({ ...visible }) }, [open])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = (id, on) => setDraft((p) => ({ ...p, [id]: on }))
+  const apply = () => { onApply(draft); onClose() }
+  const resetDraft = () => setDraft({ ...ALL_ON })
+
   return (
     <Modal
       open={open}
@@ -9,12 +24,13 @@ export default function TalentPoolColumnSettings({ open, onClose, visible, onTog
       title="Customize table columns"
       footer={(
         <>
-          <Button variant="ghost" onClick={() => { onReset(); onClose() }}>Reset</Button>
-          <Button onClick={onClose}>Done</Button>
+          <Button variant="ghost" onClick={resetDraft}>Reset</Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={apply}>Done</Button>
         </>
       )}
     >
-      <p className="mb-3 text-sm text-slate-600">Choose which columns appear in your talent pool table.</p>
+      <p className="mb-3 text-sm text-slate-600">Choose which columns appear, then click <strong>Done</strong> to apply.</p>
       <div className="max-h-64 space-y-1.5 overflow-y-auto">
         {TALENT_POOL_COLUMNS.filter((c) => !c.locked).map((col) => (
           <label
@@ -24,8 +40,8 @@ export default function TalentPoolColumnSettings({ open, onClose, visible, onTog
             <input
               type="checkbox"
               className="rounded border-slate-300"
-              checked={visible[col.id] !== false}
-              onChange={(e) => onToggle(col.id, e.target.checked)}
+              checked={draft[col.id] !== false}
+              onChange={(e) => toggle(col.id, e.target.checked)}
             />
             <span className="text-sm font-medium text-slate-800">{col.label}</span>
           </label>

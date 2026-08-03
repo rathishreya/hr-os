@@ -148,7 +148,7 @@ const STAGE_DOT = {
 }
 
 export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable = false, selectedIds, onToggleSelect, onToggleAll }) {
-  const { visible, updateVisible, resetVisible, activeColumns } = useTalentPoolColumns()
+  const { visible, resetVisible, applyVisible, activeColumns } = useTalentPoolColumns()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [density, setDensity] = useState('comfortable')
   const [sort, setSort] = useState({ key: 'added', dir: 'desc' })
@@ -567,7 +567,7 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         visible={visible}
-        onToggle={updateVisible}
+        onApply={applyVisible}
         onReset={resetVisible}
       />
     </div>

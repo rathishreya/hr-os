@@ -33,6 +33,15 @@ const LOGO = `
   <text x="44" y="38" font-family="Arial, sans-serif" font-weight="600" font-size="11" fill="#6b7280">Private Limited</text>
 </svg>`
 
+// EZ-only wordmark for non-legal documents (e.g. the JD), which carry the "EZ" brand rather than
+// the "EZ Lab Private Limited" legal entity used on offer letters / contracts.
+const LOGO_EZ = `
+<svg width="110" height="46" viewBox="0 0 110 46" xmlns="http://www.w3.org/2000/svg" aria-label="EZ">
+  <rect x="2" y="7" width="34" height="32" rx="8" fill="none" stroke="#6ba43a" stroke-width="2.4"/>
+  <text x="19" y="30" font-family="Arial, sans-serif" font-weight="800" font-size="17" fill="#6ba43a" text-anchor="middle">EZ</text>
+  <text x="46" y="31" font-family="Arial, sans-serif" font-weight="800" font-size="20" fill="#4b7a2c">EZ</text>
+</svg>`
+
 const PIN = `<svg width="11" height="11" viewBox="0 0 24 24" fill="#84202f"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z"/></svg>`
 const GLOBE = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#1f3b5c" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg>`
 
@@ -80,15 +89,19 @@ function blockToHtml(b) {
 export function printDocument(doc) {
   const e = ENTITY[doc.entity] || ENTITY.EZ
   const body = doc.blocks && doc.blocks.length ? doc.blocks.map(blockToHtml).join('') : `<pre>${esc(doc.content)}</pre>`
+  // Non-legal docs (the JD) carry a `brandName` override → show "EZ" + the EZ-only wordmark;
+  // legal docs (offer letters / contracts) keep the "EZ Lab Private Limited" entity + logo.
+  const coName = doc.brandName || e.name
+  const logo = doc.brandName ? LOGO_EZ : LOGO
 
   const head = `
     <div class="lh">
       <div class="lh-l">
-        ${LOGO}
+        ${logo}
         <div class="iso">ISO 27001:2022<br/>ISO 9001:2015</div>
       </div>
       <div class="lh-r">
-        <div class="co">${esc(e.name)}</div>
+        <div class="co">${esc(coName)}</div>
         <div class="ad">${PIN} ${esc(e.addr)}</div>
         <div class="ad">${GLOBE} ${esc(e.web)}</div>
       </div>

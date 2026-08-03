@@ -537,6 +537,10 @@ export default function JobApplicationsWorkspace({
         if (m.screening_status === 'in_progress') return <Badge tone="violet">Live</Badge>
         if (m.screening_status === 'completed') return <span className="text-xs text-slate-600">{m.screening_score ?? '✓'}</span>
         return <span className="text-slate-300">—</span>
+      case 'ai_interview':
+        if (m.ai_interview_status === 'done') return <Badge tone="green">Done</Badge>
+        if (m.ai_interview_status === 'pending') return <Badge tone="amber">Pending</Badge>
+        return <span className="text-slate-300">—</span>
       case 'last_email': {
         if (!m.last_email_at) return <span className="text-slate-300">—</span>
         const tmpl = (m.last_email_template || 'email').replace(/_/g, ' ')

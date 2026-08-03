@@ -47,10 +47,18 @@ export function useTalentPoolColumns() {
     setVisible({ ...DEFAULT_VISIBLE })
   }, [])
 
+  // Commit a whole visibility map at once — used when the Customize dialog applies its draft on
+  // "Done" (rather than mutating the table live as each checkbox is toggled).
+  const applyVisible = useCallback((map) => {
+    const next = { ...DEFAULT_VISIBLE, ...map }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    setVisible(next)
+  }, [])
+
   const activeColumns = useMemo(
     () => TALENT_POOL_COLUMNS.filter((c) => c.locked || visible[c.id] !== false),
     [visible],
   )
 
-  return { visible, updateVisible, resetVisible, activeColumns }
+  return { visible, updateVisible, resetVisible, applyVisible, activeColumns }
 }

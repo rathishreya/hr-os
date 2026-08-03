@@ -156,6 +156,12 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
                         .where(models.InterviewRound.application_id.in_(app_ids))
                         .order_by(models.InterviewRound.round_number.asc())):
         rounds_by_app[r.application_id].append(r)
+    # Latest async AI video-interview per application (for the done/pending status column).
+    vi_by_app: dict[int, models.VideoInterview] = {}
+    for vi in db.scalars(select(models.VideoInterview)
+                         .where(models.VideoInterview.application_id.in_(app_ids))
+                         .order_by(models.VideoInterview.created_at.desc())):
+        vi_by_app.setdefault(vi.application_id, vi)  # first seen = latest (desc order)
 
     rows = []
     for app in apps:
@@ -171,6 +177,17 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
             screening_rec = latest_iv.recommendation or ""
         last_email = emails[0] if emails else None
         iv_rounds = rounds_by_app.get(app.id, [])
+        # AI (async video) interview status: "done" once the candidate submits (processing/completed);
+        # "pending" if we sent them one (an ai_interview round exists, or they opened the link) but they
+        # haven't submitted; "" if no AI interview is in play.
+        vi = vi_by_app.get(app.id)
+        has_ai_round = any((r.interview_type or "") == "ai_interview" for r in iv_rounds)
+        if vi and vi.status in ("processing", "completed"):
+            ai_interview_status = "done"
+        elif has_ai_round or vi:
+            ai_interview_status = "pending"
+        else:
+            ai_interview_status = ""
         scheduled_rounds = [r for r in iv_rounds if r.status == "scheduled"]
         next_round = scheduled_rounds[0] if scheduled_rounds else None
         next_label = ""
@@ -214,6 +231,7 @@ def pipeline_board(hr_id: int, db: Session = Depends(get_db)):
                 "interview_rounds_total": len(iv_rounds),
                 "interview_rounds_scheduled": len(scheduled_rounds),
                 "interview_next_round": next_round.round_number if next_round else None,
+                "ai_interview_status": ai_interview_status,
             },
         })
     return rows

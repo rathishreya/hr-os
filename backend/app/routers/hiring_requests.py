@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy import select
@@ -177,6 +177,25 @@ async def parse_jd(file: UploadFile = File(...)):
     return _parse_jd_text(text)
 
 
+def _naive(dt: "datetime | None") -> "datetime | None":
+    return dt.replace(tzinfo=None) if (dt and dt.tzinfo) else dt
+
+
+def _days_to_hire(hr: models.HiringRequest, apps: list) -> tuple[int, bool]:
+    """REAL time-to-hire for a role's dashboard metric (replaces the AI estimate):
+    - filled role (has a 'hired' candidate) → days from open to the FIRST hire.
+    - still open → days the role has been open so far.
+    Returns (days, filled)."""
+    opened = _naive(hr.created_at)
+    if not opened:
+        return 0, False
+    hire_dates = [_naive(a.stage_changed_at or a.created_at) for a in apps if (a.stage or "").lower() == "hired"]
+    hire_dates = [d for d in hire_dates if d]
+    if hire_dates:
+        return max(0, (min(hire_dates) - opened).days), True
+    return max(0, (datetime.utcnow() - opened).days), False
+
+
 @router.get("")
 def list_hiring_requests(
     table: bool = False,
@@ -199,19 +218,24 @@ def list_hiring_requests(
                 r.budget_ctc or "", " ".join(r.mandatory_skills or []),
             ]).lower()
         ]
-    if not table:
-        return [schemas.HiringRequestOut.model_validate(r) for r in rows]
-    # One query for all roles' applications instead of one-per-role (N+1).
+    # One query for all roles' applications instead of one-per-role (N+1) — used for the real
+    # days-to-hire metric (both modes) and the richer table columns.
     apps_by_hr: dict[int, list] = defaultdict(list)
-    for a in db.scalars(
-        select(models.Application).where(
-            models.Application.hiring_request_id.in_([hr.id for hr in rows]))
-    ):
-        apps_by_hr[a.hiring_request_id].append(a)
+    if rows:
+        for a in db.scalars(
+            select(models.Application).where(
+                models.Application.hiring_request_id.in_([hr.id for hr in rows]))
+        ):
+            apps_by_hr[a.hiring_request_id].append(a)
     out = []
     for hr in rows:
         base = schemas.HiringRequestOut.model_validate(hr).model_dump()
-        out.append({**base, **row_from_hiring_request(hr, apps_by_hr.get(hr.id, []))})
+        dth, filled = _days_to_hire(hr, apps_by_hr.get(hr.id, []))
+        base["days_to_hire"] = dth
+        base["days_to_hire_filled"] = filled
+        if table:
+            base = {**base, **row_from_hiring_request(hr, apps_by_hr.get(hr.id, []))}
+        out.append(base)
     return out
 
 

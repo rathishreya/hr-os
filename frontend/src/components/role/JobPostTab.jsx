@@ -42,7 +42,9 @@ function jdToPrintDoc(jd, company, budgetCtc) {
     blocks.push({ type: 'heading', level: 2, text: 'Culture' })
     blocks.push({ type: 'para', text: jd.culture })
   }
-  return { title: jd.title || 'Job Description', entity: 'EZ', blocks }
+  // brandName override → the JD carries the "EZ" brand on its letterhead (not the "EZ Lab Private
+  // Limited" legal entity used for offer letters / contracts).
+  return { title: jd.title || 'Job Description', entity: 'EZ', brandName: company?.name || 'EZ', blocks }
 }
 
 // Styling for rendered rich text (bold/italic/underline + nested bullets).

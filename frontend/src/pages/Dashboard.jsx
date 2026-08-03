@@ -180,7 +180,7 @@ export default function Dashboard() {
                   </div>
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                     <span className="inline-flex items-center gap-1"><Star className="h-3 w-3 text-slate-300" /> {r.difficulty_score || 0}/100 difficulty</span>
-                    <span>~{r.est_time_to_hire_days || 0}d to hire</span>
+                    <span>{r.days_to_hire ?? 0}d {r.days_to_hire_filled ? 'to hire' : 'open'}</span>
                     <span>{r.num_openings} opening{r.num_openings > 1 ? 's' : ''}</span>
                   </div>
                 </Card>
