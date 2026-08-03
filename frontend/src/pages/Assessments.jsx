@@ -292,6 +292,7 @@ export default function Assessments() {
   async function add(e) {
     e.preventDefault()
     if (!name.trim() || !files.length) { toast('Add a name and choose at least one file', 'error'); return }
+    if (!team.trim() || !department.trim() || !role.trim()) { toast('Please select Team, Department and Role', 'error'); return }
     setBusy(true)
     try {
       const fd = new FormData()
@@ -332,14 +333,14 @@ export default function Assessments() {
           <Field label="Files *" hint={files.length ? `${files.length} file${files.length > 1 ? 's' : ''} selected — max 25 MB each` : 'PDF, DOCX, etc. — add one or more, max 25 MB each'}>
             <input ref={fileRef} type="file" multiple className={inputClass} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
           </Field>
-          <Field label="Team">
+          <Field label="Team *">
             <ScopeSelect value={team} onChange={setTeam} options={scopeOptions.teams} placeholder="Select a team…" allowCustom={false} />
           </Field>
-          <Field label="Department" hint="A job in this department can auto-suggest this assessment">
+          <Field label="Department *" hint="A job in this department can auto-suggest this assessment">
             <ScopeSelect value={department} onChange={setDepartment} options={scopeOptions.departments} placeholder="Select a department…" allowCustom={false} />
           </Field>
           <div className="sm:col-span-2">
-            <Field label="Role">
+            <Field label="Role *">
               <ScopeSelect value={role} onChange={setRole} options={scopeOptions.roles} placeholder="Select a role…" />
             </Field>
           </div>

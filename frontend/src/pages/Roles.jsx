@@ -377,15 +377,6 @@ function NewRoleForm({ onCreated, onCancel }) {
           />
         </div>
 
-        <div className="space-y-3 rounded-xl border border-slate-200 p-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Interview rounds</h3>
-          <p className="text-xs text-slate-400">Pick the rounds this job runs. You can bulk-apply them to candidates from the pipeline later.</p>
-          <InterviewTypesPicker
-            selected={f.interview_types}
-            setSelected={(next) => setF((p) => ({ ...p, interview_types: next }))}
-          />
-        </div>
-
         <div className="flex items-start gap-2 rounded-xl border border-brand-200 bg-brand-50/60 p-4 text-sm text-slate-700">
           <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
           <span>AI drafts the <strong>job description</strong> as soon as you create this job. You&apos;ll land on the <strong>Job post</strong> tab to review it — then <strong>Publish &amp; post</strong> (to free boards / LinkedIn / colleges) when it&apos;s ready. Nothing goes live until you approve.</span>
@@ -554,37 +545,40 @@ export default function Roles() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setViewMode('cards')}
-              className={cx(
-                'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]',
-                view === 'cards' ? 'bg-brand-50 text-brand-800' : 'text-slate-500 hover:text-slate-700',
-              )}
-            >
-              <LayoutGrid className="h-4 w-4" /> Cards
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={cx(
-                'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]',
-                view === 'list' ? 'bg-brand-50 text-brand-800' : 'text-slate-500 hover:text-slate-700',
-              )}
-            >
-              <List className="h-4 w-4" /> List
-            </button>
+        {/* Cards/List view toggle + card sort — hidden while creating a job (irrelevant there). */}
+        {!creating && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={cx(
+                  'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]',
+                  view === 'cards' ? 'bg-brand-50 text-brand-800' : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <LayoutGrid className="h-4 w-4" /> Cards
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={cx(
+                  'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 active:scale-[0.97]',
+                  view === 'list' ? 'bg-brand-50 text-brand-800' : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <List className="h-4 w-4" /> List
+              </button>
+            </div>
+            {view === 'cards' && (
+              <select className={`${inputClass} w-40`} value={cardSort} onChange={(e) => setCardSort(e.target.value)}>
+                <option value="newest">Newest first</option>
+                <option value="priority">Priority</option>
+                <option value="difficulty">Difficulty</option>
+              </select>
+            )}
           </div>
-          {view === 'cards' && (
-            <select className={`${inputClass} w-40`} value={cardSort} onChange={(e) => setCardSort(e.target.value)}>
-              <option value="newest">Newest first</option>
-              <option value="priority">Priority</option>
-              <option value="difficulty">Difficulty</option>
-            </select>
-          )}
-        </div>
+        )}
       </div>
 
       {creating && (
