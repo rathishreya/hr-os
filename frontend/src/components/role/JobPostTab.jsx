@@ -452,7 +452,8 @@ export default function JobPostTab({ roleId, jd, onGenerated, budgetCtc = '' }) 
         )}
       </div>
       <PostJobModal open={postOpen} roleId={roleId} jd={jd} onClose={() => setPostOpen(false)} onPublished={(u) => { onGenerated(u); setPostOpen(false) }} />
-      <DistributeCard jd={jd} />
+      {/* Distribution channels hidden from the job post for now (per request). */}
+      {/* <DistributeCard jd={jd} /> */}
       <EditableJDCard jd={jd} company={company} onSaved={onGenerated} budgetCtc={budgetCtc} />
       <VideoQuestionsCard jd={jd} />
       {/* External channel copy — salary is STRIPPED here (canonicalize with an empty budget

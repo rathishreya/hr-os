@@ -43,9 +43,10 @@ export const CURRENCIES = [
 // Canonical seed values for the creatable Department / Location dropdowns. Existing roles'
 // values are merged in at runtime (see useFieldOptions), and recruiters can still type a
 // brand-new value (free-text add) — these are just a sensible starting set.
+// EZ's actual departments (de-duplicated from the org list).
 export const DEPARTMENT_SEEDS = [
-  'Engineering', 'Product', 'Design', 'Data', 'Sales', 'Marketing',
-  'Customer Success', 'Operations', 'Finance', 'People / HR', 'Legal', 'IT',
+  'Delivery', 'Technology', 'Sales', 'Branding and Marketing', 'People',
+  'Administration', 'CEOs Office', 'COOs Office', 'Director Office',
 ]
 
 export const LOCATION_SEEDS = [
@@ -55,9 +56,15 @@ export const LOCATION_SEEDS = [
 
 // Seed values for the creatable Team dropdown (sits next to Department). Like the others, the
 // org's own team values from existing roles are merged in at runtime and free-text is allowed.
+// EZ's actual teams (de-duplicated from the org list).
 export const TEAM_SEEDS = [
-  'Platform', 'Frontend', 'Backend', 'Mobile', 'Infrastructure', 'Data Platform',
-  'Growth', 'Core Product', 'Design Systems', 'Revenue', 'Support', 'Recruiting',
+  'Visual Graphics Team', 'Operations', 'Product Development', 'Technology', 'Sales', 'Delivery',
+  'Research and Data', 'Applied Research', 'Market Research Team', 'Branding and Marketing',
+  'Product Operations', 'Client Relations', 'Corporate Development', 'Accounting', 'Facilities',
+  'Administration', 'Human Resources', 'People', 'IT', 'Audio Visual Team', 'Animation Videos',
+  'Language Services', 'Arabic Language Team', 'French Language Team', 'German Language Team',
+  'Chinese Language Team', 'Urdu Language Team', 'Hindi Language Team', 'Turkish Language Team',
+  'Other Language Team', 'CEOs Office', 'COOs Office', 'Director Office',
 ]
 
 // Whether a requisition is a brand-new headcount or backfilling someone who left.

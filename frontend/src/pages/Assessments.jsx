@@ -4,6 +4,7 @@ import { api } from '../api'
 import { Card, Button, Spinner, EmptyState, PageHeader, Field, Badge, Modal, inputClass, cx } from '../ui'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { TEAM_SEEDS, DEPARTMENT_SEEDS } from '../constants'
 
 function fmtSize(n) {
   if (!n) return ''
@@ -14,9 +15,8 @@ function fmtSize(n) {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`
 }
 
-// A small, sensible default team list — merged with teams found on existing jobs/assessments so
-// the dropdown is never empty before any jobs exist.
-const DEFAULT_TEAMS = ['Engineering', 'Product', 'Design', 'Data', 'Sales', 'Marketing', 'Operations', 'People / HR', 'Finance']
+// EZ's teams — seeded into the Team dropdown (merged with any values found on existing jobs).
+const DEFAULT_TEAMS = TEAM_SEEDS
 
 // Build the de-duplicated, sorted option list for one scope field from existing jobs + assessments
 // (+ any seed defaults). Keeps the values consistent instead of relying on free typing.
@@ -284,7 +284,7 @@ export default function Assessments() {
     const list = items || []
     return {
       teams: buildOptions([...roles.map((r) => r.team), ...list.map((a) => a.team)], DEFAULT_TEAMS),
-      departments: buildOptions([...roles.map((r) => r.department), ...list.map((a) => a.department)]),
+      departments: buildOptions([...roles.map((r) => r.department), ...list.map((a) => a.department)], DEPARTMENT_SEEDS),
       roles: buildOptions([...roles.map((r) => r.position), ...list.map((a) => a.role)]),
     }
   }, [roles, items])

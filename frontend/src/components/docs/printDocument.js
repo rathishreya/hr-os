@@ -33,13 +33,13 @@ const LOGO = `
   <text x="44" y="38" font-family="Arial, sans-serif" font-weight="600" font-size="11" fill="#6b7280">Private Limited</text>
 </svg>`
 
-// EZ-only wordmark for non-legal documents (e.g. the JD), which carry the "EZ" brand rather than
-// the "EZ Lab Private Limited" legal entity used on offer letters / contracts.
+// EZ brand mark for non-legal documents (e.g. the JD). A single clean "EZ" mark — the company
+// name "EZ" already appears on the right of the letterhead, so no separate wordmark (avoids the
+// "EZ EZ" doubling). Legal docs (offer letters/contracts) keep the "EZ Lab" logo above.
 const LOGO_EZ = `
-<svg width="110" height="46" viewBox="0 0 110 46" xmlns="http://www.w3.org/2000/svg" aria-label="EZ">
-  <rect x="2" y="7" width="34" height="32" rx="8" fill="none" stroke="#6ba43a" stroke-width="2.4"/>
-  <text x="19" y="30" font-family="Arial, sans-serif" font-weight="800" font-size="17" fill="#6ba43a" text-anchor="middle">EZ</text>
-  <text x="46" y="31" font-family="Arial, sans-serif" font-weight="800" font-size="20" fill="#4b7a2c">EZ</text>
+<svg width="46" height="46" viewBox="0 0 46 46" xmlns="http://www.w3.org/2000/svg" aria-label="EZ">
+  <rect x="6" y="7" width="34" height="32" rx="8" fill="none" stroke="#6ba43a" stroke-width="2.4"/>
+  <text x="23" y="30" font-family="Arial, sans-serif" font-weight="800" font-size="17" fill="#6ba43a" text-anchor="middle">EZ</text>
 </svg>`
 
 const PIN = `<svg width="11" height="11" viewBox="0 0 24 24" fill="#84202f"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z"/></svg>`
