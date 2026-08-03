@@ -35,9 +35,9 @@ function buildOptions(values, seed = []) {
 // stay unique/consistent; a "Custom…" escape hatch still allows a one-off value, and the current
 // value is always selectable even if it's no longer present in the source data (so editing an old
 // assessment never silently drops its scope).
-function ScopeSelect({ value, onChange, options, placeholder }) {
+function ScopeSelect({ value, onChange, options, placeholder, allowCustom = true }) {
   const matchesOption = !!value && options.some((o) => o.toLowerCase() === value.toLowerCase())
-  const [custom, setCustom] = useState(!!value && !matchesOption)
+  const [custom, setCustom] = useState(allowCustom && !!value && !matchesOption)
   const SENTINEL = '__custom__'
 
   // If the value resolves to a real list option (e.g. options loaded in after the modal opened),
@@ -82,7 +82,7 @@ function ScopeSelect({ value, onChange, options, placeholder }) {
         <option value={value}>{value}</option>
       )}
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
-      <option value={SENTINEL}>Custom…</option>
+      {allowCustom && <option value={SENTINEL}>Custom…</option>}
     </select>
   )
 }
@@ -202,10 +202,10 @@ function EditAssessmentModal({ assessment, scopeOptions, onClose, onSaved }) {
         <Field label="Name *"><input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Team">
-            <ScopeSelect value={team} onChange={setTeam} options={scopeOptions.teams} placeholder="Select a team…" />
+            <ScopeSelect value={team} onChange={setTeam} options={scopeOptions.teams} placeholder="Select a team…" allowCustom={false} />
           </Field>
           <Field label="Department" hint="Used to auto-suggest this assessment for matching jobs">
-            <ScopeSelect value={department} onChange={setDepartment} options={scopeOptions.departments} placeholder="Select a department…" />
+            <ScopeSelect value={department} onChange={setDepartment} options={scopeOptions.departments} placeholder="Select a department…" allowCustom={false} />
           </Field>
         </div>
         <Field label="Role">
@@ -333,10 +333,10 @@ export default function Assessments() {
             <input ref={fileRef} type="file" multiple className={inputClass} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
           </Field>
           <Field label="Team">
-            <ScopeSelect value={team} onChange={setTeam} options={scopeOptions.teams} placeholder="Select a team…" />
+            <ScopeSelect value={team} onChange={setTeam} options={scopeOptions.teams} placeholder="Select a team…" allowCustom={false} />
           </Field>
           <Field label="Department" hint="A job in this department can auto-suggest this assessment">
-            <ScopeSelect value={department} onChange={setDepartment} options={scopeOptions.departments} placeholder="Select a department…" />
+            <ScopeSelect value={department} onChange={setDepartment} options={scopeOptions.departments} placeholder="Select a department…" allowCustom={false} />
           </Field>
           <div className="sm:col-span-2">
             <Field label="Role">

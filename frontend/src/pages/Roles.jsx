@@ -262,22 +262,18 @@ function NewRoleForm({ onCreated, onCancel }) {
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Role *"><input required className={inputClass} value={f.position} onChange={set('position')} placeholder="Senior Backend Engineer" /></Field>
-          <ComboField
-            label="Department *"
-            listId="dept-options"
-            value={f.department}
-            onChange={(v) => setF((p) => ({ ...p, department: v }))}
-            options={deptOptions}
-            placeholder="Engineering — pick or type to add"
-          />
-          <ComboField
-            label="Team *"
-            listId="team-options"
-            value={f.team}
-            onChange={(v) => setF((p) => ({ ...p, team: v }))}
-            options={teamFieldOptions}
-            placeholder="Platform — pick or type to add"
-          />
+          <Field label="Department *">
+            <select className={inputClass} value={f.department} onChange={set('department')}>
+              <option value="">Select a department…</option>
+              {deptOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </Field>
+          <Field label="Team *">
+            <select className={inputClass} value={f.team} onChange={set('team')}>
+              <option value="">Select a team…</option>
+              {teamFieldOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </Field>
           <Field label="New / Replacement *" hint="Is this new headcount or backfilling a leaver?">
             <select className={inputClass} value={f.hire_type} onChange={set('hire_type')}>
               {HIRE_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
