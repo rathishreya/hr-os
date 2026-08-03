@@ -126,6 +126,9 @@ class Candidate(Base):
     resume_mime: Mapped[str] = mapped_column(String(120), default="")
     resume_file: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
+    # Recruiter comment/notes on the candidate themselves (talent-pool level, spans all their apps).
+    notes: Mapped[str] = mapped_column(Text, default="")
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     applications: Mapped[list["Application"]] = relationship(back_populates="candidate")

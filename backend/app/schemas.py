@@ -131,6 +131,7 @@ class CandidateOut(BaseModel):
     ai_provider: str
     resume_filename: str = ""
     resume_mime: str = ""
+    notes: str = ""
     created_at: datetime
 
 

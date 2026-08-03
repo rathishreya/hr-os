@@ -139,6 +139,7 @@ export const api = {
     return r.blob()
   },
   getCandidateProfile: (id) => req(`/candidates/${id}/profile`),
+  updateCandidateNotes: (id, notes) => req(`/candidates/${id}/notes`, { method: 'PATCH', body: JSON.stringify({ notes }) }),
   deleteCandidate: (id) => req(`/candidates/${id}`, { method: 'DELETE' }),
   createCandidate: (body) => req('/candidates', { method: 'POST', body: JSON.stringify(body) }),
   applyCandidate: (candId, hiringRequestId) =>

@@ -43,6 +43,7 @@ def _ensure_sqlite_columns() -> None:
             ("resume_filename", "VARCHAR DEFAULT ''"),
             ("resume_mime", "VARCHAR DEFAULT ''"),
             ("resume_file", "BLOB"),
+            ("notes", "TEXT DEFAULT ''"),
         ],
         "jobs": [
             ("target_platforms", "TEXT DEFAULT '[]'"),
@@ -133,6 +134,7 @@ def _ensure_pg_columns() -> None:
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS video_questions JSONB DEFAULT '[]'::jsonb"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS distribution JSONB DEFAULT '{}'::jsonb"))
         conn.execute(text("ALTER TABLE applications ADD COLUMN IF NOT EXISTS score_breakdown JSONB DEFAULT '{}'::jsonb"))
+        conn.execute(text("ALTER TABLE candidates ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''"))
         for stmt in (
             "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS start_hiring_date VARCHAR DEFAULT ''",
             "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS application_questions JSONB DEFAULT '[]'::jsonb",

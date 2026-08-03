@@ -107,6 +107,8 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
   const [busy, setBusy] = useState(false)
   const [loadErr, setLoadErr] = useState(false)
   const [hist, setHist] = useState({ rounds: [], convos: [], loading: false })
+  const [noteDraft, setNoteDraft] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
 
   function loadProfile() {
     setLoading(true)
@@ -125,6 +127,23 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
     setHist({ rounds: [], convos: [], loading: false })
     loadProfile()
   }, [open, candidateId])
+
+  // Keep the candidate-comment editor in sync with the loaded candidate.
+  useEffect(() => { setNoteDraft(data?.candidate?.notes || '') }, [data])
+
+  async function saveCandidateNote() {
+    setSavingNote(true)
+    try {
+      await api.updateCandidateNotes(candidateId, noteDraft)
+      toast('Comment saved')
+      const fresh = await api.getCandidateProfile(candidateId)
+      setData(fresh)
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setSavingNote(false)
+    }
+  }
 
   // Real interview rounds + conversation (emails + AI screenings) across the candidate's applications.
   useEffect(() => {
@@ -614,8 +633,24 @@ export default function CandidateProfileModal({ candidateId, open, onClose, role
 
               {tab === 'comments' && (
                 <div className="mx-auto max-w-2xl space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <SectionTitle>Recruiter notes</SectionTitle>
-                  <p className="text-xs text-slate-500">Notes are saved per job application when you manage a candidate on a role.</p>
+                  <SectionTitle>Comment on this candidate</SectionTitle>
+                  <p className="text-xs text-slate-500">A note about the candidate — visible across all their applications.</p>
+                  <textarea
+                    className={`${inputClass} h-28 resize-y`}
+                    value={noteDraft}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                    placeholder="Add your comment about this candidate…"
+                  />
+                  <div className="flex justify-end">
+                    <Button onClick={saveCandidateNote} disabled={savingNote || noteDraft === (c.notes || '')}>
+                      {savingNote ? <Spinner /> : 'Save comment'}
+                    </Button>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-4">
+                    <SectionTitle>Notes from job applications</SectionTitle>
+                    <p className="text-xs text-slate-500">Saved per job application when you manage a candidate on a role.</p>
+                  </div>
                   {apps.filter((a) => a.notes).length === 0 ? (
                     <p className="text-sm text-slate-400">No comments yet.</p>
                   ) : (

@@ -284,6 +284,24 @@ def get_candidate(cand_id: int, db: Session = Depends(get_db)):
     return cand
 
 
+class _CandidateNotes(schemas.BaseModel):
+    notes: str = ""
+
+
+@router.patch("/{cand_id}/notes", response_model=schemas.CandidateOut)
+def update_candidate_notes(cand_id: int, body: _CandidateNotes, db: Session = Depends(get_db),
+                           user: models.User = Depends(current_user)):
+    """Recruiter comment on the candidate (talent-pool level, independent of any role)."""
+    cand = db.get(models.Candidate, cand_id)
+    if not cand:
+        raise HTTPException(404, "Candidate not found")
+    cand.notes = (body.notes or "").strip()
+    recruitment.log(db, "candidate.notes_updated", "candidate", cand.id, {"by": _actor_label(user)})
+    db.commit()
+    db.refresh(cand)
+    return cand
+
+
 @router.post("/{cand_id}/apply", response_model=schemas.ApplicationOut)
 def apply_to_role(cand_id: int, body: schemas.ApplyToRoleRequest, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
     cand = db.get(models.Candidate, cand_id)
