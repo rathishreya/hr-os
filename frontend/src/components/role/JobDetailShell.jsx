@@ -10,7 +10,7 @@ import { useToast } from '../Toast'
 export const JOB_VIEWS = [
   { id: 'applications', label: 'Applications', countKey: 'applications' },
   { id: 'shortlisted', label: 'Shortlisted', countKey: 'shortlisted' },
-  { id: 'positions', label: 'Positions', countKey: 'positions' },
+  { id: 'positions', label: 'Hire', countKey: 'positions' },
   { id: 'pool', label: 'Talent pool', countKey: 'talent_pool' },
   { id: 'analytics', label: 'Analytics' },
 ]
