@@ -1,7 +1,10 @@
 import { useState } from 'react'
+import { FileDown } from 'lucide-react'
 import { api } from '../../api'
 import { Card, Button, Field, Spinner, inputClass } from '../../ui'
 import { useToast } from '../Toast'
+
+const MODE_LABEL = { paste: 'Paste resume', upload: 'Upload file', import: 'Import Excel' }
 
 export default function AddCandidate({ roleId, onAdded }) {
   const { toast } = useToast()
@@ -11,6 +14,18 @@ export default function AddCandidate({ roleId, onAdded }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+
+  async function handleImport(f2) {
+    if (!f2) return
+    setBusy(true); setErr('')
+    try {
+      const res = await api.importCandidates(f2, roleId)  // applies each imported candidate to this role
+      const parts = [`${res.created} new`, res.skipped ? `${res.skipped} skipped` : '', res.applied ? `${res.applied} added to role` : ''].filter(Boolean)
+      toast(`Imported: ${parts.join(', ')}`)
+      if (res.errors?.length) toast(`${res.errors.length} row(s) had issues (e.g. ${res.errors[0]})`, 'error')
+      await onAdded()
+    } catch (e) { setErr(e.message); toast(e.message, 'error') } finally { setBusy(false) }
+  }
 
   async function submit(e) {
     e.preventDefault()
@@ -51,12 +66,29 @@ export default function AddCandidate({ roleId, onAdded }) {
   return (
     <Card className="p-5" id="add-candidate">
       <div className="mb-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs">
-        {['paste', 'upload'].map((m) => (
+        {['paste', 'upload', 'import'].map((m) => (
           <button key={m} type="button" onClick={() => setMode(m)} className={`rounded-md px-3 py-1 font-medium transition duration-150 ease-snappy active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${mode === m ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-            {m === 'paste' ? 'Paste resume' : 'Upload file'}
+            {MODE_LABEL[m]}
           </button>
         ))}
       </div>
+
+      {mode === 'import' ? (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">Bulk-add candidates from an Excel/CSV file — each row is added to this role. Existing emails are skipped.</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" className="text-xs" onClick={() => api.downloadImportTemplate().catch((e) => toast(e.message, 'error'))}>
+              <FileDown className="h-4 w-4" /> Download template
+            </Button>
+            <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 ${busy ? 'pointer-events-none opacity-60' : ''}`}>
+              {busy ? <><Spinner /> Importing…</> : 'Choose .xlsx / .csv'}
+              <input type="file" accept=".xlsx,.csv" className="hidden" disabled={busy}
+                onChange={(e) => { const file2 = e.target.files?.[0]; e.target.value = ''; handleImport(file2) }} />
+            </label>
+          </div>
+          {err && <p className="text-sm text-rose-600">{err}</p>}
+        </div>
+      ) : (
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label="Name"><input className={inputClass} value={f.name} onChange={set('name')} placeholder="optional" /></Field>
@@ -79,6 +111,7 @@ export default function AddCandidate({ roleId, onAdded }) {
         {err && <p className="text-sm text-rose-600">{err}</p>}
         <Button type="submit" disabled={busy}>{busy ? <><Spinner /> Parsing + scoring…</> : 'Add & AI Score'}</Button>
       </form>
+      )}
     </Card>
   )
 }

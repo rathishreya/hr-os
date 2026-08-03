@@ -140,6 +140,25 @@ export const api = {
   },
   getCandidateProfile: (id) => req(`/candidates/${id}/profile`),
   updateCandidateNotes: (id, notes) => req(`/candidates/${id}/notes`, { method: 'PATCH', body: JSON.stringify({ notes }) }),
+  // Bulk import candidates from an .xlsx/.csv; optional hiringRequestId also applies them to a role.
+  importCandidates: (file, hiringRequestId) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    if (hiringRequestId) fd.append('hiring_request_id', String(hiringRequestId))
+    return fetch(BASE + '/candidates/import', { method: 'POST', headers: authHeaders(), body: fd }).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Import failed')
+      return r.json()
+    })
+  },
+  downloadImportTemplate: () =>
+    fetch(BASE + '/candidates/import/template', { headers: authHeaders() }).then(async (r) => {
+      if (!r.ok) throw new Error('Could not download the template')
+      const url = URL.createObjectURL(await r.blob())
+      const a = document.createElement('a')
+      a.href = url; a.download = 'candidate_import_template.xlsx'
+      document.body.appendChild(a); a.click(); a.remove()
+      URL.revokeObjectURL(url)
+    }),
   deleteCandidate: (id) => req(`/candidates/${id}`, { method: 'DELETE' }),
   createCandidate: (body) => req('/candidates', { method: 'POST', body: JSON.stringify(body) }),
   applyCandidate: (candId, hiringRequestId) =>

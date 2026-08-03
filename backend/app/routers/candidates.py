@@ -302,6 +302,138 @@ def update_candidate_notes(cand_id: int, body: _CandidateNotes, db: Session = De
     return cand
 
 
+# ── Bulk candidate import (Excel .xlsx / .csv) ────────────────────────────────
+IMPORT_COLUMNS = [
+    "Name", "Email", "Phone", "LinkedIn", "Current Company", "Current Title",
+    "Current CTC", "Expected CTC", "Notice Period (Days)", "Total Experience (Years)",
+    "Location", "Source", "Skills (comma-separated)",
+]
+_MAX_IMPORT_BYTES = 5 * 1024 * 1024
+
+
+def _parse_spreadsheet(filename: str, content: bytes) -> list[dict]:
+    """Rows from a .xlsx (openpyxl) or .csv as dicts keyed by lowercased header."""
+    import io
+    if (filename or "").lower().endswith(".csv"):
+        import csv
+        rows = [list(r) for r in csv.reader(io.StringIO(content.decode("utf-8-sig", errors="replace")))]
+    else:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        rows = [list(r) for r in wb.active.iter_rows(values_only=True)]
+    rows = [r for r in rows if any(c is not None and str(c).strip() for c in r)]
+    if not rows:
+        return []
+    headers = [str(h or "").strip().lower() for h in rows[0]]
+    out = []
+    for r in rows[1:]:
+        d = {headers[i]: ("" if (i >= len(r) or r[i] is None) else str(r[i]).strip())
+             for i in range(len(headers)) if headers[i]}
+        out.append(d)
+    return out
+
+
+@router.get("/import/template")
+def import_template(_user: models.User = Depends(current_user)):
+    """Download the .xlsx template with the columns the importer expects. Two-segment path so it
+    never collides with GET /candidates/{cand_id}."""
+    import io
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Candidates"
+    ws.append(IMPORT_COLUMNS)
+    ws.append([
+        "Jane Doe", "jane@example.com", "+91 9876543210", "linkedin.com/in/janedoe",
+        "Acme Corp", "Senior Designer", "18 LPA", "24 LPA", "30", "5",
+        "Bengaluru, India", "referral", "Figma, UX Research, Prototyping",
+    ])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="candidate_import_template.xlsx"'},
+    )
+
+
+@router.post("/import")
+def import_candidates(
+    file: UploadFile = File(...),
+    hiring_request_id: int | None = Form(None),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(current_user),
+):
+    """Bulk-create candidates from an uploaded .xlsx/.csv (columns per /import-template).
+    Optionally applies each to a role. Rows with an existing email are skipped, not duplicated."""
+    content = file.file.read(_MAX_IMPORT_BYTES + 1)
+    if len(content) > _MAX_IMPORT_BYTES:
+        raise HTTPException(400, "File too large (max 5 MB).")
+    try:
+        rows = _parse_spreadsheet(file.filename or "", content)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"Couldn't read the spreadsheet ({str(exc)[:80]}). Use the template (.xlsx or .csv).")
+    if not rows:
+        raise HTTPException(400, "No data rows found — fill at least Name + Email in the template.")
+    hr = db.get(models.HiringRequest, hiring_request_id) if hiring_request_id else None
+    created = skipped = applied = 0
+    errors: list[str] = []
+    for n, d in enumerate(rows, start=2):  # row 2 = first data row (row 1 is headers)
+        name = (d.get("name") or "").strip()
+        email = (d.get("email") or "").strip().lower()
+        if not name or not email:
+            skipped += 1
+            if len(errors) < 20:
+                errors.append(f"Row {n}: missing name or email")
+            continue
+        try:
+            cand = db.scalar(select(models.Candidate).where(models.Candidate.email == email))
+            was_new = cand is None
+            if was_new:
+                skills = [s.strip() for s in (d.get("skills (comma-separated)") or "").split(",") if s.strip()]
+                parsed = {
+                    "current_company": d.get("current company", ""),
+                    "current_title": d.get("current title", ""),
+                    "current_ctc": d.get("current ctc", ""),
+                    "salary_expectation": d.get("expected ctc", ""),
+                    "notice_period": d.get("notice period (days)", ""),
+                    "location": d.get("location", ""),
+                    "links": [d["linkedin"]] if d.get("linkedin") else [],
+                    "skills": skills,
+                }
+                yoe = (d.get("total experience (years)") or "").strip()
+                try:
+                    parsed["total_yoe"] = float(yoe) if yoe else None
+                except ValueError:
+                    pass
+                synth = (f"{name}. {parsed['current_title']} at {parsed['current_company']}. "
+                         f"Skills: {', '.join(skills)}. Location: {parsed['location']}.").strip()
+                cand = models.Candidate(
+                    name=name, email=email, phone=(d.get("phone") or "").strip(),
+                    source=(d.get("source") or "import").strip() or "import",
+                    resume_text=synth, parsed=parsed, ai_provider="import",
+                )
+                db.add(cand)
+                db.flush()
+            if hr:
+                recruitment.apply_candidate(db, cand, hr, auto_score=True, applied_by="Import")
+            db.commit()
+            if was_new:
+                created += 1
+            else:
+                skipped += 1
+            if hr:
+                applied += 1
+        except Exception as exc:  # noqa: BLE001 — isolate a single bad row
+            db.rollback()
+            if len(errors) < 20:
+                errors.append(f"Row {n}: {str(exc)[:60]}")
+    recruitment.log(db, "candidates.imported", "candidate", None,
+                    {"created": created, "skipped": skipped, "applied": applied, "by": _actor_label(user)})
+    db.commit()
+    return {"created": created, "skipped": skipped, "applied": applied, "total_rows": len(rows), "errors": errors}
+
+
 @router.post("/{cand_id}/apply", response_model=schemas.ApplicationOut)
 def apply_to_role(cand_id: int, body: schemas.ApplyToRoleRequest, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
     cand = db.get(models.Candidate, cand_id)

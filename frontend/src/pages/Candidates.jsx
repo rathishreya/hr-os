@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, Users, RefreshCw, Sparkles, ExternalLink } from 'lucide-react'
+import { Search, Users, RefreshCw, Sparkles, ExternalLink, Upload, FileDown } from 'lucide-react'
 import { api } from '../api'
 import { Spinner, PageHeader, EmptyState, inputClass, Button } from '../ui'
 import { useToast } from '../components/Toast'
@@ -18,6 +18,7 @@ export default function Candidates() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [rescoring, setRescoring] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [roles, setRoles] = useState([])
   const [openId, setOpenId] = useState(null)
   // Public general talent-pool application link (no role) — for the EZ careers page / sharing.
@@ -59,6 +60,29 @@ export default function Candidates() {
     }
   }
 
+  async function handleImport(file) {
+    if (!file) return
+    setImporting(true)
+    try {
+      const res = await api.importCandidates(file)
+      const parts = [
+        `${res.created} new`, res.skipped ? `${res.skipped} skipped` : '',
+        res.applied ? `${res.applied} applied` : '',
+      ].filter(Boolean)
+      toast(`Imported: ${parts.join(', ')}`)
+      if (res.errors?.length) toast(`${res.errors.length} row(s) had issues (e.g. ${res.errors[0]})`, 'error')
+      await load(search)
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  async function downloadTemplate() {
+    try { await api.downloadImportTemplate() } catch (e) { toast(e.message, 'error') }
+  }
+
   async function rescoreAll() {
     setRescoring(true)
     try {
@@ -96,6 +120,18 @@ export default function Candidates() {
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               </div>
+            )}
+            {hasRole('admin', 'manager') && (
+              <Button variant="ghost" className="text-xs" onClick={downloadTemplate} title="Download the Excel import template">
+                <FileDown className="h-4 w-4" /> Template
+              </Button>
+            )}
+            {hasRole('admin', 'manager') && (
+              <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 ${importing ? 'pointer-events-none opacity-60' : ''}`} title="Import candidates from an Excel/CSV file">
+                {importing ? <Spinner /> : <Upload className="h-4 w-4" />} Import
+                <input type="file" accept=".xlsx,.csv" className="hidden" disabled={importing}
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleImport(f) }} />
+              </label>
             )}
             {hasRole('admin', 'manager') && (
               <Button variant="ghost" className="text-xs" onClick={rescoreAll} disabled={rescoring || loading} title="Re-score every application with the latest skill matcher">
