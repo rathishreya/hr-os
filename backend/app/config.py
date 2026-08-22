@@ -166,6 +166,11 @@ class Settings:
     # (auto: SendGrid if its key is set, else SMTP, else log). Set EMAIL_PROVIDER=ses to cut over to
     # SES once the sending domain is verified and the account is out of the SES sandbox.
     EMAIL_PROVIDER: str = (os.getenv("EMAIL_PROVIDER") or "").strip().lower()
+    # Hard kill-switch for outbound mail. When true, every send is recorded as "logged" and NO
+    # provider is contacted — SES, SendGrid and SMTP are all skipped. Set it in tests and any
+    # throwaway environment: leaving EMAIL_PROVIDER blank means "auto-detect", NOT "off", so a
+    # populated SMTP_HOST in a local .env is enough to deliver real mail to real people.
+    EMAIL_DRY_RUN: bool = (os.getenv("EMAIL_DRY_RUN") or "").strip().lower() in {"1", "true", "yes", "on"}
     SES_REGION: str = os.getenv("SES_REGION") or os.getenv("AWS_REGION") or "us-east-1"
     # Domains we're allowed to send FROM (SES-verified / SendGrid-authenticated). When the
     # logged-in user's email is on one of these, mail is sent FROM their own address; otherwise it

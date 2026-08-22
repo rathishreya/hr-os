@@ -400,6 +400,8 @@ def _shared_send(identity: dict, to_email: str, to_name: str, subject: str, body
                  ics: str | None, cc: list[str] | None = None, attachments: list[dict] | None = None) -> tuple[str, str]:
     """Send via the shared workspace provider (NOT the user's personal mailbox): SES-first with a
     SendGrid fallback, else SendGrid, else shared SMTP, else log. Returns (status, error)."""
+    if settings.EMAIL_DRY_RUN:
+        return "logged", "EMAIL_DRY_RUN is on — nothing was sent"
     if settings.ses_enabled:
         # SES can't deliver to everyone yet (sandbox → verified recipients only), so fall back to
         # SendGrid on failure — no email is ever lost. As SES production access completes, more mail
@@ -510,7 +512,13 @@ def compose(
     if google_send:
         gmail_attempts.append(("your Google", lambda raw: gcal.gmail_send(sender_user.google_refresh_token, raw)))
 
-    if not clean_to:
+    if settings.EMAIL_DRY_RUN:
+        # Kill-switch checked BEFORE every channel — Gmail delegation, the user's own mailbox and
+        # the shared provider alike. A blank EMAIL_PROVIDER only means "auto-detect", so this is
+        # the one setting that actually guarantees no mail leaves the process.
+        rec.status = "logged"
+        rec.error = "EMAIL_DRY_RUN is on — nothing was sent"
+    elif not clean_to:
         rec.status = "failed"
         rec.error = f"No valid recipient email address (got {to_email!r})." if to_email else "No recipient email address."
     elif gmail_attempts or identity["personal"]:
