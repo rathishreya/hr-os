@@ -171,6 +171,17 @@ class Settings:
     # throwaway environment: leaving EMAIL_PROVIDER blank means "auto-detect", NOT "off", so a
     # populated SMTP_HOST in a local .env is enough to deliver real mail to real people.
     EMAIL_DRY_RUN: bool = (os.getenv("EMAIL_DRY_RUN") or "").strip().lower() in {"1", "true", "yes", "on"}
+    # Mail trap: when set, EVERY recipient (To and Cc alike) is replaced by this one address and
+    # the real recipients are recorded in the body. Use it whenever mail must actually be sent and
+    # inspected but must not reach the people it names.
+    EMAIL_REDIRECT_TO: str = (os.getenv("EMAIL_REDIRECT_TO") or "").strip()
+    # Addresses that must never receive mail from this system, whatever a template or caller says.
+    # Comma-separated; matched case-insensitively against To and Cc and silently dropped.
+    EMAIL_BLOCKLIST: str = (os.getenv("EMAIL_BLOCKLIST") or "").strip()
+
+    @property
+    def email_blocklist(self) -> set[str]:
+        return {a.strip().lower() for a in self.EMAIL_BLOCKLIST.split(",") if a.strip()}
     SES_REGION: str = os.getenv("SES_REGION") or os.getenv("AWS_REGION") or "us-east-1"
     # Domains we're allowed to send FROM (SES-verified / SendGrid-authenticated). When the
     # logged-in user's email is on one of these, mail is sent FROM their own address; otherwise it

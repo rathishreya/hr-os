@@ -481,6 +481,27 @@ def compose(
             seen.add(e.lower())
             clean_cc.append(e)
 
+    # ── Recipient guards, applied before any channel picks the message up ────────────────────
+    # 1) Blocklist: addresses that must never be written to, whatever the template says.
+    blocked = settings.email_blocklist
+    if blocked:
+        if clean_to and clean_to.lower() in blocked:
+            clean_to = ""
+        clean_cc = [a for a in clean_cc if a.lower() not in blocked]
+
+    # 2) Mail trap: reroute everything to one inbox, keeping the real recipients visible in the
+    #    body so the redirected copy is still reviewable.
+    if settings.EMAIL_REDIRECT_TO and (clean_to or clean_cc):
+        intended_to, intended_cc = clean_to, list(clean_cc)
+        clean_to, clean_cc = settings.EMAIL_REDIRECT_TO, []
+        subject = f"[REDIRECTED] {subject}"
+        body = (
+            "--- This email was redirected and did NOT reach its recipients. ---\n"
+            f"Intended To: {intended_to or '(none)'}\n"
+            f"Intended Cc: {', '.join(intended_cc) or '(none)'}\n"
+            "-------------------------------------------------------------------\n\n"
+        ) + body
+
     rec = models.EmailMessage(
         candidate_id=candidate_id,
         application_id=application_id,
