@@ -1,3 +1,10 @@
-"""EZ Lab document templates — structured offer letters / contracts that fill placeholders
-from candidate + role + compensation data and render as blocks (headings, paragraphs, tables)."""
-from .render import TEMPLATES, list_templates, render_document  # noqa: F401
+"""EZ / ArabEasy document templates - structured offer letters, contracts, NDAs and
+agreements that fill placeholders from candidate + role + counterparty data and render as
+blocks. Templates are classified on four axes (entity / party_type / contract_type /
+doc_type); see registry.py."""
+from .registry import ENTITIES, TEMPLATES, find  # noqa: F401
+from .render import (  # noqa: F401
+    list_templates,
+    render_document,
+    template_supports_entity,
+)

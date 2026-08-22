@@ -181,3 +181,140 @@ def _placeholder_rows() -> list[dict[str, Any]]:
         {"label": label, "value": "₹ —", "emphasis": label in _EMPHASIS_LABELS}
         for label in _COMP_LABELS
     ]
+
+
+# ── Offer-letter Annexure-2 layout ───────────────────────────────────────────────────────────
+# Same statutory maths as breakdown(), re-bucketed to the offer letter's own table: the Mediclaim
+# premium sits in its own "Additional Benefits (E)" line rather than inside the employer
+# contribution, and the total is B+D+E. Because (E) is exactly the health premium that breakdown()
+# folds into (B), the two layouts tie to the same Total Monthly CTC.
+
+_OFFER_NOTES = [
+    "Employee share of PF, ESCI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
+    "The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
+    "Insurance coverage premium is the notional approx. value of premium paid by the Company towards "
+    "your Group Mediclaim & Personal Accidental Insurance.",
+    "The performance bonus will be applicable after 3 months of your joining and is paid quarterly as "
+    "per PPR ratings defined below. A: Distinctive: 125% · B: Meets Expectations: 100% · "
+    "C: Needs Improvement: 75% · D: Needs Assistance: 0% · E: Probation: 0%",
+    "Based on past trends, nearly 75% of employees have consistently received the full 100% of their "
+    "eligible quarterly bonus, reflecting strong performance and adherence to set targets.",
+]
+
+_OFFER_LABELS = [
+    "Basic Salary", "HRA", "Special Allowance", "Monthly Salary (A)*", "Provident Fund", "ESIC", "LWF",
+    "Statutory and Misc. Benefits Employer Contribution (B)", "Provident Fund", "ESI", "LWF",
+    "Statutory Benefits Employee Contribution (C)**",
+    "Performance Bonus (Paid Quarterly, as per PPR)*****", "Gross Salary (D)",
+    "Mediclaim & Personal Accidental Insurance****", "Additional Benefits (E)",
+    "Total Monthly CTC (B+D+E)", "Total Annual CTC",
+]
+_OFFER_EMPHASIS = {
+    "Monthly Salary (A)*", "Statutory and Misc. Benefits Employer Contribution (B)",
+    "Statutory Benefits Employee Contribution (C)**", "Gross Salary (D)",
+    "Additional Benefits (E)", "Total Monthly CTC (B+D+E)", "Total Annual CTC",
+}
+
+
+# The full employment contract prints the same table with its own asterisk markers and one extra
+# note (Gratuity), so the labels/notes are parameters rather than a second copy of the maths.
+_CONTRACT_LABELS = [
+    "Basic Salary", "HRA", "Special Allowance", "Monthly Salary (A)", "Provident Fund", "ESI", "LWF",
+    "Statutory and Misc. Benefits Employer Contribution (B)", "Provident Fund", "ESI", "LWF",
+    "Statutory Benefits Employee Contribution (C)*",
+    "Performance Bonus (Paid Quarterly, as per PPR) *", "Gross Salary (D)***",
+    "Mediclaim & Personal Accidental Insurance****", "Additional Benefits (E)",
+    "Total Monthly CTC (B+D+E)", "Total Annual CTC",
+]
+_CONTRACT_EMPHASIS = {
+    "Monthly Salary (A)", "Statutory and Misc. Benefits Employer Contribution (B)",
+    "Statutory Benefits Employee Contribution (C)*", "Gross Salary (D)***",
+    "Additional Benefits (E)", "Total Monthly CTC (B+D+E)", "Total Annual CTC",
+}
+_CONTRACT_NOTES = [
+    "Employee share of PF, ESCI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
+    "Gratuity, as applicable under Payment of Gratuity Act, shall be over and above the CTC.",
+    "The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
+    "The performance bonus will be applicable after 3 months of your joining and is paid quarterly as "
+    "per PPR ratings defined below. A: Distinctive: 125% · B: Meets Expectations: 100% · "
+    "C: Needs Improvement: 75% · D: Needs Assistance: 0% · E: Probation: 0%",
+]
+
+
+def contract_annexure(annual_ctc: int | None) -> dict[str, Any]:
+    """The Compensation table inside Schedule A of the full employment contract."""
+    return _annexure(annual_ctc, _CONTRACT_LABELS, _CONTRACT_EMPHASIS, _CONTRACT_NOTES)
+
+
+def offer_annexure(annual_ctc: int | None) -> dict[str, Any]:
+    """Annexure-2 of the offer letter."""
+    return _annexure(annual_ctc, _OFFER_LABELS, _OFFER_EMPHASIS, _OFFER_NOTES)
+
+
+def _annexure(
+    annual_ctc: int | None,
+    labels: list[str],
+    emphasis: set[str],
+    notes: list[str],
+) -> dict[str, Any]:
+    """{known, rows, notes} for an 18-row A/B/C/D/E compensation table. Unparseable CTC yields the
+    same labelled table with '₹ —' placeholders, so the letter still prints with its structure."""
+    base = breakdown(annual_ctc)
+    if not base["known"]:
+        return {
+            "known": False,
+            "rows": [{"label": lbl, "value": "₹ —", "emphasis": lbl in emphasis} for lbl in labels],
+            "notes": notes,
+        }
+    r = base["raw"]
+    health = r["employer_b"] - r["pf"] - r["esi_employer"] - LWF_EMPLOYER
+    employer_b = r["employer_b"] - health          # (B) without the Mediclaim premium
+    additional_e = health                          # (E)
+    values = [
+        r["basic"], r["hra"], r["special"], r["monthly_a"],
+        r["pf"], r["esi_employer"], LWF_EMPLOYER, employer_b,
+        r["pf"], r["esi_employee"], LWF_EMPLOYEE, r["employee_c"],
+        0, r["gross_d"],
+        additional_e, additional_e,
+        employer_b + r["gross_d"] + additional_e,
+        (employer_b + r["gross_d"] + additional_e) * 12,
+    ]
+    return {
+        "known": True,
+        "rows": [
+            {"label": lbl, "value": _inr(v), "emphasis": lbl in emphasis}
+            for lbl, v in zip(labels, values)
+        ],
+        "notes": notes,
+    }
+
+
+# ── Traineeship offer Annexure-2 ─────────────────────────────────────────────────────────────
+# Same A/B/C/D/E structure again, with the traineeship letter's own labels (note "Statutory
+# Benefits" rather than "Statutory and Misc. Benefits", and the source's "Additional Benefis (E)"
+# spelling, kept verbatim) and its own gratuity note.
+_TRAINEE_LABELS = [
+    "Basic Salary", "HRA", "Special Allowance", "Monthly Salary (A)*", "Provident Fund", "ESI", "LWF",
+    "Statutory Benefits Employer Contribution (B)", "Provident Fund", "ESI", "LWF",
+    "Statutory Benefits Employee Contribution (C)*",
+    "Performance Bonus (Paid Quarterly, as per PPR)", "Gross Salary (D)***",
+    "Mediclaim & Personal Accidental Insurance****", "Additional Benefis (E)",
+    "Total Monthly CTC (B+D+E)", "Total Annual CTC",
+]
+_TRAINEE_EMPHASIS = {
+    "Monthly Salary (A)*", "Statutory Benefits Employer Contribution (B)",
+    "Statutory Benefits Employee Contribution (C)*", "Gross Salary (D)***",
+    "Additional Benefis (E)", "Total Monthly CTC (B+D+E)", "Total Annual CTC",
+}
+_TRAINEE_NOTES = [
+    "Employee share of PF, ESCI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
+    "Gratuity, as applicable under Payment of Gratuity Act and is payable after completion of 5 years of service",
+    "The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
+    "Insurance coverage premium is the notional approx. value of premium paid by the Company towards "
+    "your Group Mediclaim & Personal Accidental Insurance.",
+]
+
+
+def trainee_annexure(annual_ctc: int | None) -> dict[str, Any]:
+    """Annexure-2 of the traineeship offer letter."""
+    return _annexure(annual_ctc, _TRAINEE_LABELS, _TRAINEE_EMPHASIS, _TRAINEE_NOTES)

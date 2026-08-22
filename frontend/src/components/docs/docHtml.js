@@ -1,0 +1,87 @@
+// Convert a document's structured `blocks` to the SAME HTML the PDF/print window uses, so the rich
+// editor seeds from an exact match of the printed output, and a manually edited `content_html`
+// round-trips through preview → editor → PDF unchanged. The on-screen `.doc-html` CSS (index.css)
+// and the print CSS (printDocument.js) both style these tags identically.
+import { richSegments } from './rich'
+
+export const esc = (s) =>
+  String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+function richHtml(text) {
+  return richSegments(text)
+    .map((s) => {
+      let h = esc(s.text)
+      if (s.bold) h = `<strong>${h}</strong>`
+      if (s.underline) h = `<u>${h}</u>`
+      return h
+    })
+    .join('')
+}
+
+function strong(text, prefix) {
+  if (prefix && String(text).startsWith(prefix)) return `<strong>${esc(prefix)}</strong>${richHtml(String(text).slice(prefix.length))}`
+  if (prefix && !text) return `<strong>${esc(prefix)}</strong>`
+  if (prefix) return `<strong>${esc(prefix)}: </strong>${richHtml(text)}`
+  return richHtml(text)
+}
+
+export function blockToHtml(b) {
+  switch (b.type) {
+    case 'heading':
+      return `<h${b.level || 2} class="${b.underline ? 'ul' : ''}">${esc(b.text)}</h${b.level || 2}>`
+    case 'para':
+      return `<p class="${b.muted ? 'muted' : ''} ${b.align === 'right' ? 'right' : ''}">${strong(b.text, b.strong_prefix)}</p>`
+    case 'list': {
+      const tag = b.ordered ? 'ol' : 'ul'
+      return `<${tag}>${(b.items || []).map((i) => `<li>${richHtml(i)}</li>`).join('')}</${tag}>`
+    }
+    case 'terms':
+      return `<table class="terms">${(b.rows || [])
+        .map((r) => `<tr><th>${esc(r.label)}</th><td>${(r.blocks || []).map(blockToHtml).join('')}</td></tr>`)
+        .join('')}</table>`
+    case 'comp':
+      return (
+        `<table class="comp"><thead><tr><th>Component</th><th class="r">INR</th></tr></thead><tbody>${(b.rows || [])
+          .map((r) => `<tr class="${r.emphasis ? 'em' : ''}"><td>${esc(r.label)}</td><td class="r">${esc(r.value)}</td></tr>`)
+          .join('')}</tbody></table>` +
+        ((b.notes || []).length
+          ? `<div class="notes"><div class="nt">Important points</div><ul>${b.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>`
+          : '')
+      )
+    case 'table': {
+      const al = (i) => (b.align?.[i] === 'right' ? ' class="r"' : b.align?.[i] === 'center' ? ' class="c"' : '')
+      const head = (b.columns || []).map((c, i) => `<th${al(i)}>${esc(c)}</th>`).join('')
+      const body = (b.rows || [])
+        .map((r) => `<tr>${(r || []).map((cell, i) => `<td${al(i)}>${esc(cell)}</td>`).join('')}</tr>`)
+        .join('')
+      return `<table class="grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
+    }
+    case 'signature':
+      return `<div class="sig">${(b.columns || [])
+        .map((c) => `<div class="col"><div class="line">${esc(c.name)}</div><div class="lbl">${esc(c.label)}</div></div>`)
+        .join('')}</div>`
+    case 'divider':
+      return '<div class="pb"></div>'
+    default:
+      return ''
+  }
+}
+
+// The document body as HTML — the manual edit wins, else the generated blocks, else plain content.
+export function documentBodyHtml(doc) {
+  if (doc.content_html) return doc.content_html
+  if (doc.blocks && doc.blocks.length) return doc.blocks.map(blockToHtml).join('')
+  return `<pre>${esc(doc.content)}</pre>`
+}
+
+// Strip anything executable before persisting/printing editor HTML (internal tool, but never store
+// scripts or inline event handlers).
+export function sanitizeHtml(html) {
+  return String(html || '')
+    .replace(/<\s*(script|style|iframe|object|embed)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+    .replace(/<\s*(script|style|iframe|object|embed)[^>]*\/?>/gi, '')
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+    .replace(/(href|src)\s*=\s*(["']?)\s*javascript:[^"'>]*\2/gi, '$1="#"')
+}

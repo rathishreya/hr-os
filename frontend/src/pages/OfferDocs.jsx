@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { FileText, Check, Copy, Eye, Pencil, FilePlus2, RefreshCw, Printer, Upload, ArrowRightCircle, ChevronRight, Rocket, Lock } from 'lucide-react'
+import { FileText, Check, Copy, Eye, FilePlus2, RefreshCw, Printer, Upload, ArrowRightCircle, ChevronRight, Rocket, Lock, PenLine, RotateCcw, Mail, MailCheck } from 'lucide-react'
 import { api } from '../api'
 import { Card, Badge, Button, Spinner, EmptyState, PageHeader, Modal, Field, inputClass, cx } from '../ui'
 import { useToast } from '../components/Toast'
@@ -7,12 +7,15 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { useColumnFilters, ColumnFilter, distinctValues } from '../components/tableFilters'
 import DocumentPaper from '../components/docs/DocumentPaper'
 import { printDocument } from '../components/docs/printDocument'
+import { sanitizeHtml } from '../components/docs/docHtml'
+import EmailDocumentModal from '../components/docs/EmailDocumentModal'
 
+// doc_type -> label for the documents table. Keys match registry.DOC_TYPES.
 const DOC_LABEL = {
-  offer_letter: 'Offer letter',
-  employment_contract: 'Employment contract',
-  traineeship_offer: 'Traineeship offer',
+  offer: 'Offer letter',
+  contract: 'Contract',
   nda: 'NDA / Confidentiality',
+  'nda-tech': 'NDA - Tech',
   employment_agreement: 'Employment agreement',
   contractor_agreement: 'Contractor agreement',
 }
@@ -28,7 +31,9 @@ const TERM_FIELDS = [
   { key: 'location', label: 'Location' },
   { key: 'start_date', label: 'Joining date', placeholder: '1 July 2026' },
   { key: 'manager', label: 'Reporting manager' },
+  { key: 'manager_role', label: "Reporting manager's position" },
   { key: 'approving_manager', label: 'Approving manager' },
+  { key: 'approving_manager_role', label: "Approving manager's position" },
   { key: 'notice_period', label: 'Notice period' },
   { key: 'validity_date', label: 'Offer valid till' },
   { key: 'address', label: 'Candidate address' },
@@ -46,7 +51,9 @@ function prefillTerms(doc) {
     location: doc.location || '',
     start_date: doc.joining_date || '',
     manager: doc.reporting_manager || '',
+    manager_role: t.manager_role || '',
     approving_manager: doc.approving_manager || '',
+    approving_manager_role: t.approving_manager_role || '',
     notice_period: t.notice_period || '',
     validity_date: t.validity_date || '',
     address: t.address || '',
@@ -58,7 +65,7 @@ function prefillTerms(doc) {
 function DocFormModal({ doc, mode, templates, onClose, onDone }) {
   const { toast } = useToast()
   const [templateKey, setTemplateKey] = useState(
-    mode === 'new' ? 'offer_letter' : doc.template_key || doc.doc_type || 'offer_letter',
+    mode === 'new' ? '' : doc.template_key || '',  // '' -> the effect below picks the entity's first
   )
   const [entity, setEntity] = useState(doc.entity || 'EZ')
   const [terms, setTerms] = useState(prefillTerms(doc))
@@ -67,8 +74,16 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
   )
   const [busy, setBusy] = useState(false)
 
-  // Templates the recruiter can pick (template-backed only; AI types stay as-is on edit).
-  const options = templates.length ? templates : [{ key: 'offer_letter', label: 'Offer Letter' }]
+  // Templates the recruiter can pick, narrowed to the letters the selected entity actually
+  // issues. Each template is tagged entity / party_type / contract_type / doc_type; only entity
+  // is filtered on here — the other axes are available for a cascading picker later.
+  const options = templates.filter((t) => !t.entity || t.entity === entity)
+  const noTemplates = options.length === 0
+
+  // Switching entity can strand a template the new entity doesn't issue — fall back to its first.
+  useEffect(() => {
+    if (options.length && !options.some((t) => t.key === templateKey)) setTemplateKey(options[0].key)
+  }, [entity, templates]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save() {
     setBusy(true)
@@ -98,7 +113,7 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
       footer={(
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button onClick={save} disabled={busy} variant={isNew ? 'primary' : 'ghost'}>
+          <Button onClick={save} disabled={busy || noTemplates} variant={isNew ? 'primary' : 'ghost'}>
             {busy ? <Spinner /> : isNew ? <><FilePlus2 className="h-4 w-4" /> Generate document</> : <><RefreshCw className="h-4 w-4" /> Regenerate in place</>}
           </Button>
         </>
@@ -120,12 +135,22 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
           <Field label="Entity">
             <select className={inputClass} value={entity} onChange={(e) => setEntity(e.target.value)}>
               <option value="EZ">EZ — EZ Lab Private Limited</option>
-              <option value="AEZ">AEZ — AEZ Private Limited</option>
+              <option value="AEZ">AEZ — ArabEasy LLC</option>
             </select>
           </Field>
-          <Field label="Document to generate">
-            <select className={inputClass} value={templateKey} onChange={(e) => setTemplateKey(e.target.value)}>
-              {options.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+          <Field
+            label="Document to generate"
+            hint={noTemplates ? `No templates are configured for ${entity} yet.` : undefined}
+          >
+            <select
+              className={inputClass}
+              value={templateKey}
+              disabled={noTemplates}
+              onChange={(e) => setTemplateKey(e.target.value)}
+            >
+              {noTemplates
+                ? <option value="">— none available —</option>
+                : options.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
           </Field>
         </div>
@@ -369,9 +394,16 @@ export default function OfferDocs() {
   const [docs, setDocs] = useState(null)
   const [templates, setTemplates] = useState([])
   const [view, setView] = useState(null)
+  const [editing, setEditing] = useState(false) // rich-editor mode for the viewed document
+  const editorRef = useRef(null)
   const [form, setForm] = useState(null) // { doc, mode }
+  const [emailing, setEmailing] = useState(null) // the document whose covering mail is being reviewed
   const [busy, setBusy] = useState(false)
   const filterCtl = useColumnFilters()
+
+  const openView = (d) => { setEditing(false); setView(d) }        // preview only
+  const openEditor = (d) => { setView(d); setEditing(true) }        // straight into the letter editor
+  const closeView = () => { setEditing(false); setView(null) }
 
   const load = () => api.listAllDocuments().then(setDocs).catch(() => setDocs([]))
   useEffect(() => { load() }, [])
@@ -391,12 +423,11 @@ export default function OfferDocs() {
     <ColumnFilter label={fkey} values={distinct[fkey] || []} excluded={filterCtl.filters[fkey] || []} onChange={(arr) => filterCtl.setFilter(fkey, arr)} />
   )
   const groups = groupByCandidate(filteredDocs)
-  // Rows are expanded by default so the per-document admin controls (personal email, joining date,
-  // entity dropdown, status, and the countersigned-copy upload) are visible in the list without an
-  // extra click — collapsing is opt-in and remembered per candidate.
-  const [collapsed, setCollapsed] = useState(() => new Set())
+  // Rows are COLLAPSED by default — the list stays clean (one row per candidate). Expanding shows
+  // the per-document admin controls; full editing lives in the document viewer (open a doc chip).
+  const [expanded, setExpanded] = useState(() => new Set())
   const toggleExpand = (key) =>
-    setCollapsed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n })
+    setExpanded((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n })
 
   async function approve(d) {
     setBusy(true)
@@ -411,6 +442,28 @@ export default function OfferDocs() {
   async function copy(d) {
     await navigator.clipboard.writeText(d.content || '')
     toast('Copied to clipboard')
+  }
+
+  async function saveLetter() {
+    setBusy(true)
+    try {
+      const html = sanitizeHtml(editorRef.current?.getHtml() || '')
+      const up = await api.saveDocumentContent(view.id, { content_html: html })
+      mergeDoc(up)
+      setEditing(false)
+      toast('Letter saved')
+    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
+  }
+
+  async function revertLetter() {
+    if (!window.confirm('Discard your manual edits and revert to the generated template?')) return
+    setBusy(true)
+    try {
+      const up = await api.saveDocumentContent(view.id, { content_html: '' })
+      mergeDoc(up)
+      setEditing(false)
+      toast('Reverted to the generated template')
+    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
   }
 
   function onFormDone(up, mode) {
@@ -450,7 +503,7 @@ export default function OfferDocs() {
               </thead>
               <tbody>
                 {groups.map((g) => {
-                  const isOpen = !collapsed.has(g.key)
+                  const isOpen = expanded.has(g.key)
                   const drafts = g.docs.filter((d) => d.status !== 'approved').length
                   const approved = g.docs.length - drafts
                   const anyMoved = g.docs.some((d) => d.move_to_onboarding)
@@ -480,7 +533,7 @@ export default function OfferDocs() {
                               <button
                                 key={d.id}
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); setView(d) }}
+                                onClick={(e) => { e.stopPropagation(); openView(d) }}
                                 title={`Preview ${DOC_LABEL[d.doc_type] || d.doc_type}`}
                                 className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-600 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
                               >
@@ -543,13 +596,22 @@ export default function OfferDocs() {
                                       <td className="px-3 py-2.5 align-middle">
                                         <div className="flex items-center justify-end gap-1.5">
                                           <UploadCell doc={d} onUploaded={mergeDoc} />
+                                          <button
+                                            type="button"
+                                            onClick={() => setEmailing(d)}
+                                            title={d.email_sent_at ? `Already emailed — review and send again` : 'Review & email this document to the candidate'}
+                                            aria-label="Email this document"
+                                            className={ROW_ICON_BRAND}
+                                          >
+                                            {d.email_sent_at ? <MailCheck className="h-4 w-4 text-emerald-600" /> : <Mail className="h-4 w-4" />}
+                                          </button>
                                           {d.application_id && (
                                             <button type="button" onClick={() => setForm({ doc: d, mode: 'new' })} title="Generate a new document" aria-label="Generate a new document" className={ROW_ICON_BRAND}><FilePlus2 className="h-4 w-4" /></button>
                                           )}
-                                          {d.status !== 'approved' && d.application_id && (
-                                            <button type="button" onClick={() => setForm({ doc: d, mode: 'edit' })} title="Edit & regenerate this document" aria-label="Edit document" className={ROW_ICON}><Pencil className="h-4 w-4" /></button>
+                                          {d.status !== 'approved' && !d.move_to_onboarding && (
+                                            <button type="button" onClick={() => openEditor(d)} title="Edit the letter directly" aria-label="Edit the letter" className={ROW_ICON}><PenLine className="h-4 w-4" /></button>
                                           )}
-                                          <button type="button" onClick={() => setView(d)} title="Preview" aria-label="Preview document" className={ROW_ICON}><Eye className="h-4 w-4" /></button>
+                                          <button type="button" onClick={() => openView(d)} title="Preview" aria-label="Preview document" className={ROW_ICON}><Eye className="h-4 w-4" /></button>
                                         </div>
                                       </td>
                                     </tr>
@@ -575,23 +637,47 @@ export default function OfferDocs() {
 
       <Modal
         open={!!view}
-        onClose={() => setView(null)}
+        onClose={closeView}
         size="doc"
-        title={view ? `${DOC_LABEL[view.doc_type] || view.doc_type} — ${view.candidate_name || 'Candidate'}` : ''}
+        title={view ? (
+          <span className="inline-flex items-center gap-2">
+            {DOC_LABEL[view.doc_type] || view.doc_type} — {view.candidate_name || 'Candidate'}
+            {view.content_html && <Badge tone="violet"><PenLine className="mr-1 h-3 w-3" /> Edited</Badge>}
+          </span>
+        ) : ''}
         footer={view && (
-          <>
-            <Button variant="ghost" onClick={() => { if (!printDocument(view)) toast('Allow pop-ups to print / save as PDF', 'error') }}><Printer className="h-4 w-4" /> Print / PDF</Button>
-            <Button variant="ghost" onClick={() => copy(view)}><Copy className="h-4 w-4" /> Copy</Button>
-            {view.status !== 'approved' && view.application_id && (
-              <Button variant="ghost" onClick={() => { const d = view; setView(null); setForm({ doc: d, mode: 'edit' }) }}><Pencil className="h-4 w-4" /> Edit</Button>
-            )}
-            {view.status !== 'approved'
-              ? <Button onClick={() => approve(view)} disabled={busy}>{busy ? <Spinner /> : <><Check className="h-4 w-4" /> Approve</>}</Button>
-              : <Badge tone="green">Approved</Badge>}
-          </>
+          editing ? (
+            <>
+              {view.content_html && (
+                <Button variant="ghost" onClick={revertLetter} disabled={busy} className="mr-auto text-slate-500"><RotateCcw className="h-4 w-4" /> Revert to template</Button>
+              )}
+              <Button variant="ghost" onClick={() => setEditing(false)} disabled={busy}>Cancel</Button>
+              <Button onClick={saveLetter} disabled={busy}>{busy ? <Spinner /> : <><Check className="h-4 w-4" /> Save letter</>}</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={() => { if (!printDocument(view)) toast('Allow pop-ups to print / save as PDF', 'error') }}><Printer className="h-4 w-4" /> Print / PDF</Button>
+              <Button variant="ghost" onClick={() => copy(view)}><Copy className="h-4 w-4" /> Copy</Button>
+              {view.status !== 'approved' && !view.move_to_onboarding && (
+                <Button onClick={() => setEditing(true)} title="Type directly on the letter"><PenLine className="h-4 w-4" /> Edit letter</Button>
+              )}
+              {view.status !== 'approved'
+                ? <Button variant="ghost" onClick={() => approve(view)} disabled={busy}>{busy ? <Spinner /> : <><Check className="h-4 w-4" /> Approve</>}</Button>
+                : <Badge tone="green">Approved</Badge>}
+            </>
+          )
         )}
       >
-        {view && <DocumentPaper doc={view} />}
+        {view && (
+          <>
+            {editing && (
+              <p className="mb-2 rounded-lg border border-brand-100 bg-brand-50/60 px-3 py-2 text-xs text-brand-800">
+                Editing the letter directly. Click any line to change the wording, use the toolbar to format, then <strong>Save</strong>. This overrides the template until you Revert.
+              </p>
+            )}
+            <DocumentPaper doc={view} editable={editing} editorRef={editorRef} />
+          </>
+        )}
       </Modal>
 
       {form && (
@@ -602,6 +688,14 @@ export default function OfferDocs() {
           templates={templates}
           onClose={() => setForm(null)}
           onDone={onFormDone}
+        />
+      )}
+      {emailing && (
+        <EmailDocumentModal
+          key={`email-${emailing.id}`}
+          doc={emailing}
+          onClose={() => setEmailing(null)}
+          onSent={() => load()}
         />
       )}
     </div>

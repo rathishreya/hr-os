@@ -87,12 +87,14 @@ def _ensure_sqlite_columns() -> None:
         "documents": [
             ("template_key", "VARCHAR DEFAULT ''"),
             ("blocks", "TEXT DEFAULT '[]'"),
+            ("content_html", "TEXT DEFAULT ''"),
             ("upload_filename", "VARCHAR DEFAULT ''"),
             ("upload_mime", "VARCHAR DEFAULT ''"),
             ("upload_size", "INTEGER DEFAULT 0"),
             ("upload_file", "BLOB"),
             ("move_to_onboarding", "BOOLEAN DEFAULT 0"),
             ("personal_email", "VARCHAR DEFAULT ''"),
+            ("email_sent_at", "TIMESTAMP"),
         ],
         "assessments": [
             ("team", "VARCHAR DEFAULT ''"),
@@ -104,6 +106,8 @@ def _ensure_sqlite_columns() -> None:
         ],
         "tpos": [
             ("kind", "VARCHAR DEFAULT 'college'"),
+            ("details", "TEXT DEFAULT '{}'"),
+            ("comments", "TEXT DEFAULT ''"),
         ],
         "users": [
             ("smtp_password", "VARCHAR DEFAULT ''"),
@@ -148,6 +152,7 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS upload_size INTEGER DEFAULT 0",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS upload_file BYTEA",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS move_to_onboarding BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS transcript TEXT DEFAULT ''",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS timeline JSONB DEFAULT '[]'::jsonb",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS proctoring JSONB DEFAULT '{}'::jsonb",
@@ -162,6 +167,7 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS template_key VARCHAR DEFAULT ''",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS blocks JSONB DEFAULT '[]'::jsonb",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS personal_email VARCHAR DEFAULT ''",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS content_html TEXT DEFAULT ''",
             "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMP",
             "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS role_brief TEXT DEFAULT ''",
             "ALTER TABLE hiring_requests ADD COLUMN IF NOT EXISTS team VARCHAR DEFAULT ''",
@@ -172,6 +178,8 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS role VARCHAR DEFAULT ''",
             "ALTER TABLE onboarding_plans ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb",
             "ALTER TABLE tpos ADD COLUMN IF NOT EXISTS kind VARCHAR DEFAULT 'college'",
+            "ALTER TABLE tpos ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb",
+            "ALTER TABLE tpos ADD COLUMN IF NOT EXISTS comments TEXT DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS smtp_password VARCHAR DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_refresh_token VARCHAR DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_scope VARCHAR DEFAULT ''",

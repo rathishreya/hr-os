@@ -29,13 +29,17 @@ function StrongPrefix({ text, prefix }) {
 }
 
 function MiniBlocks({ blocks }) {
+  // Cells of a Schedule A row can hold any block — a compensation table, a rate grid, a heading —
+  // so render them through the same switch as the top level rather than assuming para/list.
   return (
     <div className="space-y-1.5">
       {(blocks || []).map((b, i) =>
         b.type === 'list' ? (
           <List key={i} block={b} dense />
-        ) : (
+        ) : b.type === 'para' || !b.type ? (
           <p key={i} className="text-sm leading-relaxed text-slate-700"><StrongPrefix text={b.text || ''} prefix={b.strong_prefix} /></p>
+        ) : (
+          renderBlock(b, i)
         ),
       )}
     </div>
@@ -100,6 +104,32 @@ function CompTable({ block }) {
   )
 }
 
+function GridTable({ block }) {
+  const cell = (i) => (block.align?.[i] === 'right' ? 'text-right tabular-nums' : block.align?.[i] === 'center' ? 'text-center' : 'text-left')
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr>
+            {(block.columns || []).map((c, i) => (
+              <th key={i} className={`border border-slate-300 bg-slate-100 p-2 font-semibold text-slate-700 ${cell(i)}`}>{c}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {(block.rows || []).map((row, ri) => (
+            <tr key={ri} className="text-slate-700">
+              {(row || []).map((v, ci) => (
+                <td key={ci} className={`border border-slate-300 p-2 ${cell(ci)}`}>{v}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function Signature({ block }) {
   return (
     <div className="mt-2 flex flex-wrap gap-8">
@@ -119,36 +149,36 @@ const HEADING_CLASS = {
   3: 'text-center text-sm font-semibold text-slate-800',
 }
 
+function renderBlock(b, i) {
+  switch (b.type) {
+    case 'heading':
+      return <h3 key={i} className={`${HEADING_CLASS[b.level] || HEADING_CLASS[2]} ${b.underline ? 'underline underline-offset-4' : ''}`}>{b.text}</h3>
+    case 'para':
+      return (
+        <p key={i} className={`text-sm leading-relaxed ${b.muted ? 'text-slate-500' : 'text-slate-700'} ${b.align === 'right' ? 'text-right text-emerald-700' : 'text-justify'}`}>
+          <StrongPrefix text={b.text || ''} prefix={b.strong_prefix} />
+        </p>
+      )
+    case 'list':
+      return <List key={i} block={b} />
+    case 'terms':
+      return <TermsTable key={i} block={b} />
+    case 'comp':
+      return <CompTable key={i} block={b} />
+    case 'table':
+      return <GridTable key={i} block={b} />
+    case 'signature':
+      return <Signature key={i} block={b} />
+    case 'divider':
+      return <hr key={i} className="my-4 border-slate-200" />
+    default:
+      return null
+  }
+}
+
 export default function DocumentBlocks({ blocks, content }) {
   if (!blocks || blocks.length === 0) {
     return <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-700">{content}</pre>
   }
-  return (
-    <div className="space-y-3">
-      {blocks.map((b, i) => {
-        switch (b.type) {
-          case 'heading':
-            return <h3 key={i} className={`${HEADING_CLASS[b.level] || HEADING_CLASS[2]} ${b.underline ? 'underline underline-offset-4' : ''}`}>{b.text}</h3>
-          case 'para':
-            return (
-              <p key={i} className={`text-sm leading-relaxed ${b.muted ? 'text-slate-500' : 'text-slate-700'} ${b.align === 'right' ? 'text-right text-emerald-700' : 'text-justify'}`}>
-                <StrongPrefix text={b.text || ''} prefix={b.strong_prefix} />
-              </p>
-            )
-          case 'list':
-            return <List key={i} block={b} />
-          case 'terms':
-            return <TermsTable key={i} block={b} />
-          case 'comp':
-            return <CompTable key={i} block={b} />
-          case 'signature':
-            return <Signature key={i} block={b} />
-          case 'divider':
-            return <hr key={i} className="my-4 border-slate-200" />
-          default:
-            return null
-        }
-      })}
-    </div>
-  )
+  return <div className="space-y-3">{blocks.map(renderBlock)}</div>
 }

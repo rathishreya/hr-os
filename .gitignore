@@ -6,6 +6,8 @@ venv/
 *.db
 *.sqlite3
 .env
+*.env
+aws.env
 
 # Node
 node_modules/
@@ -20,3 +22,11 @@ Thumbs.db
 
 # Uploads
 backend/uploads/
+
+# DB dumps / migration packages — contain data + plaintext DB credentials, never commit
+database-dump/
+*.dump
+*_dump.sql
+
+# Local DB snapshots taken before destructive prod operations
+documents-backup-*.json

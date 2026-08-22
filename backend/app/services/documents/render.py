@@ -6,47 +6,30 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ...config import settings
-from . import comp, templates
+from . import comp, templates_aez, templates_ez  # noqa: F401 — importing registers templates
+from .registry import ENTITIES, TEMPLATES, default_template_for, find
 
-# template_key -> (builder, label, description, default doc_type)
-TEMPLATES = {
-    "offer_letter": (templates.offer_letter, "Offer Letter", "Short offer letter with job-description and compensation annexures (full-time)."),
-    "employment_contract": (templates.employment_contract, "Employment Contract", "Full contract: offer letter + Schedule A terms + compensation + Schedule B covenants."),
-    "traineeship_offer": (templates.traineeship_offer, "Traineeship Offer Letter", "Offer letter for a trainee/intern, with training clauses and a PPO note."),
-    "nda": (templates.nda, "NDA / Confidentiality Agreement", "Standalone Confidentiality and Proprietary Information Agreement (EZ Lab Schedule B)."),
-}
+# Templates register themselves into registry.TEMPLATES at import time; the modules above are
+# imported purely for that side effect. TEMPLATES / ENTITIES are re-exported here so existing
+# callers (routers, __init__) keep their import path.
 
-# doc_type -> the template used to draft it
-DOC_TYPE_TEMPLATE = {
-    "offer_letter": "offer_letter",
-    "employment_contract": "employment_contract",
-    "traineeship_offer": "traineeship_offer",
-    "nda": "nda",
-}
-
-# Legal entity presets. EZ Lab details come from the supplied letters; AEZ defaults are a
-# best-effort placeholder (same hub) — confirm/override the legal name & address for AEZ.
-ENTITIES = {
-    "EZ": {
-        "short_name": "EZ Lab",  # the defined short term used throughout the body text
-        "legal_entity": "EZ Lab Private Limited",
-        "company_address": "EZ Lab Private Limited, Near HBR Chowk, Sector 62, Gurgaon, Haryana, 122413.",
-        "location": "EZ Lab Office, Sector 62, Gurugram, India",
-    },
-    "AEZ": {
-        "short_name": "AEZ",
-        "legal_entity": "AEZ Private Limited",
-        "company_address": "AEZ Private Limited, Sector 62, Gurugram, Haryana, India.",
-        "location": "AEZ Office, Sector 62, Gurugram, India",
-    },
-}
+def list_templates(
+    entity: str | None = None,
+    party_type: str | None = None,
+    contract_type: str | None = None,
+    doc_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """The templates on offer, narrowed by any combination of the four taxonomy axes."""
+    return [t.as_dict() for t in find(entity, party_type, contract_type, doc_type)]
 
 
-def list_templates() -> list[dict[str, str]]:
-    return [
-        {"key": key, "label": label, "description": desc, "doc_type": key}
-        for key, (_, label, desc) in TEMPLATES.items()
-    ]
+def template_supports_entity(template_key: str, entity: str | None) -> bool:
+    """Is this template issued by that entity? Unknown template/entity -> True, so this only ever
+    blocks a combination we positively know is wrong."""
+    ent = (entity or "").strip().upper()
+    if template_key not in TEMPLATES or not ent or ent not in ENTITIES:
+        return True
+    return TEMPLATES[template_key].entity == ent
 
 
 def _today() -> datetime:
@@ -60,7 +43,8 @@ def _resolve_context(raw: dict[str, Any]) -> dict[str, Any]:
         "name": "[Name]",
         "address": "[Address]",
         "designation": "[Designation]",
-        "manager": "[Manager's Name, Role, Department]",
+        "manager": "[Reporting Manager's Name]",
+        "manager_role": "[Manager's Role]",
         "responsibilities": None,
         "annual_ctc": None,
         "reference": today.strftime("%Y%m%d") + "-001",
@@ -75,10 +59,37 @@ def _resolve_context(raw: dict[str, Any]) -> dict[str, Any]:
         "legal_entity": ENTITIES["EZ"]["legal_entity"],
         "company": settings.COMPANY_NAME,
         "company_address": ENTITIES["EZ"]["company_address"],
-        "approving_manager": "",
+        "approving_manager": "[Approving Manager's Name]",
+        "approving_manager_role": "[Manager's Role]",
         "website": settings.COMPANY_WEBSITE,
         "signatory_name": "Divya Anand",
         "signatory_title": "Head, People",
+        # ── Agency / service-provider contracts ──────────────────────────────────────────
+        # The counterparty is an organisation, not a candidate, so it needs its own set of
+        # placeholders rather than reusing name/address/designation.
+        "agency_name": "[Name of the Agency]",
+        "agency_address": "[Registered office address]",
+        "agency_signatory_name": "[Name of the authorized signatory]",
+        "agency_signatory_title": "[Position/Designation]",
+        "agency_poc_name": "",  # defaults to the authorized signatory below
+        "service_type": "[type of Services]",
+        "service_name": "[Name of the service]",
+        "services": None,   # list -> Description of services bullets
+        "fees": None,       # list -> Fees for service bullets
+        "bank_name": "[Name of the Bank]",
+        "commencement_date": "[Date]",
+        "effective_date": "[Effective Date]",
+        # Long-form execution date; the source NDAs print it as a hand-filled blank.
+        "execution_date": "__ day of _______ 20__",
+        # The signatory on commercial contracts differs from the offer-letter signatory.
+        "contract_signatory_name": "Joy Sharma",
+        "contract_signatory_title": "Founder & CEO",
+        # The party actually named in the contract body, which is not always the letterhead
+        # entity — the supplied EZ Lab agency contract contracts as ArabEasy LLC under UAE law.
+        "contracting_entity": "ARABEASY LLC",
+        "contracting_office": "Office 10, Level 1, Sharjah Media City, Sharjah, UAE 515000",
+        "governing_law": "UAE",
+        "jurisdiction": "Sharjah",
     }
     raw = raw or {}
     for k, v in raw.items():
@@ -103,11 +114,18 @@ def _resolve_context(raw: dict[str, Any]) -> dict[str, Any]:
         ctx["responsibilities"] = [str(r)] if r else None
     # Stringify every text placeholder so a non-string term value can't 500 via .upper()/concat.
     for k in (
-        "name", "address", "designation", "manager", "approving_manager", "reference", "letter_date",
+        "name", "address", "designation", "manager", "manager_role", "approving_manager",
+        "approving_manager_role", "reference", "letter_date",
         "start_date", "validity_date", "notice_period", "hours_of_work", "entity", "short_name",
         "location", "legal_entity", "company", "company_address", "website", "signatory_name", "signatory_title",
+        "agency_name", "agency_address", "agency_signatory_name", "agency_signatory_title",
+        "service_type", "service_name", "bank_name", "commencement_date", "effective_date",
+        "contract_signatory_name", "contract_signatory_title", "contracting_entity", "execution_date",
+        "contracting_office", "governing_law", "jurisdiction",
     ):
         ctx[k] = str(ctx[k])
+    # The cover letter greets a point of contact who is usually the signatory themselves.
+    ctx["agency_poc_name"] = str(ctx["agency_poc_name"] or ctx["agency_signatory_name"])
     return ctx
 
 
@@ -129,12 +147,21 @@ def _apply_short_name(blocks: list[dict], sn: str) -> list[dict]:
             out["items"] = [fix(x) for x in out["items"]]
         if isinstance(out.get("rows"), list):
             out["rows"] = [
+                # A grid row is a plain list of cells; terms/comp rows are dicts.
+                [fix(c) for c in r] if isinstance(r, list) else
                 {**r, **({"label": fix(r["label"])} if isinstance(r.get("label"), str) else {}),
                  **({"blocks": [walk(x) for x in r["blocks"]]} if isinstance(r.get("blocks"), list) else {})}
                 for r in out["rows"]
             ]
+        if isinstance(out.get("columns"), list) and all(isinstance(c, str) for c in out["columns"]):
+            out["columns"] = [fix(c) for c in out["columns"]]  # grid header cells
         if isinstance(out.get("columns"), list):
-            out["columns"] = [{**c, **({"name": fix(c.get("name"))} if isinstance(c.get("name"), str) else {})} for c in out["columns"]]
+            # signature columns are {label, name} dicts; grid header cells are plain strings.
+            out["columns"] = [
+                fix(c) if isinstance(c, str) else
+                {**c, **({"name": fix(c.get("name"))} if isinstance(c.get("name"), str) else {})}
+                for c in out["columns"]
+            ]
         return out
 
     return [walk(b) for b in blocks]
@@ -167,6 +194,12 @@ def _blocks_to_text(blocks: list[dict]) -> str:
                 out.append(f"  {row.get('label', ''):<55} {row.get('value', '')}")
             for n in bl.get("notes", []):
                 out.append(f"  * {n}")
+        elif t == "table":
+            cols = bl.get("columns", [])
+            if cols:
+                out.append("  " + " | ".join(str(c) for c in cols))
+            for row in bl.get("rows", []):
+                out.append("  " + " | ".join(str(c) for c in (row or [])))
         elif t == "signature":
             out.append("")
             for col in bl.get("columns", []):
@@ -185,7 +218,7 @@ def render_document(template_key: str, raw_context: dict[str, Any]) -> dict[str,
     """Build a document from a template. Returns {title, doc_type, blocks, content, template_key}."""
     if template_key not in TEMPLATES:
         raise KeyError(template_key)
-    builder = TEMPLATES[template_key][0]
+    builder = TEMPLATES[template_key].builder
     ctx = _resolve_context(raw_context)
     built = builder(ctx)
     blocks = built["blocks"]

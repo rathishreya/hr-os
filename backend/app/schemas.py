@@ -292,6 +292,23 @@ class TPOUpdate(BaseModel):
     designation: str | None = None
     address: str | None = None
     notes: str | None = None
+    comments: str | None = None
+
+
+class TPOIntake(BaseModel):
+    """Public partner-intake form submission (no auth). Vendors/colleges self-register; the
+    category-specific rich fields arrive in `details` and are shown as-is on the partner table."""
+    category: str = ""      # "Hiring Vendor..." | "College..." (free text; kind is derived)
+    organization: str = ""
+    website: str = ""
+    country: str = ""
+    city: str = ""
+    contact_name: str = ""
+    designation: str = ""
+    phone: str = ""
+    email: str = ""
+    notes: str = ""
+    details: dict[str, str] = Field(default_factory=dict)
 
 
 class TPOOut(BaseModel):
@@ -307,6 +324,8 @@ class TPOOut(BaseModel):
     designation: str
     address: str
     notes: str
+    comments: str = ""
+    details: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
 
@@ -533,6 +552,13 @@ class RegenerateDocumentRequest(BaseModel):
     terms: dict[str, Any] = Field(default_factory=dict)
 
 
+class SaveDocumentContentRequest(BaseModel):
+    """Persist a manual rich-editor edit of a draft document. content_html is the edited letter
+    body; passing an empty string clears the override and reverts to the generated blocks."""
+    content_html: str = ""
+    title: str | None = None
+
+
 class ApproveDocumentRequest(BaseModel):
     by: str = "recruiter"
 
@@ -542,10 +568,15 @@ class MoveToOnboardingRequest(BaseModel):
 
 
 class DocumentTemplateOut(BaseModel):
+    """A registered document template, tagged on the four taxonomy axes (see services/documents/registry.py)."""
+
     key: str
     label: str
     description: str
-    doc_type: str
+    entity: str                     # EZ | AEZ
+    doc_type: str                   # offer | contract | nda | nda-tech
+    party_type: str | None = None   # agency | individual; None = applies to either
+    contract_type: str | None = None  # agency | freelance | trainee | full_time | professional_services
 
 
 class DocumentOut(BaseModel):
@@ -559,6 +590,7 @@ class DocumentOut(BaseModel):
     personal_email: str = ""
     title: str
     content: str
+    content_html: str = ""  # manual rich-editor override; when set, preview/PDF render this
     blocks: list[Any] = Field(default_factory=list)
     terms: dict[str, Any]
     status: str
@@ -568,6 +600,7 @@ class DocumentOut(BaseModel):
     move_to_onboarding: bool = False
     upload_filename: str = ""
     has_upload: bool = False
+    email_sent_at: datetime | None = None   # when the covering mail last went out
     created_at: datetime
     candidate_name: str = ""  # enriched by the list endpoint for the Offer & Docs page
     email: str = ""

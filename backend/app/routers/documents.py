@@ -12,10 +12,13 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..config import settings
 from ..database import get_db
+from ..deps import current_user
 from ..services import onboarding_template
 from ..services.ai import ai
-from ..services.documents import TEMPLATES, list_templates, render_document
-from ..services.documents.render import DOC_TYPE_TEMPLATE
+from ..services.documents import TEMPLATES, list_templates, render_document, template_supports_entity
+from ..services.documents import mail as doc_mail
+from ..services import mailer
+from ..services.documents.registry import default_template_for
 from ..services.recruitment import log
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -55,10 +58,18 @@ def _ensure_onboarding_plan(db: Session, application_id: int) -> None:
 # Template-backed types render the EZ Lab letters/contracts/NDA deterministically; the rest
 # fall back to the AI/mock free-text generator.
 AI_DOC_TYPES = {"employment_agreement", "contractor_agreement"}
-DOC_TYPES = set(DOC_TYPE_TEMPLATE) | AI_DOC_TYPES
+# A template key is itself a valid doc_type on the wire (the UI sends the key for both).
+DOC_TYPES = set(TEMPLATES) | AI_DOC_TYPES
 
 # Allowed legal entities for the inline Entity edit (mirrors render.ENTITIES / the generate form).
 _ENTITY_CHOICES = {"EZ", "AEZ"}
+
+
+def _require_entity_match(template_key: str, entity: str | None) -> None:
+    """Refuse to draft an entity's letter from another entity's template — that would put the
+    wrong legal name and clause wording on a signed document."""
+    if not template_supports_entity(template_key, entity):
+        raise HTTPException(422, f"Template '{template_key}' is not issued by entity '{entity}'.")
 
 
 class DocumentFieldsRequest(BaseModel):
@@ -137,8 +148,15 @@ def _enrich_doc(db: Session, d: models.Document) -> None:
 
 
 @router.get("/templates", response_model=list[schemas.DocumentTemplateOut])
-def get_templates():
-    return list_templates()
+def get_templates(
+    entity: str | None = None,
+    party_type: str | None = None,
+    contract_type: str | None = None,
+    doc_type: str | None = None,
+):
+    """The templates on offer, narrowed by any combination of the four taxonomy axes:
+    entity (EZ|AEZ), party_type (agency|individual), contract_type and doc_type."""
+    return list_templates(entity, party_type, contract_type, doc_type)
 
 
 @router.post("/generate", response_model=schemas.DocumentOut)
@@ -149,7 +167,8 @@ def generate(req: schemas.GenerateDocumentRequest, db: Session = Depends(get_db)
     if not app:
         raise HTTPException(404, "Application not found")
 
-    template_key = req.template_key or DOC_TYPE_TEMPLATE.get(req.doc_type, "")
+    template_key = req.template_key or (req.doc_type if req.doc_type in TEMPLATES else default_template_for(req.doc_type))
+    _require_entity_match(template_key, (req.terms or {}).get("entity"))
     if template_key in TEMPLATES:
         rendered = render_document(template_key, template_context(app, req.terms or {}))
         doc = models.Document(
@@ -187,7 +206,8 @@ def regenerate(doc_id: int, req: schemas.RegenerateDocumentRequest, db: Session 
     app = db.get(models.Application, doc.application_id) if doc.application_id else None
     if not app:
         raise HTTPException(422, "Document has no application to regenerate from")
-    template_key = req.template_key or doc.template_key or DOC_TYPE_TEMPLATE.get(doc.doc_type, "")
+    template_key = req.template_key or doc.template_key or default_template_for(doc.doc_type)
+    _require_entity_match(template_key, (req.terms or {}).get("entity"))
     if template_key in TEMPLATES:
         rendered = render_document(template_key, template_context(app, req.terms or {}))
         doc.doc_type = rendered["doc_type"]
@@ -208,7 +228,71 @@ def regenerate(doc_id: int, req: schemas.RegenerateDocumentRequest, db: Session 
     else:
         raise HTTPException(422, f"template_key must be one of {sorted(TEMPLATES)}")
     doc.terms = req.terms or {}
+    doc.content_html = ""  # a fresh template render supersedes any manual rich-editor edit
     log(db, "document.regenerated", "document", doc.id, {"template_key": template_key, "doc_type": doc.doc_type})
+    db.commit()
+    db.refresh(doc)
+    _enrich_doc(db, doc)
+    return doc
+
+
+import re as _re
+
+_TAG_RE = _re.compile(r"<[^>]+>")
+_WS_RE = _re.compile(r"[ \t]*\n[ \t]*")
+
+
+# Allow-list for recruiter-edited letter HTML — only formatting tags the editor can produce, and
+# only the `class` attribute (never style/src/href/on*). Everything else is stripped. This is the
+# security boundary for `content_html` (a client-side sanitizer is bypassable and not trusted).
+_ALLOWED_TAGS = [
+    "h1", "h2", "h3", "h4", "p", "br", "hr", "strong", "b", "em", "i", "u",
+    "span", "div", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "pre",
+]
+
+
+def _sanitize_html(html: str) -> str:
+    html = html or ""
+    if not html.strip():
+        return ""
+    try:
+        import bleach
+    except ImportError:  # sanitizer unavailable — never persist raw HTML, degrade to escaped text
+        from html import escape
+        return escape(html)
+    return bleach.clean(html, tags=_ALLOWED_TAGS, attributes={"*": ["class"]}, strip=True, strip_comments=True)
+
+
+def _html_to_text(html: str) -> str:
+    """Rough plain-text rendering of edited HTML, so Copy/email stay sensible after a manual edit."""
+    s = html or ""
+    s = _re.sub(r"(?i)</(p|div|h[1-6]|li|tr|table|ul|ol)>", "\n", s)
+    s = _re.sub(r"(?i)<br\s*/?>", "\n", s)
+    s = _TAG_RE.sub("", s)
+    s = (s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+         .replace("&quot;", '"').replace("&#39;", "'").replace("&nbsp;", " "))
+    s = _WS_RE.sub("\n", s)
+    return _re.sub(r"\n{3,}", "\n\n", s).strip()
+
+
+@router.patch("/{doc_id}/content", response_model=schemas.DocumentOut)
+def save_document_content(doc_id: int, body: schemas.SaveDocumentContentRequest, db: Session = Depends(get_db)):
+    """Persist a manual rich-editor edit of a DRAFT document. Stores the edited HTML (rendered on the
+    letterhead by the preview/PDF); an empty string reverts to the generated template blocks. Locked
+    once approved or moved to onboarding — the letter is effectively issued."""
+    doc = db.get(models.Document, doc_id)
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if doc.status == "approved":
+        raise HTTPException(409, "An approved document can't be edited")
+    if doc.move_to_onboarding:
+        raise HTTPException(409, "Locked once the candidate has moved to onboarding")
+    doc.content_html = _sanitize_html(body.content_html)  # allow-list sanitize (stored-XSS defense)
+    if doc.content_html:
+        doc.content = _html_to_text(doc.content_html)  # keep the plain-text copy in sync
+    if body.title is not None:
+        doc.title = body.title.strip()[:200]
+    log(db, "document.content_edited", "document", doc.id, {"chars": len(doc.content_html)})
     db.commit()
     db.refresh(doc)
     _enrich_doc(db, doc)
@@ -339,3 +423,113 @@ def get_document(doc_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Document not found")
     _enrich_doc(db, doc)
     return doc
+
+
+# ── Covering email ───────────────────────────────────────────────────────────────────────────
+# Sending is deliberately two steps: the recruiter fetches the draft, reviews (and may edit) it,
+# then posts it back with the rendered PDF. Nothing is ever mailed straight off a button.
+
+
+def _mail_context(db: Session, doc: models.Document) -> tuple[str, str, str]:
+    """(to_email, full_name, role) for a document's covering mail, from the document's own terms
+    first and the candidate/role records as the fallback."""
+    _enrich_doc(db, doc)
+    return doc.personal_email or doc.email or "", doc.candidate_name or "", doc.position or ""
+
+
+@router.get("/{doc_id}/email-draft")
+def get_email_draft(doc_id: int, db: Session = Depends(get_db)):
+    """The covering email for this document, rendered but NOT sent — this is the review step."""
+    doc = db.get(models.Document, doc_id)
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    to_email, full_name, role = _mail_context(db, doc)
+    draft = doc_mail.render(doc.template_key or "", full_name=full_name, role=role)
+    return {
+        **draft,
+        "document_id": doc.id,
+        "template_key": doc.template_key or "",
+        "to_email": to_email,
+        "to_name": full_name,
+        "attachment_filename": _attachment_name(doc, full_name),
+        "already_sent": bool(doc.email_sent_at),
+    }
+
+
+def _attachment_name(doc: models.Document, full_name: str) -> str:
+    """A readable filename for the attached document, e.g. 'Offer Letter - Ananya Sharma.pdf'.
+    Strips the characters Windows and mail clients choke on so the attachment always opens."""
+    base = re.sub(r'[\\/:*?"<>|\r\n]+', " ", doc.title or "Document").strip() or "Document"
+    return base if base.lower().endswith(".pdf") else f"{base}.pdf"
+
+
+class SendDocumentEmailRequest(BaseModel):
+    """The reviewed draft, posted back after the recruiter has read (and possibly edited) it.
+    `pdf_base64` is the rendered document as produced by the preview/print path, so what the
+    candidate receives is exactly what was on screen."""
+
+    to_email: str
+    subject: str
+    body: str
+    cc: list[str] = []
+    pdf_base64: str = ""
+    filename: str = ""
+
+
+@router.post("/{doc_id}/send-email", response_model=schemas.EmailOut)
+def send_document_email(
+    doc_id: int,
+    req: SendDocumentEmailRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(current_user),
+):
+    """Send the reviewed covering mail with the document attached, and stamp the document so the
+    UI can show it has already gone out."""
+    import base64
+
+    doc = db.get(models.Document, doc_id)
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    # candidate_name/position are derived by _enrich_doc, not columns — populate before use.
+    _enrich_doc(db, doc)
+    to_email = (req.to_email or "").strip()
+    if not to_email:
+        raise HTTPException(422, "No recipient email on this document — add one before sending.")
+    if not (req.subject or "").strip():
+        raise HTTPException(422, "The email needs a subject.")
+
+    attachments = []
+    if req.pdf_base64:
+        try:
+            content = base64.b64decode(req.pdf_base64, validate=True)
+        except Exception as exc:  # noqa: BLE001 - a malformed upload must not 500
+            raise HTTPException(422, "The attached document could not be decoded.") from exc
+        if len(content) > _MAX_DOC_UPLOAD_BYTES:
+            raise HTTPException(413, "The attached document is too large (25 MB limit).")
+        attachments.append({
+            "filename": req.filename or _attachment_name(doc, doc.candidate_name or ""),
+            "content": content,
+            "mimetype": "application/pdf",
+        })
+
+    rec = mailer.compose(
+        db,
+        to_email=to_email,
+        to_name=doc.candidate_name or "",
+        template="custom",
+        subject=req.subject,
+        body=req.body,
+        candidate_id=doc.candidate_id,
+        application_id=doc.application_id,
+        sender_user=user,
+        cc=req.cc or [],
+        attachments=attachments or None,
+    )
+    doc.email_sent_at = datetime.now(timezone.utc)
+    log(db, "document.emailed", "document", doc.id, {
+        "to": to_email, "cc": req.cc or [], "status": rec.status,
+        "attached": bool(attachments), "template_key": doc.template_key,
+    })
+    db.commit()
+    db.refresh(rec)
+    return rec

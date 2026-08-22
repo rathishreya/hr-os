@@ -1,22 +1,7 @@
 /** Render a document (structured blocks) as an EZ Lab–letterhead page in a print window, so HR
  *  can save it as a PDF that matches the original templates (logo, ISO badges, address, accents). */
 
-import { richSegments } from './rich'
-
-const esc = (s) =>
-  String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
-
-// Escape + apply inline **bold** / __underline__ marks.
-function richHtml(text) {
-  return richSegments(text)
-    .map((s) => {
-      let h = esc(s.text)
-      if (s.bold) h = `<strong>${h}</strong>`
-      if (s.underline) h = `<u>${h}</u>`
-      return h
-    })
-    .join('')
-}
+import { esc, documentBodyHtml } from './docHtml'
 
 // Letterhead text per legal entity.
 const ENTITY = {
@@ -45,50 +30,9 @@ const LOGO_EZ = `
 const PIN = `<svg width="11" height="11" viewBox="0 0 24 24" fill="#84202f"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z"/></svg>`
 const GLOBE = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#1f3b5c" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg>`
 
-function strong(text, prefix) {
-  if (prefix && String(text).startsWith(prefix)) return `<strong>${esc(prefix)}</strong>${richHtml(String(text).slice(prefix.length))}`
-  if (prefix && !text) return `<strong>${esc(prefix)}</strong>`
-  if (prefix) return `<strong>${esc(prefix)}: </strong>${richHtml(text)}`
-  return richHtml(text)
-}
-
-function blockToHtml(b) {
-  switch (b.type) {
-    case 'heading':
-      return `<h${b.level || 2} class="${b.underline ? 'ul' : ''}">${esc(b.text)}</h${b.level || 2}>`
-    case 'para':
-      return `<p class="${b.muted ? 'muted' : ''} ${b.align === 'right' ? 'right' : ''}">${strong(b.text, b.strong_prefix)}</p>`
-    case 'list': {
-      const tag = b.ordered ? 'ol' : 'ul'
-      return `<${tag}>${(b.items || []).map((i) => `<li>${richHtml(i)}</li>`).join('')}</${tag}>`
-    }
-    case 'terms':
-      return `<table class="terms">${(b.rows || [])
-        .map((r) => `<tr><th>${esc(r.label)}</th><td>${(r.blocks || []).map(blockToHtml).join('')}</td></tr>`)
-        .join('')}</table>`
-    case 'comp':
-      return (
-        `<table class="comp"><thead><tr><th>Component</th><th class="r">INR</th></tr></thead><tbody>${(b.rows || [])
-          .map((r) => `<tr class="${r.emphasis ? 'em' : ''}"><td>${esc(r.label)}</td><td class="r">${esc(r.value)}</td></tr>`)
-          .join('')}</tbody></table>` +
-        ((b.notes || []).length
-          ? `<div class="notes"><div class="nt">Important points</div><ul>${b.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>`
-          : '')
-      )
-    case 'signature':
-      return `<div class="sig">${(b.columns || [])
-        .map((c) => `<div class="col"><div class="line">${esc(c.name)}</div><div class="lbl">${esc(c.label)}</div></div>`)
-        .join('')}</div>`
-    case 'divider':
-      return '<div class="pb"></div>'
-    default:
-      return ''
-  }
-}
-
 export function printDocument(doc) {
   const e = ENTITY[doc.entity] || ENTITY.EZ
-  const body = doc.blocks && doc.blocks.length ? doc.blocks.map(blockToHtml).join('') : `<pre>${esc(doc.content)}</pre>`
+  const body = documentBodyHtml(doc)
   // Non-legal docs (the JD) carry a `brandName` override → show "EZ" + the EZ-only wordmark;
   // legal docs (offer letters / contracts) keep the "EZ Lab Private Limited" entity + logo.
   const coName = doc.brandName || e.name
@@ -154,6 +98,10 @@ export function printDocument(doc) {
   table.terms th{ width:42mm; background:#f4f6f9; text-align:left; vertical-align:top; font-weight:700; }
   table.terms th,table.terms td{ border:1px solid #9aa7b8; padding:6px 8px; vertical-align:top; }
   table.terms p{ margin:4px 0; } table.terms ol,table.terms ul{ margin:4px 0; }
+  table.grid{ width:100%; border-collapse:collapse; margin:6px 0; }
+  table.grid th{ background:#e9eef5; font-weight:700; }
+  table.grid th,table.grid td{ border:1px solid #9aa7b8; padding:5px 8px; vertical-align:top; text-align:left; }
+  table.grid .r{ text-align:right; } table.grid .c{ text-align:center; }
   table.comp th{ background:#e9eef5; }
   table.comp th,table.comp td{ border:1px solid #9aa7b8; padding:5px 8px; }
   table.comp .r{ text-align:right; } table.comp tr.em{ font-weight:700; background:#f4f6f9; }

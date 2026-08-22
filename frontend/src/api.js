@@ -98,6 +98,20 @@ export const api = {
   createTpo: (body) => req('/tpos', { method: 'POST', body: JSON.stringify(body) }),
   updateTpo: (id, body) => req(`/tpos/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteTpo: (id) => req(`/tpos/${id}`, { method: 'DELETE' }),
+  importTpos: (file) => {
+    const fd = new FormData(); fd.append('file', file)
+    return fetch(BASE + '/tpos/import', { method: 'POST', headers: authHeaders(), body: fd }).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Import failed')
+      return r.json()
+    })
+  },
+  downloadTpoTemplate: () => fetch(BASE + '/tpos/import/template', { headers: authHeaders() }).then(async (r) => {
+    if (!r.ok) throw new Error('Could not download the template')
+    const url = URL.createObjectURL(await r.blob())
+    const a = document.createElement('a'); a.href = url; a.download = 'partners_import_template.xlsx'
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+  }),
+  submitPartnerIntake: (body) => req('/tpos/intake', { method: 'POST', body: JSON.stringify(body) }),
   sendToTpos: (hrId, body) => req(`/hiring-requests/${hrId}/send-to-tpos`, { method: 'POST', body: JSON.stringify(body) }),
 
   listRoles: () => req('/hiring-requests'),
@@ -227,9 +241,13 @@ export const api = {
       return r.json()
     }),
   documentUploadUrl: (id) => `${BASE}/documents/${id}/upload-file`,
+  // Covering email: fetch the draft for review, then post the reviewed version back to send.
+  documentEmailDraft: (id) => req(`/documents/${id}/email-draft`),
+  sendDocumentEmail: (id, body) => req(`/documents/${id}/send-email`, { method: 'POST', body: JSON.stringify(body) }),
   moveDocumentToOnboarding: (id, move = true) => req(`/documents/${id}/move-to-onboarding`, { method: 'POST', body: JSON.stringify({ move }) }),
   // Edit the recruiter-fillable doc fields (personal email, joining date, entity) — stays editable until onboarding.
   updateDocumentFields: (id, fields) => req(`/documents/${id}/fields`, { method: 'PATCH', body: JSON.stringify(fields) }),
+  saveDocumentContent: (id, body) => req(`/documents/${id}/content`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   // Assessments (uploaded files sent to candidates)
   listAssessments: () => req('/assessments'),

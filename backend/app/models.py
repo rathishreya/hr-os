@@ -270,6 +270,10 @@ class Document(Base):
     title: Mapped[str] = mapped_column(String(200), default="")
     content: Mapped[str] = mapped_column(Text, default="")  # plain-text rendering (copy/email)
     blocks: Mapped[list] = mapped_column(JSON, default=list)  # structured doc: headings, paras, tables, signatures
+    # Manual rich-editor override. When non-empty, the preview/PDF render THIS HTML (on the EZ
+    # letterhead) instead of `blocks` — set when a recruiter hand-edits the letter; cleared on
+    # regenerate so a fresh template wins.
+    content_html: Mapped[str] = mapped_column(Text, default="")
     terms: Mapped[dict] = mapped_column(JSON, default=dict)  # annual_ctc, manager, start_date, responsibilities, ...
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|approved
     ai_provider: Mapped[str] = mapped_column(String(20), default="")
@@ -282,6 +286,8 @@ class Document(Base):
     upload_file: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     # Gate for onboarding: the candidate only appears on the Onboarding page once this is set.
     move_to_onboarding: Mapped[bool] = mapped_column(default=False)
+    # When the covering email carrying this document was last sent (NULL = never sent).
+    email_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
@@ -454,7 +460,12 @@ class TPO(Base):
     linkedin: Mapped[str] = mapped_column(String(300), default="")
     designation: Mapped[str] = mapped_column(String(160), default="")
     address: Mapped[str] = mapped_column(Text, default="")
-    notes: Mapped[str] = mapped_column(Text, default="")
+    notes: Mapped[str] = mapped_column(Text, default="")  # partner-submitted "additional info"
+    comments: Mapped[str] = mapped_column(Text, default="")  # internal recruiter comments (editable)
+    # The rich partner-form fields that don't warrant dedicated columns — for vendors: geographies,
+    # industries, hiring types, TAT, fee structure; for colleges: programs, disciplines, stipend,
+    # CTC, seasons, engagement modes. Stored as free-form key/value so the table can show any of them.
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
