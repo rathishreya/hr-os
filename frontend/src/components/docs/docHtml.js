@@ -54,15 +54,16 @@ export function blockToHtml(b) {
       return `<table class="terms">${(b.rows || [])
         .map((r) => `<tr><th>${esc(r.label)}</th><td>${(r.blocks || []).map(blockToHtml).join('')}</td></tr>`)
         .join('')}</table>`
-    case 'comp':
-      return (
-        `<table class="comp"><thead><tr><th>Component</th><th class="r">INR</th></tr></thead><tbody>${(b.rows || [])
-          .map((r) => `<tr class="${r.emphasis ? 'em' : ''}"><td>${esc(r.label)}</td><td class="r">${esc(r.value)}</td></tr>`)
-          .join('')}</tbody></table>` +
-        ((b.notes || []).length
-          ? `<div class="notes"><div class="nt">Important points</div><ul>${b.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>`
-          : '')
-      )
+    case 'comp': {
+      // Important Points live INSIDE the table as full-width italic rows, as the sources set them.
+      const noteRows = (b.notes || []).length
+        ? `<tr class="np"><td colspan="2"><u><strong>Important Points</strong></u></td></tr>` +
+          b.notes.map((n) => `<tr class="ni"><td colspan="2">${esc(n)}</td></tr>`).join('')
+        : ''
+      return `<table class="comp"><thead><tr><th>Component</th><th class="r">INR</th></tr></thead><tbody>${(b.rows || [])
+        .map((r) => `<tr class="${r.emphasis ? 'em' : ''}"><td>${esc(r.label)}</td><td class="r">${esc(r.value)}</td></tr>`)
+        .join('')}${noteRows}</tbody></table>`
+    }
     case 'table': {
       const al = (i) => (b.align?.[i] === 'right' ? ' class="r"' : b.align?.[i] === 'center' ? ' class="c"' : '')
       const head = (b.columns || []).map((c, i) => `<th${al(i)}>${esc(c)}</th>`).join('')

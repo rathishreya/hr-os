@@ -62,7 +62,10 @@ function PdfPreview({ doc }) {
     let alive = true
     let objectUrl = null
     setUrl(null); setErr('')
-    documentToPdfBlobUrl(doc)
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('The document is taking too long to render. Close this preview and try again; if it keeps happening, use Edit letter and report it.')), 45000)
+    })
+    Promise.race([documentToPdfBlobUrl(doc), timeout])
       .then((u) => {
         objectUrl = u
         if (alive) setUrl(u)

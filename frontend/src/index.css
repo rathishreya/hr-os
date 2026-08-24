@@ -112,14 +112,12 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 .doc-html li { margin: 3px 0; text-align: left; padding-left: 4px; }
 .doc-html strong { font-weight: 600; }
 .doc-html table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12.5px; }
-.doc-html table.terms th { width: 42%; background: #f4f6f9; text-align: left; vertical-align: top; font-weight: 700; }
-.doc-html table.terms th, .doc-html table.terms td { border: 1px solid #9aa7b8; padding: 6px 8px; vertical-align: top; }
-.doc-html table.comp th { background: #e9eef5; }
-.doc-html table.comp th, .doc-html table.comp td { border: 1px solid #9aa7b8; padding: 5px 8px; }
-.doc-html table.comp .r { text-align: right; } .doc-html table.comp tr.em { font-weight: 700; background: #f4f6f9; }
-.doc-html .notes { border: 1px solid #cbd5e1; background: #f8fafc; padding: 7px 10px; margin: 6px 0; }
-.doc-html .notes .nt { font-family: Arial, sans-serif; font-weight: 700; font-size: 9px; text-transform: uppercase; letter-spacing: .5px; color: #6b7280; margin-bottom: 3px; }
-.doc-html .notes ul { font-size: 11px; color: #4b5563; margin: 0; padding-left: 16px; }
+.doc-html table.terms th { width: 34%; background: #f4f6f9; text-align: left; vertical-align: top; font-weight: 600; }
+.doc-html table.terms th, .doc-html table.terms td { border: 1px solid #333; padding: 4px 7px; vertical-align: top; }
+.doc-html table.comp th { background: #e9eef5; font-weight: 600; }
+.doc-html table.comp th, .doc-html table.comp td { border: 1px solid #333; padding: 3px 7px; }
+.doc-html table.comp .r { text-align: right; } .doc-html table.comp tr.em { font-weight: 600; background: #f4f6f9; }
+.doc-html table.comp tr.ni td { font-style: italic; font-size: 11.5px; }
 .doc-html p.script, .doc-html .sig .scr { font-family: 'Great Vibes', cursive; font-size: 26px; line-height: 1.1; margin: 2px 0; }
 .doc-html .sig { display: flex; flex-wrap: wrap; gap: 40px; margin-top: 22px; }
 .doc-html .sig .col { min-width: 200px; } .doc-html .sig .line { border-bottom: 1px solid #475569; height: 26px; padding-left: 2px; }

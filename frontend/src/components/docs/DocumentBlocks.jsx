@@ -81,35 +81,39 @@ function TermsTable({ block }) {
   )
 }
 
+const CELL = 'border border-[#333] px-2 py-[3px]'
+
 function CompTable({ block }) {
   return (
     <div>
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr>
-            <th className="border border-slate-300 bg-slate-100 p-2 text-left font-semibold text-slate-700">Component</th>
-            <th className="border border-slate-300 bg-slate-100 p-2 text-right font-semibold text-slate-700">INR</th>
+            <th className={`${CELL} bg-[#e9eef5] text-left font-semibold text-slate-800`}>Component</th>
+            <th className={`${CELL} bg-[#e9eef5] text-right font-semibold text-slate-800`}>INR</th>
           </tr>
         </thead>
         <tbody>
           {(block.rows || []).map((row, i) => (
-            <tr key={i} className={row.emphasis ? 'bg-slate-50 font-semibold text-slate-900' : 'text-slate-700'}>
-              <td className="border border-slate-300 p-2">{row.label}</td>
-              <td className="border border-slate-300 p-2 text-right tabular-nums">{row.value}</td>
+            <tr key={i} className={row.emphasis ? 'bg-[#f4f6f9] font-semibold text-slate-900' : 'text-slate-700'}>
+              <td className={CELL}>{row.label}</td>
+              <td className={`${CELL} text-right tabular-nums`}>{row.value}</td>
+            </tr>
+          ))}
+          {(block.notes || []).length > 0 && (
+            <tr>
+              <td colSpan={2} className={CELL}><u><strong className="font-semibold">Important Points</strong></u></td>
+            </tr>
+          )}
+          {(block.notes || []).map((n, i) => (
+            <tr key={`note-${i}`}>
+              <td colSpan={2} className={`${CELL} text-[12px] italic text-slate-700`}>{n}</td>
             </tr>
           ))}
         </tbody>
       </table>
       {block.known === false && (
-        <p className="mt-1.5 text-xs text-amber-600">No CTC on this role — amounts show “₹ —”. Add the Annual CTC and regenerate to fill the breakdown.</p>
-      )}
-      {(block.notes || []).length > 0 && (
-        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
-          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Important points</div>
-          <ul className="list-disc space-y-0.5 pl-4 text-[11px] leading-relaxed text-slate-500">
-            {block.notes.map((n, i) => (<li key={i}>{n}</li>))}
-          </ul>
-        </div>
+        <p className="mt-1.5 text-xs text-amber-600">No CTC on this role — amounts show ₹ —. Add the Annual CTC and regenerate to fill the breakdown.</p>
       )}
     </div>
   )

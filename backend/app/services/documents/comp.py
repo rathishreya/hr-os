@@ -156,10 +156,10 @@ def breakdown(annual_ctc: int | None) -> dict[str, Any]:
 
 
 _NOTES = [
-    "Employee share of PF, ESI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
-    "Gratuity, as applicable under Payment of Gratuity Act, shall be over and above the CTC.",
-    "The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
-    "The performance bonus will be applicable after 3 months of your joining and is paid quarterly as per PPR ratings: "
+    "* Employee share of PF, ESI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
+    "** Gratuity, as applicable under Payment of Gratuity Act, shall be over and above the CTC.",
+    "*** The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
+    "**** The performance bonus will be applicable after 3 months of your joining and is paid quarterly as per PPR ratings: "
     "A: Distinctive 125% · B: Meets Expectations 100% · C: Needs Improvement 75% · D: Needs Assistance 0% · E: Probation 0%.",
 ]
 
@@ -190,11 +190,11 @@ def _placeholder_rows() -> list[dict[str, Any]]:
 # folds into (B), the two layouts tie to the same Total Monthly CTC.
 
 _OFFER_NOTES = [
-    "Employee share of PF, ESCI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
-    "The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
-    "Insurance coverage premium is the notional approx. value of premium paid by the Company towards "
+    "* Employee share of PF, ESCI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
+    "*** The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
+    "**** Insurance coverage premium is the notional approx. value of premium paid by the Company towards "
     "your Group Mediclaim & Personal Accidental Insurance.",
-    "The performance bonus will be applicable after 3 months of your joining and is paid quarterly as "
+    "***** The performance bonus will be applicable after 3 months of your joining and is paid quarterly as "
     "per PPR ratings defined below. A: Distinctive: 125% · B: Meets Expectations: 100% · "
     "C: Needs Improvement: 75% · D: Needs Assistance: 0% · E: Probation: 0%",
     "Based on past trends, nearly 75% of employees have consistently received the full 100% of their "
@@ -232,10 +232,10 @@ _CONTRACT_EMPHASIS = {
     "Additional Benefits (E)", "Total Monthly CTC (B+D+E)", "Total Annual CTC",
 }
 _CONTRACT_NOTES = [
-    "Employee share of PF, ESCI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
-    "Gratuity, as applicable under Payment of Gratuity Act, shall be over and above the CTC.",
-    "The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
-    "The performance bonus will be applicable after 3 months of your joining and is paid quarterly as "
+    "* Employee share of PF, ESCI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
+    "** Gratuity, as applicable under Payment of Gratuity Act, shall be over and above the CTC.",
+    "*** The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
+    "**** The performance bonus will be applicable after 3 months of your joining and is paid quarterly as "
     "per PPR ratings defined below. A: Distinctive: 125% · B: Meets Expectations: 100% · "
     "C: Needs Improvement: 75% · D: Needs Assistance: 0% · E: Probation: 0%",
 ]
@@ -307,10 +307,10 @@ _TRAINEE_EMPHASIS = {
     "Additional Benefis (E)", "Total Monthly CTC (B+D+E)", "Total Annual CTC",
 }
 _TRAINEE_NOTES = [
-    "Employee share of PF, ESCI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
-    "Gratuity, as applicable under Payment of Gratuity Act and is payable after completion of 5 years of service",
-    "The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
-    "Insurance coverage premium is the notional approx. value of premium paid by the Company towards "
+    "* Employee share of PF, ESCI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
+    "** Gratuity, as applicable under Payment of Gratuity Act and is payable after completion of 5 years of service",
+    "*** The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
+    "**** Insurance coverage premium is the notional approx. value of premium paid by the Company towards "
     "your Group Mediclaim & Personal Accidental Insurance.",
 ]
 

@@ -37,7 +37,7 @@ const PAGE_H = 841.89
 const NAVY = '#1f3b5c'
 const INK = '#1f2937'
 const MUTED = '#6b7280'
-const RULE = '#9aa7b8'
+const RULE = '#333333'
 
 /** Inline **bold** / __underline__ markers become pdfmake text runs. */
 function runs(text, base = {}) {
@@ -117,37 +117,31 @@ function blockToPdf(b) {
         layout: { hLineColor: () => RULE, vLineColor: () => RULE, hLineWidth: () => 0.5, vLineWidth: () => 0.5 },
         margin: [0, 4, 0, 8],
       }
-    case 'comp':
-      return {
-        stack: [
-          {
-            table: {
-              widths: ['*', 90],
-              headerRows: 1,
-              body: [
-                [
-                  { text: 'Component', bold: true, fontSize: 9, fillColor: '#e9eef5', margin: [4, 3, 4, 3] },
-                  { text: 'INR', bold: true, fontSize: 9, fillColor: '#e9eef5', alignment: 'right', margin: [4, 3, 4, 3] },
-                ],
-                ...(b.rows || []).map((r) => [
-                  { text: r.label || '', fontSize: 9, bold: !!r.emphasis, fillColor: r.emphasis ? '#f4f6f9' : undefined, margin: [4, 3, 4, 3] },
-                  { text: r.value || '', fontSize: 9, bold: !!r.emphasis, fillColor: r.emphasis ? '#f4f6f9' : undefined, alignment: 'right', margin: [4, 3, 4, 3] },
-                ]),
-              ],
-            },
-            layout: { hLineColor: () => RULE, vLineColor: () => RULE, hLineWidth: () => 0.5, vLineWidth: () => 0.5 },
-          },
-          ...((b.notes || []).length
-            ? [{
-                stack: [
-                  { text: 'Important Points', fontSize: 7.5, bold: true, color: MUTED, margin: [0, 6, 0, 2] },
-                  { ul: b.notes.map((n) => ({ text: n, fontSize: 7.5, color: MUTED, italics: true })), margin: [4, 0, 0, 0] },
-                ],
-              }]
-            : []),
+    case 'comp': {
+      const cell = (text, opts = {}) => ({ text, fontSize: 9, margin: [4, 2, 4, 2], ...opts })
+      const body = [
+        [
+          cell('Component', { bold: true, fillColor: '#e9eef5' }),
+          cell('INR', { bold: true, fillColor: '#e9eef5', alignment: 'right' }),
         ],
+        ...(b.rows || []).map((r) => [
+          cell(r.label || '', { bold: !!r.emphasis, fillColor: r.emphasis ? '#f4f6f9' : undefined }),
+          cell(r.value || '', { bold: !!r.emphasis, fillColor: r.emphasis ? '#f4f6f9' : undefined, alignment: 'right' }),
+        ]),
+      ]
+      // Important Points as full-width italic rows inside the table, as the sources set them.
+      if ((b.notes || []).length) {
+        body.push([{ ...cell('Important Points', { bold: true, decoration: 'underline' }), colSpan: 2 }, {}])
+        for (const n of b.notes) {
+          body.push([{ ...cell(n, { italics: true, fontSize: 8 }), colSpan: 2 }, {}])
+        }
+      }
+      return {
+        table: { widths: ['*', 90], headerRows: 1, body },
+        layout: { hLineColor: () => RULE, vLineColor: () => RULE, hLineWidth: () => 0.5, vLineWidth: () => 0.5 },
         margin: [0, 4, 0, 8],
       }
+    }
     case 'table':
       return {
         table: {
@@ -288,49 +282,53 @@ async function buildDefinition(doc, bodyFont) {
   }
 }
 
+let fontsRegistered = false
+
 async function makePdf(doc) {
-  const [{ default: pdfMake }, vfs] = await Promise.all([
+  // pdfmake 0.3 API: fonts are registered on the module via addVirtualFileSystem/addFonts
+  // (property assignment is ignored), and the output getters return promises.
+  const [{ default: pdfMake }, vfsModule] = await Promise.all([
     import('pdfmake/build/pdfmake'),
     import('pdfmake/build/vfs_fonts'),
   ])
-  pdfMake.vfs = vfs.default?.pdfMake?.vfs || vfs.pdfMake?.vfs || vfs.default || vfs
+  const robotoVfs = vfsModule.default?.pdfMake?.vfs || vfsModule.pdfMake?.vfs || vfsModule.default || vfsModule
 
-  // Embed Poppins so the output matches the sources; fall back to Roboto if the fetch fails
-  // rather than blocking the render.
   let bodyFont = 'Roboto'
-  try {
-    const poppins = await loadPoppins()
-    pdfMake.vfs = { ...pdfMake.vfs, ...poppins }
-    pdfMake.fonts = {
-      ...(pdfMake.fonts || {}),
-      Roboto: {
-        normal: 'Roboto-Regular.ttf', bold: 'Roboto-Medium.ttf',
-        italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-MediumItalic.ttf',
-      },
-      Poppins: {
-        normal: 'Poppins-Regular.ttf', bold: 'Poppins-SemiBold.ttf',
-        italics: 'Poppins-Italic.ttf', bolditalics: 'Poppins-SemiBoldItalic.ttf',
-      },
-      GreatVibes: {
-        normal: 'GreatVibes-Regular.ttf', bold: 'GreatVibes-Regular.ttf',
-        italics: 'GreatVibes-Regular.ttf', bolditalics: 'GreatVibes-Regular.ttf',
-      },
+  if (!fontsRegistered) {
+    pdfMake.addVirtualFileSystem(robotoVfs)
+    const ROBOTO = {
+      normal: 'Roboto-Regular.ttf', bold: 'Roboto-Medium.ttf',
+      italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-MediumItalic.ttf',
     }
-    bodyFont = 'Poppins'
-  } catch {
-    // Roboto fallback — and script blocks reference GreatVibes by name, so map that face to
-    // Roboto italic rather than letting an unregistered font crash the render.
-    pdfMake.fonts = {
-      Roboto: {
-        normal: 'Roboto-Regular.ttf', bold: 'Roboto-Medium.ttf',
-        italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-MediumItalic.ttf',
-      },
-      GreatVibes: {
-        normal: 'Roboto-Italic.ttf', bold: 'Roboto-Italic.ttf',
-        italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-Italic.ttf',
-      },
+    try {
+      pdfMake.addVirtualFileSystem(await loadPoppins())
+      pdfMake.addFonts({
+        Roboto: ROBOTO,
+        Poppins: {
+          normal: 'Poppins-Regular.ttf', bold: 'Poppins-SemiBold.ttf',
+          italics: 'Poppins-Italic.ttf', bolditalics: 'Poppins-SemiBoldItalic.ttf',
+        },
+        GreatVibes: {
+          normal: 'GreatVibes-Regular.ttf', bold: 'GreatVibes-Regular.ttf',
+          italics: 'GreatVibes-Regular.ttf', bolditalics: 'GreatVibes-Regular.ttf',
+        },
+      })
+    } catch {
+      // Font fetch failed: register a set where every referenced family resolves to Roboto, so
+      // the render degrades instead of hanging on an unregistered face.
+      pdfMake.addFonts({
+        Roboto: ROBOTO,
+        Poppins: ROBOTO,
+        GreatVibes: {
+          normal: 'Roboto-Italic.ttf', bold: 'Roboto-Italic.ttf',
+          italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-Italic.ttf',
+        },
+      })
     }
+    fontsRegistered = true
   }
+  if (poppinsVfs) bodyFont = 'Poppins'
+  else bodyFont = 'Poppins' // Poppins maps to Roboto in the fallback set, so the name is safe
 
   return pdfMake.createPdf(await buildDefinition(doc, bodyFont))
 }
@@ -338,15 +336,12 @@ async function makePdf(doc) {
 /** The document as base64 (no data: prefix), for the send-email endpoint. */
 export async function documentToPdfBase64(doc) {
   const pdf = await makePdf(doc)
-  return new Promise((resolve, reject) => {
-    try { pdf.getBase64(resolve) } catch (err) { reject(err) }
-  })
+  return pdf.getBase64()
 }
 
 /** The document as an object URL, for the page-by-page preview iframe. Caller revokes it. */
 export async function documentToPdfBlobUrl(doc) {
   const pdf = await makePdf(doc)
-  return new Promise((resolve, reject) => {
-    try { pdf.getBlob((blob) => resolve(URL.createObjectURL(blob))) } catch (err) { reject(err) }
-  })
+  const blob = await pdf.getBlob()
+  return URL.createObjectURL(blob)
 }

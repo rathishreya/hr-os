@@ -40,19 +40,17 @@ export function printDocument(doc) {
   strong{ font-weight:600; }
 
   table{ border-collapse:collapse; width:100%; margin:10px 0; font-size:9.5pt; break-inside:avoid; }
-  table.terms th{ width:42mm; background:#f4f6f9; text-align:left; vertical-align:top; font-weight:600; }
-  table.terms th,table.terms td{ border:1px solid #9aa7b8; padding:6px 8px; vertical-align:top; }
+  table.terms th{ width:38mm; background:#f4f6f9; text-align:left; vertical-align:top; font-weight:600; }
+  table.terms th,table.terms td{ border:0.5pt solid #333; padding:4px 7px; vertical-align:top; }
   table.terms p{ margin:4px 0; } table.terms ol,table.terms ul{ margin:4px 0; }
   table.grid{ width:100%; border-collapse:collapse; margin:6px 0; }
   table.grid th{ background:#e9eef5; font-weight:600; }
-  table.grid th,table.grid td{ border:1px solid #9aa7b8; padding:5px 8px; vertical-align:top; text-align:left; }
+  table.grid th,table.grid td{ border:0.5pt solid #333; padding:4px 7px; vertical-align:top; text-align:left; }
   table.grid .r{ text-align:right; } table.grid .c{ text-align:center; }
-  table.comp th{ background:#e9eef5; }
-  table.comp th,table.comp td{ border:1px solid #9aa7b8; padding:5px 8px; }
+  table.comp th{ background:#e9eef5; font-weight:600; }
+  table.comp th,table.comp td{ border:0.5pt solid #333; padding:2.5px 7px; }
   table.comp .r{ text-align:right; } table.comp tr.em{ font-weight:600; background:#f4f6f9; }
-  .notes{ border:1px solid #cbd5e1; background:#f8fafc; padding:7px 10px; margin:6px 0; }
-  .notes .nt{ font-weight:600; font-size:7pt; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; margin-bottom:3px; }
-  .notes ul{ font-size:8pt; color:#4b5563; margin:0; padding-left:16px; }
+  table.comp tr.ni td{ font-style:italic; font-size:8.5pt; }
 
   p.script,.sig .scr{ font-family:'Great Vibes',cursive; font-size:20pt; line-height:1.1; margin:2px 0; }
   .sig{ display:flex; gap:48px; margin-top:22px; break-inside:avoid; }
