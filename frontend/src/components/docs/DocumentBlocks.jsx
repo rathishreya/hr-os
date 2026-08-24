@@ -1,4 +1,5 @@
 import { richSegments } from './rich'
+import { isClause } from './docHtml'
 
 /**
  * Renders a structured EZ Lab document (offer letter / contract) from its `blocks`, matching the
@@ -49,7 +50,10 @@ function MiniBlocks({ blocks }) {
 function List({ block, dense = false }) {
   const Tag = block.ordered ? 'ol' : 'ul'
   return (
-    <Tag className={`${block.ordered ? 'list-decimal' : 'list-disc'} space-y-1 pl-5 text-sm leading-relaxed text-slate-700 ${dense ? '' : 'my-1'}`}>
+    <Tag
+      start={block.ordered && block.start ? Number(block.start) : undefined}
+      className={`${block.ordered ? 'list-decimal' : 'list-disc'} space-y-1 pl-6 text-sm leading-relaxed text-slate-700 marker:text-slate-500 ${dense ? '' : 'my-1'}`}
+    >
       {(block.items || []).map((it, i) => (<li key={i}><Rich text={it} /></li>))}
     </Tag>
   )
@@ -155,7 +159,11 @@ function renderBlock(b, i) {
       return <h3 key={i} className={`${HEADING_CLASS[b.level] || HEADING_CLASS[2]} ${b.underline ? 'underline underline-offset-4' : ''}`}>{b.text}</h3>
     case 'para':
       return (
-        <p key={i} className={`text-sm leading-relaxed ${b.muted ? 'text-slate-500' : 'text-slate-700'} ${b.align === 'right' ? 'text-right text-emerald-700' : 'text-justify'}`}>
+        <p
+          key={i}
+          className={`text-sm leading-relaxed ${b.muted ? 'text-slate-500' : 'text-slate-700'} ${b.align === 'right' ? 'text-right text-emerald-700' : 'text-left'}`}
+          style={isClause(b) ? { paddingLeft: '2em', textIndent: '-2em' } : undefined}
+        >
           <StrongPrefix text={b.text || ''} prefix={b.strong_prefix} />
         </p>
       )

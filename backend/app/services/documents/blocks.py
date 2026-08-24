@@ -26,8 +26,13 @@ def p(text: str, **kw) -> dict:
     return {"type": "para", "text": text, **kw}
 
 
-def ol(items: list[str]) -> dict:
-    return {"type": "list", "ordered": True, "items": list(items)}
+def ol(items: list[str], start: int | None = None) -> dict:
+    """A numbered list. `start` resumes the numbering, which is what lets a clause carrying
+    sub-limbs interrupt the sequence without the next clause restarting at 1."""
+    block = {"type": "list", "ordered": True, "items": list(items)}
+    if start and start != 1:
+        block["start"] = int(start)
+    return block
 
 
 def ul(items: list[str]) -> dict:
@@ -72,3 +77,4 @@ def comp_custom(rows: list[dict], notes: list[str], *, known: bool = True) -> di
     """A compensation table built from explicit rows (label/value/emphasis) and its own notes —
     for letters whose annexure has a different shape from comp.breakdown()'s default layout."""
     return {"type": "comp", "rows": list(rows), "notes": list(notes), "known": known}
+

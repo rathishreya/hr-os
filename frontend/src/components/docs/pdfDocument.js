@@ -58,19 +58,38 @@ function blockToPdf(b) {
       const text = b.text || ''
       const style = {
         fontSize: 9.5,
-        alignment: b.align === 'right' ? 'right' : 'justify',
+        alignment: b.align === 'right' ? 'right' : 'left',
         color: b.muted ? MUTED : INK,
         margin: [0, 0, 0, 5],
         lineHeight: 1.25,
       }
-      if (prefix && !text.startsWith(prefix)) {
-        return { text: [{ text: `${prefix}: `, bold: true }, ...[].concat(runs(text).text ?? runs(text))], ...style }
+      const body = prefix && !text.startsWith(prefix)
+        ? { text: [{ text: `${prefix}: `, bold: true }, ...[].concat(runs(text).text ?? runs(text))] }
+        : runs(text)
+
+      // A numbered clause hangs: pdfmake has no text-indent, so the number goes in its own
+      // fixed column and the body wraps against it. Matches the CSS hanging indent elsewhere.
+      const clause = /^\s*(\d{1,2}(?:\.\d+)?[.)]?)\s+([\s\S]*)$/.exec(prefix || text)
+      if (clause && !b.align) {
+        const [, marker, rest] = clause
+        const inner = prefix
+          ? { text: [{ text: `${prefix.replace(/^\s*\d{1,2}(?:\.\d+)?[.)]?\s+/, '')}: `, bold: true }, ...[].concat(runs(text).text ?? runs(text))] }
+          : runs(rest)
+        return {
+          columns: [
+            { width: 22, text: marker, fontSize: 9.5, color: b.muted ? MUTED : INK },
+            { width: '*', ...inner, fontSize: 9.5, color: b.muted ? MUTED : INK, alignment: 'left', lineHeight: 1.25 },
+          ],
+          columnGap: 0,
+          margin: [0, 0, 0, 5],
+        }
       }
-      return runs(text, style)
+      return { ...body, ...style }
     }
     case 'list':
       return {
         [b.ordered ? 'ol' : 'ul']: (b.items || []).map((i) => runs(i)),
+        ...(b.ordered && b.start ? { start: Number(b.start) } : {}),
         fontSize: 9.5,
         color: INK,
         margin: [8, 0, 0, 6],

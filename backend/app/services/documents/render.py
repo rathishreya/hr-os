@@ -181,7 +181,7 @@ def _blocks_to_text(blocks: list[dict]) -> str:
             text = bl.get("text", "")
             out.append(f"{prefix}: {text}" if prefix and not text.startswith(prefix) else text)
         elif t == "list":
-            for i, it in enumerate(bl.get("items", []), 1):
+            for i, it in enumerate(bl.get("items", []), int(bl.get("start") or 1)):
                 out.append(f"  {i}. {it}" if bl.get("ordered") else f"  • {it}")
         elif t == "terms":
             for row in bl.get("rows", []):

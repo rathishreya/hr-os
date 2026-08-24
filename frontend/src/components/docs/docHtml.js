@@ -18,6 +18,11 @@ function richHtml(text) {
     .join('')
 }
 
+// A clause-shaped paragraph: "1. ..." / "12.1 ..." in the body, or a numbered strong_prefix
+// ("2. Duties & Responsibilities"). These get a hanging indent so the number sits in the gutter.
+export const isClause = (b) =>
+  /^\s*\d{1,2}(\.\d+)?[.)]?\s/.test(String(b?.strong_prefix || b?.text || ''))
+
 function strong(text, prefix) {
   if (prefix && String(text).startsWith(prefix)) return `<strong>${esc(prefix)}</strong>${richHtml(String(text).slice(prefix.length))}`
   if (prefix && !text) return `<strong>${esc(prefix)}</strong>`
@@ -29,11 +34,15 @@ export function blockToHtml(b) {
   switch (b.type) {
     case 'heading':
       return `<h${b.level || 2} class="${b.underline ? 'ul' : ''}">${esc(b.text)}</h${b.level || 2}>`
-    case 'para':
-      return `<p class="${b.muted ? 'muted' : ''} ${b.align === 'right' ? 'right' : ''}">${strong(b.text, b.strong_prefix)}</p>`
+    case 'para': {
+      const cls = [b.muted && 'muted', b.align === 'right' && 'right', isClause(b) && 'clause']
+        .filter(Boolean).join(' ')
+      return `<p class="${cls}">${strong(b.text, b.strong_prefix)}</p>`
+    }
     case 'list': {
       const tag = b.ordered ? 'ol' : 'ul'
-      return `<${tag}>${(b.items || []).map((i) => `<li>${richHtml(i)}</li>`).join('')}</${tag}>`
+      const attr = b.ordered && b.start ? ` start="${Number(b.start)}"` : ''
+      return `<${tag}${attr}>${(b.items || []).map((i) => `<li>${richHtml(i)}</li>`).join('')}</${tag}>`
     }
     case 'terms':
       return `<table class="terms">${(b.rows || [])

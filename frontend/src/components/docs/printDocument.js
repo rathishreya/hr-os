@@ -60,7 +60,7 @@ export function printDocument(doc) {
 <style>
   @page { size: A4; margin: 30mm 16mm 16mm 16mm; }
   *{ box-sizing:border-box; }
-  body{ font-family:Georgia,'Times New Roman',serif; color:#1f2937; font-size:11.5px; line-height:1.5; margin:0; }
+  body{ font-family:'Segoe UI', Lato, 'Helvetica Neue', Arial, sans-serif; color:#1f2937; font-size:11.5px; line-height:1.5; margin:0; }
 
   /* Letterhead — repeats on every printed page (fixed sits in the top page margin). */
   .lh{ position:fixed; top:0; left:0; right:0; height:26mm; padding:5mm 16mm 0; display:flex; justify-content:space-between; align-items:flex-start; }
@@ -88,10 +88,11 @@ export function printDocument(doc) {
   h3{ font-size:12px; text-align:center; font-weight:700; margin:8px 0; }
   h1.ul,h2.ul,h3.ul{ text-decoration:underline; text-underline-offset:3px; }
   u{ text-decoration:underline; }
-  p{ margin:7px 0; text-align:justify; }
+  p{ margin:7px 0; text-align:left; }
+  p.clause{ padding-left:2em; text-indent:-2em; }
   p.muted{ color:#4b5563; }
   p.right{ text-align:right; color:#2e7d5b; font-weight:600; margin:1px 0; }
-  ol,ul{ margin:6px 0; padding-left:20px; } li{ margin:3px 0; text-align:justify; }
+  ol,ul{ margin:6px 0; padding-left:24px; } li{ margin:3px 0; text-align:left; padding-left:4px; }
   strong{ font-weight:700; }
 
   table{ border-collapse:collapse; width:100%; margin:10px 0; font-size:11px; break-inside:avoid; }

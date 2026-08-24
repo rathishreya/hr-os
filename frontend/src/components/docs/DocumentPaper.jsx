@@ -87,7 +87,7 @@ export default function DocumentPaper({ doc, editable = false, editorRef }) {
         </div>
       </div>
 
-      <div className="px-6 py-4 font-serif">
+      <div className="px-6 py-4">
         {editable
           ? <EditableBody doc={doc} editorRef={editorRef} />
           : doc.content_html
