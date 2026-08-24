@@ -183,7 +183,7 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
           checked={allFilteredSelected}
           onChange={toggleAll}
           onClick={(e) => e.stopPropagation()}
-          className="cursor-pointer"
+          className="h-4 w-4 cursor-pointer rounded border-slate-300 text-brand-600"
         />
       ),
       className: 'w-8',
@@ -196,7 +196,7 @@ export default function CandidateManageTable({ roleId, roleTitle, board, onRefre
           checked={selectedIds.has(row.id)}
           onChange={() => toggleRow(row.id)}
           onClick={(e) => e.stopPropagation()}
-          className="cursor-pointer"
+          className="h-4 w-4 cursor-pointer rounded border-slate-300 text-brand-600"
         />
       ),
     },

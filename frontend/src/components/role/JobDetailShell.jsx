@@ -70,8 +70,9 @@ export default function JobDetailShell({
 
   return (
     <header className="relative z-40 shrink-0 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
-      {/* Top bar */}
-      <div className="flex items-center gap-3 px-4 py-2.5 lg:px-5">
+      {/* Top bar. Horizontal padding must match the content wrapper below it (RoleDetail's
+          `p-3 lg:p-4`) — otherwise the title/tabs sit a few px right of the table card's edge. */}
+      <div className="flex items-center gap-3 px-3 py-2.5 lg:px-4">
         <Link
           to="/roles"
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors duration-150 ease-snappy hover:bg-slate-100 hover:text-slate-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
@@ -160,7 +161,7 @@ export default function JobDetailShell({
       </div>
 
       {/* Single nav row — light premium segmented control */}
-      <nav className="px-4 pb-2.5 lg:px-5">
+      <nav className="px-3 pb-2.5 lg:px-4">
         <div className="flex items-center gap-1 overflow-x-auto rounded-xl bg-slate-100/70 p-1 ring-1 ring-slate-200/60 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {JOB_VIEWS.map((v) => {
             const count = v.countKey ? counts[v.countKey] : null

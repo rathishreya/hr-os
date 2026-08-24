@@ -3,8 +3,8 @@ import { api } from '../../api'
 import { Modal, Button, Field, Spinner, inputClass } from '../../ui'
 import { useToast } from '../Toast'
 import MultiSelect from '../MultiSelect'
-import { SkillChecklist, ApplicationQuestionsBuilder, InterviewTypesPicker, BudgetCtcField, ComboField, useFieldOptions, useTeamOptions } from './jobFormParts'
-import { HIRE_TYPES } from '../../constants'
+import { SkillChecklist, ApplicationQuestionsBuilder, InterviewTypesPicker, BudgetCtcField, SearchSelect, DesignationSelect, useFieldOptions, useTeamOptions } from './jobFormParts'
+import { HIRE_TYPES, PRIORITY_OPTS, WORK_MODE_OPTS } from '../../constants'
 
 // Edit an existing job's details. Mounted only while open (see call site) so state initializes
 // from the role without an effect. Saves via PATCH /api/hiring-requests/{id} (core fields) +
@@ -89,39 +89,44 @@ export default function EditJobModal({ role, onClose, onSaved }) {
           forcing a horizontal scrollbar — everything stays on one page within the modal. */}
       <div className="min-w-0 space-y-4">
         <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
-          <Field label="Role *"><input className={inputClass} value={f.position} onChange={set('position')} /></Field>
-          <ComboField label="Department" listId="edit-dept-options" value={f.department} onChange={setKey('department')} options={deptOptions} placeholder="Pick or type to add" />
-          <ComboField label="Team" listId="edit-team-options" value={f.team} onChange={setKey('team')} options={teamFieldOptions} placeholder="Pick or type to add" />
+          <Field label="Role *">
+            <DesignationSelect value={f.position} onChange={(title, rec) => setF((p) => ({ ...p, position: title, ...(rec?.autofill ? { department: rec.dept, team: rec.team } : {}) }))} />
+          </Field>
+          <Field label="Department"><SearchSelect value={f.department} onChange={setKey('department')} options={deptOptions} placeholder="Select a department…" searchPlaceholder="Search departments…" allowCustom={false} /></Field>
+          <Field label="Team"><SearchSelect value={f.team} onChange={setKey('team')} options={teamFieldOptions} placeholder="Select a team…" searchPlaceholder="Search teams…" allowCustom={false} /></Field>
           <Field label="New / Replacement" hint="New headcount or backfilling a leaver?">
-            <select className={inputClass} value={f.hire_type} onChange={set('hire_type')}>
-              {HIRE_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <SearchSelect value={f.hire_type} onChange={setKey('hire_type')} options={HIRE_TYPES} allowCustom={false} />
           </Field>
           <div className="min-w-0 sm:col-span-2">
             <BudgetCtcField value={f.budget_ctc} onChange={setKey('budget_ctc')} />
           </div>
-          <ComboField label="Location" listId="edit-location-options" value={f.location} onChange={setKey('location')} options={locationOptions} placeholder="Pick or type to add" />
+          <Field label="Location"><SearchSelect value={f.location} onChange={setKey('location')} options={locationOptions} placeholder="Select a location…" searchPlaceholder="Search or add a city…" allowCustom /></Field>
           <Field label="Min YOE"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_min} onChange={set('yoe_min')} /></Field>
           <Field label="Max YOE"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_max} onChange={set('yoe_max')} /></Field>
           <Field label="Priority">
-            <select className={inputClass} value={f.priority} onChange={set('priority')}>
-              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
-            </select>
+            <SearchSelect value={f.priority} onChange={setKey('priority')} options={PRIORITY_OPTS} allowCustom={false} />
           </Field>
           <Field label="Work mode">
-            <select className={inputClass} value={f.work_mode} onChange={set('work_mode')}>
-              <option value="onsite">Onsite</option><option value="hybrid">Hybrid</option><option value="remote">Remote</option>
-            </select>
+            <SearchSelect value={f.work_mode} onChange={setKey('work_mode')} options={WORK_MODE_OPTS} allowCustom={false} />
           </Field>
           <Field label="Hiring deadline"><input type="date" className={inputClass} value={f.hiring_deadline} onChange={set('hiring_deadline')} /></Field>
           <Field label="Start hiring date"><input type="date" className={inputClass} value={f.start_hiring_date} onChange={set('start_hiring_date')} /></Field>
           <Field label="Openings"><input type="number" min="1" className={inputClass} value={f.num_openings} onChange={set('num_openings')} /></Field>
           <Field label="Status" hint={isClosed ? 'Closed roles are final and cannot be reopened' : undefined}>
-            <select className={inputClass} value={f.status} onChange={set('status')} disabled={isClosed}>
-              <option value="open">Open</option><option value="on_hold">On hold</option><option value="closed">Closed</option><option value="draft">Draft</option>
-              {/* 'paused' is an auto-set lifecycle state; shown only when the role is already paused. */}
-              {f.status === 'paused' && <option value="paused">Paused</option>}
-            </select>
+            <SearchSelect
+              value={f.status}
+              onChange={setKey('status')}
+              disabled={isClosed}
+              allowCustom={false}
+              options={[
+                { value: 'open', label: 'Open' },
+                { value: 'on_hold', label: 'On hold' },
+                { value: 'closed', label: 'Closed' },
+                { value: 'draft', label: 'Draft' },
+                // 'paused' is an auto-set lifecycle state; offered only when already paused.
+                ...(f.status === 'paused' ? [{ value: 'paused', label: 'Paused' }] : []),
+              ]}
+            />
           </Field>
         </div>
 
@@ -133,16 +138,10 @@ export default function EditJobModal({ role, onClose, onSaved }) {
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team</h3>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Field label="Hiring manager">
-              <select className={inputClass} value={f.hiring_manager} onChange={set('hiring_manager')}>
-                <option value="">Select…</option>
-                {teamOpts.hm.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              <SearchSelect value={f.hiring_manager} onChange={setKey('hiring_manager')} options={teamOpts.hm} placeholder="Select…" searchPlaceholder="Search people…" allowCustom={false} />
             </Field>
             <Field label="Recruiter">
-              <select className={inputClass} value={f.recruiter} onChange={set('recruiter')}>
-                <option value="">Select…</option>
-                {teamOpts.rec.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              <SearchSelect value={f.recruiter} onChange={setKey('recruiter')} options={teamOpts.rec} placeholder="Select…" searchPlaceholder="Search people…" allowCustom={false} />
             </Field>
             <Field label="Panelists">
               <MultiSelect options={teamOpts.panel} value={f.panelists} onChange={setKey('panelists')} placeholder="Select panelists…" />

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { Home, Briefcase, Menu, X, Settings, Users, Megaphone, BarChart3, FileText, Rocket, ClipboardList, LogOut } from 'lucide-react'
-import { IconButton, Avatar } from '../../ui'
+import { Home, Briefcase, Menu, X, Settings, Users, Megaphone, BarChart3, FileText, Rocket, ClipboardList, LogOut, Handshake } from 'lucide-react'
+import { IconButton, Avatar, cx } from '../../ui'
 import { useAuth } from '../../contexts/auth'
 
 export const NAV = [
@@ -9,10 +9,19 @@ export const NAV = [
   { to: '/roles', label: 'Jobs', icon: Briefcase },
   { to: '/distribution', label: 'Distribution', icon: Megaphone },
   { to: '/candidates', label: 'Talent Pool', icon: Users },
+  { to: '/partners', label: 'Vendors & Colleges', icon: Handshake },
   { to: '/assessments', label: 'Assessments', icon: ClipboardList },
   { to: '/offer-docs', label: 'Offer & Docs', icon: FileText },
   { to: '/onboarding', label: 'Onboarding', icon: Rocket },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
+]
+
+// Data-dense routes (tables, boards, charts) get the same 1600px canvas the job detail already
+// uses. A 1152px (max-w-6xl) column left most of a wide monitor empty while every table below it
+// scrolled horizontally. Text/form pages (Home, Settings) keep the narrower, readable measure.
+const WIDE_ROUTES = [
+  '/roles', '/candidates', '/partners', '/distribution',
+  '/assessments', '/offer-docs', '/onboarding', '/analytics',
 ]
 
 function NavRow({ n, onNavigate }) {
@@ -94,6 +103,7 @@ export default function AppShell({ children }) {
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
 
   const isJobDetail = /^\/roles\/\d+/.test(location.pathname)
+  const isWide = WIDE_ROUTES.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`))
   const pageLabel = NAV.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to)))?.label
     || (location.pathname.startsWith('/settings') ? 'Settings' : isJobDetail ? 'Job detail' : 'Page')
 
@@ -121,7 +131,13 @@ export default function AppShell({ children }) {
         </header>
 
         <main className={isJobDetail ? 'flex flex-1 flex-col overflow-hidden px-2 py-2 sm:px-3 lg:px-4 lg:py-3' : 'flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 lg:py-8'}>
-          <div className={isJobDetail ? 'mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col' : 'mx-auto max-w-6xl'}>{children}</div>
+          <div
+            className={isJobDetail
+              ? 'mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col'
+              : cx('mx-auto w-full', isWide ? 'max-w-[1600px]' : 'max-w-6xl')}
+          >
+            {children}
+          </div>
         </main>
       </div>
     </div>

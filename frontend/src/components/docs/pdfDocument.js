@@ -211,9 +211,21 @@ function letterhead(entityKey, brandName) {
         width: 'auto',
         alignment: 'right',
         stack: [
-          { text: brandName || e.name, fontSize: 8.5, bold: true, color: C.ink },
-          { text: e.addr, fontSize: 6.4, color: '#4B5563', margin: [0, 2, 0, 0] },
-          { text: e.web, fontSize: 6.6, bold: true, color: C.ink, margin: [0, 2, 0, 0] },
+          {
+            columns: [
+              { width: '*', stack: [
+                { text: brandName || e.name, fontSize: 8.5, bold: true, color: C.ink, alignment: 'right' },
+                { text: e.addr, fontSize: 6.4, color: '#4B5563', alignment: 'right', margin: [0, 2, 0, 0] },
+              ] },
+              { width: 24, svg: PIN_SVG, margin: [4, 2, 0, 0] },
+            ],
+          },
+          {
+            columns: [
+              { width: '*', text: e.web, fontSize: 6.6, bold: true, color: C.ink, alignment: 'right', margin: [0, 3, 0, 0] },
+              { width: 24, svg: GLOBE_SVG, margin: [4, 1, 0, 0] },
+            ],
+          },
         ],
         margin: [0, 2, 0, 0],
       },
@@ -243,19 +255,45 @@ function pageBackground() {
   })
 }
 
-/**
- * Render a document to a PDF and resolve with its base64 payload (no data: prefix), ready to be
- * posted to the send-email endpoint.
- */
-export async function documentToPdfBase64(doc) {
+const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="15" viewBox="0 0 24 15"><rect x="0" y="0" width="24" height="15" rx="7.5" fill="#E9ECEF"/><path transform="translate(8.4,2.2) scale(0.44)" d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="#C4302B"/></svg>`
+const GLOBE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="15" viewBox="0 0 24 15"><rect x="0" y="0" width="24" height="15" rx="7.5" fill="#E9ECEF"/><g transform="translate(8.4,2.2) scale(0.44)" fill="none" stroke="#6B7280" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.8 2.6 15.2 0 18M12 3c-2.6 2.8-2.6 15.2 0 18"/></g></svg>`
+
+/** The full pdfmake document definition — one builder shared by the emailed attachment, the
+ *  page-by-page preview and any future export, so they cannot diverge. */
+async function buildDefinition(doc, bodyFont) {
+  let content
+  if (doc.content_html) {
+    // A hand-edited letter: its blocks are stale, the edited HTML is the document. Convert it so
+    // the preview and the emailed copy carry the edits.
+    const { default: htmlToPdfmake } = await import('html-to-pdfmake')
+    content = htmlToPdfmake(doc.content_html, { window, defaultStyles: { p: { margin: [0, 3, 0, 3] } } })
+  } else {
+    const blocks = Array.isArray(doc.blocks) ? doc.blocks : []
+    content = blocks.length
+      ? blocks.map(blockToPdf).filter(Boolean)
+      : [{ text: doc.content || '', fontSize: 10.5, lineHeight: 1.3 }]
+  }
+  return {
+    pageSize: 'A4',
+    // 19mm sides / 31mm top / 17mm bottom — the print window's @page box.
+    pageMargins: [54, 88, 54, 48],
+    header: letterhead(doc.entity, doc.brandName),
+    background: pageBackground(),
+    info: { title: doc.title || 'Document' },
+    defaultStyle: { font: bodyFont, fontSize: 10.5, color: C.ink, lineHeight: 1.3 },
+    content,
+  }
+}
+
+async function makePdf(doc) {
   const [{ default: pdfMake }, vfs] = await Promise.all([
     import('pdfmake/build/pdfmake'),
     import('pdfmake/build/vfs_fonts'),
   ])
   pdfMake.vfs = vfs.default?.pdfMake?.vfs || vfs.pdfMake?.vfs || vfs.default || vfs
 
-  // Embed Poppins so the attachment matches the preview; fall back to Roboto if the fetch fails
-  // rather than blocking the send.
+  // Embed Poppins so the output matches the sources; fall back to Roboto if the fetch fails
+  // rather than blocking the render.
   let bodyFont = 'Roboto'
   try {
     const poppins = await loadPoppins()
@@ -274,27 +312,21 @@ export async function documentToPdfBase64(doc) {
     bodyFont = 'Poppins'
   } catch { /* Roboto fallback */ }
 
-  const blocks = Array.isArray(doc.blocks) ? doc.blocks : []
-  const content = blocks.length
-    ? blocks.map(blockToPdf).filter(Boolean)
-    : [{ text: doc.content || '', fontSize: 10.5, lineHeight: 1.3 }]
+  return pdfMake.createPdf(await buildDefinition(doc, bodyFont))
+}
 
-  const definition = {
-    pageSize: 'A4',
-    // 19mm sides / 31mm top / 17mm bottom — the print window's @page box.
-    pageMargins: [54, 88, 54, 48],
-    header: letterhead(doc.entity, doc.brandName),
-    background: pageBackground(),
-    info: { title: doc.title || 'Document' },
-    defaultStyle: { font: bodyFont, fontSize: 10.5, color: C.ink, lineHeight: 1.3 },
-    content,
-  }
-
+/** The document as base64 (no data: prefix), for the send-email endpoint. */
+export async function documentToPdfBase64(doc) {
+  const pdf = await makePdf(doc)
   return new Promise((resolve, reject) => {
-    try {
-      pdfMake.createPdf(definition).getBase64((data) => resolve(data))
-    } catch (err) {
-      reject(err)
-    }
+    try { pdf.getBase64(resolve) } catch (err) { reject(err) }
+  })
+}
+
+/** The document as an object URL, for the page-by-page preview iframe. Caller revokes it. */
+export async function documentToPdfBlobUrl(doc) {
+  const pdf = await makePdf(doc)
+  return new Promise((resolve, reject) => {
+    try { pdf.getBlob((blob) => resolve(URL.createObjectURL(blob))) } catch (err) { reject(err) }
   })
 }

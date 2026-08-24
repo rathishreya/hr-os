@@ -11,15 +11,16 @@ import Dashboard from './pages/Dashboard'
 import Roles from './pages/Roles'
 import RoleDetail from './pages/RoleDetail'
 import Candidates from './pages/Candidates'
+import Partners from './pages/Partners'
 import Distribution from './pages/Distribution'
 import Settings from './pages/Settings'
 import Assessments from './pages/Assessments'
 import OfferDocs from './pages/OfferDocs'
 import Onboarding from './pages/Onboarding'
 import ResetPassword from './pages/ResetPassword'
+import PartnerIntake from './pages/PartnerIntake'
 import NotFound from './pages/NotFound'
 
-// Heavy / standalone pages — loaded on demand.
 const Analytics = lazy(() => import('./pages/Analytics'))           // recharts
 const VideoInterview = lazy(() => import('./pages/VideoInterview')) // candidate-facing, standalone (no sidebar)
 
@@ -47,6 +48,7 @@ function AppRoutes() {
           <Route path="/roles" element={<Roles />} />
           <Route path="/roles/:id" element={<RoleDetail />} />
           <Route path="/candidates" element={<Candidates />} />
+          <Route path="/partners" element={<Partners />} />
           <Route path="/distribution" element={<Distribution />} />
           <Route path="/assessments" element={<Assessments />} />
           <Route path="/offer-docs" element={<OfferDocs />} />
@@ -64,15 +66,15 @@ export default function App() {
   return (
     <ToastProvider>
       <AuthProvider>
-        <ErrorBoundary>
-          <Routes>
-            {/* Public candidate interview — no recruiter shell, no login */}
-            <Route path="/interview/:appId" element={<Suspense fallback={<Loading />}><VideoInterview /></Suspense>} />
-            {/* Public password-reset link target (no login) */}
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/*" element={<RequireAuth><AppRoutes /></RequireAuth>} />
-          </Routes>
-        </ErrorBoundary>
+        <Routes>
+          {/* Public candidate interview — no recruiter shell, no login */}
+          <Route path="/interview/:appId" element={<Suspense fallback={<Loading />}><VideoInterview /></Suspense>} />
+          {/* Public password-reset link target (no login) */}
+          <Route path="/reset-password" element={<ResetPassword />} />
+          {/* Public partner (vendor / college) self-registration form (no login) */}
+          <Route path="/partner-intake" element={<PartnerIntake />} />
+          <Route path="/*" element={<RequireAuth><AppRoutes /></RequireAuth>} />
+        </Routes>
       </AuthProvider>
     </ToastProvider>
   )

@@ -46,7 +46,7 @@ export const CURRENCIES = [
 // EZ's actual departments (de-duplicated from the org list).
 export const DEPARTMENT_SEEDS = [
   'Delivery', 'Technology', 'Sales', 'Branding and Marketing', 'People',
-  'Administration', 'CEOs Office', 'COOs Office', 'Director Office',
+  'Administration', 'Finance and Accounting', 'CEOs Office', 'COOs Office', 'Director Office',
 ]
 
 export const LOCATION_SEEDS = [
@@ -64,12 +64,25 @@ export const TEAM_SEEDS = [
   'Administration', 'Human Resources', 'People', 'IT', 'Audio Visual Team', 'Animation Videos',
   'Language Services', 'Arabic Language Team', 'French Language Team', 'German Language Team',
   'Chinese Language Team', 'Urdu Language Team', 'Hindi Language Team', 'Turkish Language Team',
-  'Other Language Team', 'CEOs Office', 'COOs Office', 'Director Office',
+  'Other Language Team', 'Product Design', 'Chinese Visual Graphics Team',
+  'CEOs Office', 'COOs Office', 'Director Office',
 ]
 
 // Whether a requisition is a brand-new headcount or backfilling someone who left.
 export const HIRE_TYPES = [
   { value: 'new', label: 'New' },
   { value: 'replacement', label: 'Replacement' },
+]
+
+export const PRIORITY_OPTS = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+]
+
+export const WORK_MODE_OPTS = [
+  { value: 'onsite', label: 'Onsite' },
+  { value: 'hybrid', label: 'Hybrid' },
+  { value: 'remote', label: 'Remote' },
 ]
 

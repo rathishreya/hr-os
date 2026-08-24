@@ -460,7 +460,7 @@ export default function JobApplicationsWorkspace({
     switch (colId) {
       case 'select':
         return (
-          <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} onClick={(e) => e.stopPropagation()} className="rounded border-slate-300 text-brand-600" />
+          <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} onClick={(e) => e.stopPropagation()} className="h-4 w-4 cursor-pointer rounded border-slate-300 text-brand-600" />
         )
       case 'idx':
         return <span className="tabular-nums text-xs text-slate-400">{start + index + 1}</span>
@@ -733,7 +733,7 @@ export default function JobApplicationsWorkspace({
                         )}
                       >
                         {col.id === 'select' ? (
-                          <input type="checkbox" checked={pageRows.length > 0 && selectedIds.size === pageRows.length} onChange={toggleSelectAll} className="rounded border-[#b8b0d4] text-brand-600" />
+                          <input type="checkbox" checked={pageRows.length > 0 && selectedIds.size === pageRows.length} onChange={toggleSelectAll} className="h-4 w-4 cursor-pointer rounded border-[#b8b0d4] text-brand-600" />
                         ) : (
                           <span className="inline-flex items-center gap-1">
                             <span

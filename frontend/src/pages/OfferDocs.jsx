@@ -6,7 +6,7 @@ import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useColumnFilters, ColumnFilter, distinctValues } from '../components/tableFilters'
 import DocumentPaper from '../components/docs/DocumentPaper'
-import { printDocument } from '../components/docs/printDocument'
+import { documentToPdfBlobUrl } from '../components/docs/pdfDocument'
 import { sanitizeHtml } from '../components/docs/docHtml'
 import EmailDocumentModal from '../components/docs/EmailDocumentModal'
 
@@ -685,7 +685,7 @@ export default function OfferDocs() {
             </>
           ) : (
             <>
-              <Button variant="ghost" onClick={() => { if (!printDocument(view)) toast('Allow pop-ups to print / save as PDF', 'error') }}><Printer className="h-4 w-4" /> Print / PDF</Button>
+              <Button variant="ghost" onClick={() => { documentToPdfBlobUrl(view).then((u) => { if (!window.open(u, '_blank')) toast('Allow pop-ups to open the PDF', 'error') }).catch((e) => toast(e.message, 'error')) }}><Printer className="h-4 w-4" /> Print / PDF</Button>
               <Button variant="ghost" onClick={() => copy(view)}><Copy className="h-4 w-4" /> Copy</Button>
               {view.status !== 'approved' && !view.move_to_onboarding && (
                 <Button onClick={() => setEditing(true)} title="Type directly on the letter"><PenLine className="h-4 w-4" /> Edit letter</Button>

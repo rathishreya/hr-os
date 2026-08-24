@@ -314,7 +314,7 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
         // (suggested_role + suggested_role_score), independent of where they've actually applied.
         if (!row.suggested_role) return <span className="text-slate-300">—</span>
         const pct = row.suggested_role_score
-        const tip = `AI best-fit open role: ${row.suggested_role}${pct != null ? ` · ${pct}% match` : ''}`
+        const tip = `AI best-fit designation: ${row.suggested_role}${pct != null ? ` · ${pct}% match` : ''}`
         const inner = (
           <span
             className="inline-flex max-w-[160px] items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700"

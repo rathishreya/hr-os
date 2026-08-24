@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Plus, Trash2, Check } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Plus, Trash2, Check, ChevronDown, Search } from 'lucide-react'
 import { Button, Field, Spinner, inputClass, cx } from '../../ui'
 import { CURRENCIES, DEPARTMENT_SEEDS, LOCATION_SEEDS, TEAM_SEEDS, INTERVIEW_TYPES } from '../../constants'
+import { DESIGNATION_TITLES, DESIGNATION_BY_TITLE } from '../../designations'
 import { api } from '../../api'
 
 // Shared field components for the create + edit job forms (single source of truth).
@@ -48,6 +50,142 @@ export function ComboField({ label, hint, value, onChange, options, placeholder,
         {options.map((o) => <option key={o} value={o} />)}
       </datalist>
     </Field>
+  )
+}
+
+// Shared searchable dropdown used for ALL the "pick a value from a list" fields (Role, Department,
+// Team, Location) so they look identical. Not a native <select> (which renders a long list that
+// overflows the page): a button opens a contained, scrollable popover in a portal with a search
+// box. When allowCustom is set, typing a value not on the list and choosing "Use …" (or Enter)
+// sets it as a free-text value.
+export function SearchSelect({ value, onChange, options, placeholder = 'Select…', searchPlaceholder = 'Search…', allowCustom = true, disabled = false }) {
+  // Options may be plain strings or {value, label}. Normalize to objects so one component serves
+  // every dropdown (roles, departments, teams, and small labeled enums like Priority/Work mode).
+  const opts = useMemo(() => (options || []).map((o) => (typeof o === 'string' ? { value: o, label: o } : o)), [options])
+  const showSearch = opts.length > 7 // no search box for short lists — a search on 3 options is odd
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const btnRef = useRef(null)
+  const popRef = useRef(null)
+  const [pos, setPos] = useState(null)
+
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return
+    const r = btnRef.current.getBoundingClientRect()
+    // Clamp so the ~340px popover always fits in the viewport instead of spilling past the bottom.
+    setPos({ top: Math.min(r.bottom + 4, window.innerHeight - 348), left: r.left, width: r.width })
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onDown = (e) => { if (!popRef.current?.contains(e.target) && !btnRef.current?.contains(e.target)) setOpen(false) }
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
+    // Close when the PAGE scrolls (the fixed popover would detach from its anchor), but NOT when the
+    // user scrolls inside the popover's own list.
+    const onScroll = (e) => { if (!popRef.current?.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [open])
+
+  const shown = useMemo(() => {
+    const n = q.trim().toLowerCase()
+    return n ? opts.filter((o) => o.label.toLowerCase().includes(n)) : opts
+  }, [q, opts])
+  const exact = opts.some((o) => o.label.toLowerCase() === q.trim().toLowerCase())
+  const current = opts.find((o) => o.value === value)
+  const display = current ? current.label : value // a custom (free-text) value shows as-is
+
+  const close = () => { setOpen(false); setQ('') }
+  const pick = (o) => { onChange(o.value); close() }
+  const pickCustom = () => { const v = q.trim(); if (v) onChange(v); close() }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={disabled}
+        onClick={() => { if (disabled) return; setQ(''); setOpen((o) => !o) }}
+        className={cx(inputClass, 'flex items-center justify-between gap-2 text-left', disabled && 'cursor-not-allowed opacity-60')}
+      >
+        <span className={cx('truncate', display ? 'text-slate-800' : 'text-slate-400')}>{display || placeholder}</span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+      </button>
+      {open && pos && createPortal(
+        <div
+          ref={popRef}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
+          className="z-[120] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl menu-in"
+        >
+          {showSearch && (
+            <div className="border-b border-slate-100 p-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  autoFocus
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); if (shown.length) pick(shown[0]); else if (allowCustom) pickCustom() }
+                    else if (e.key === 'Escape') { e.stopPropagation(); close() } // don't let a parent Modal also close
+                  }}
+                  placeholder={searchPlaceholder}
+                  className="w-full rounded-md border border-slate-200 bg-white py-1 pl-8 pr-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                />
+              </div>
+            </div>
+          )}
+          <ul className="max-h-60 overflow-auto p-1">
+            {shown.length === 0 && !q.trim() && <li className="px-2 py-2 text-xs text-slate-400">No options</li>}
+            {shown.map((o) => (
+              <li key={o.value}>
+                <button
+                  type="button"
+                  onClick={() => pick(o)}
+                  className={cx('flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-slate-50',
+                    o.value === value ? 'font-medium text-brand-700' : 'text-slate-700')}
+                >
+                  <span className="truncate">{o.label}</span>
+                  {o.value === value && <Check className="h-3.5 w-3.5 shrink-0 text-brand-600" />}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {allowCustom && q.trim() && !exact && (
+            <div className="border-t border-slate-100 p-1">
+              <button type="button" onClick={pickCustom} className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm text-brand-700 hover:bg-brand-50">
+                <Plus className="h-3.5 w-3.5" /> Use “{q.trim()}”
+              </button>
+            </div>
+          )}
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
+
+// Role/Designation picker: SearchSelect over the fixed EZ designation list. onChange(title, record)
+// — record ({dept, team, autofill}) lets the parent auto-fill Department/Team when the title maps
+// to exactly one of each.
+export function DesignationSelect({ value, onChange, placeholder = 'Select a role…', allowCustom = true }) {
+  return (
+    <SearchSelect
+      value={value}
+      onChange={(t) => onChange(t, DESIGNATION_BY_TITLE[t])}
+      options={DESIGNATION_TITLES}
+      placeholder={placeholder}
+      searchPlaceholder="Search roles…"
+      allowCustom={allowCustom}
+    />
   )
 }
 

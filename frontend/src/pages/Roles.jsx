@@ -7,8 +7,8 @@ import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import JobsListTable from '../components/jobs/JobsListTable'
 import MultiSelect from '../components/MultiSelect'
-import { SkillChecklist, ApplicationQuestionsBuilder, InterviewTypesPicker, BudgetCtcField, ComboField, useFieldOptions, mergeSkills, useTeamOptions } from '../components/role/jobFormParts'
-import { HIRE_TYPES } from '../constants'
+import { SkillChecklist, ApplicationQuestionsBuilder, InterviewTypesPicker, BudgetCtcField, SearchSelect, DesignationSelect, useFieldOptions, mergeSkills, useTeamOptions } from '../components/role/jobFormParts'
+import { HIRE_TYPES, PRIORITY_OPTS, WORK_MODE_OPTS } from '../constants'
 
 const VIEW_KEY = 'hr-os-jobs-view'
 
@@ -250,7 +250,9 @@ function NewRoleForm({ onCreated, onCancel }) {
   }
 
   return (
-    <Card className="p-6">
+    // The Jobs page runs full-width for the list table; the form keeps a readable measure so
+    // its inputs don't stretch across the whole monitor.
+    <Card className="max-w-5xl p-6">
       <form onSubmit={submit} className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <DuplicateFromPicker onPick={prefillFrom} />
@@ -261,46 +263,35 @@ function NewRoleForm({ onCreated, onCancel }) {
           </label>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Role *"><input required className={inputClass} value={f.position} onChange={set('position')} placeholder="Senior Backend Engineer" /></Field>
+          <Field label="Role *" hint="Department & Team auto-fill for single-team roles">
+            <DesignationSelect
+              value={f.position}
+              onChange={(title, rec) => setF((p) => ({ ...p, position: title, ...(rec?.autofill ? { department: rec.dept, team: rec.team } : {}) }))}
+              placeholder="Select a role…"
+            />
+          </Field>
           <Field label="Department *">
-            <select className={inputClass} value={f.department} onChange={set('department')}>
-              <option value="">Select a department…</option>
-              {deptOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
+            <SearchSelect value={f.department} onChange={(v) => setF((p) => ({ ...p, department: v }))} options={deptOptions} placeholder="Select a department…" searchPlaceholder="Search departments…" allowCustom={false} />
           </Field>
           <Field label="Team *">
-            <select className={inputClass} value={f.team} onChange={set('team')}>
-              <option value="">Select a team…</option>
-              {teamFieldOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
+            <SearchSelect value={f.team} onChange={(v) => setF((p) => ({ ...p, team: v }))} options={teamFieldOptions} placeholder="Select a team…" searchPlaceholder="Search teams…" allowCustom={false} />
           </Field>
           <Field label="New / Replacement *" hint="Is this new headcount or backfilling a leaver?">
-            <select className={inputClass} value={f.hire_type} onChange={set('hire_type')}>
-              {HIRE_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <SearchSelect value={f.hire_type} onChange={(v) => setF((p) => ({ ...p, hire_type: v }))} options={HIRE_TYPES} allowCustom={false} />
           </Field>
           <div className="sm:col-span-2">
             <BudgetCtcField label="Budget / CTC *" value={f.budget_ctc} onChange={(v) => setF((p) => ({ ...p, budget_ctc: v }))} />
           </div>
-          <ComboField
-            label="Location *"
-            listId="location-options"
-            value={f.location}
-            onChange={(v) => setF((p) => ({ ...p, location: v }))}
-            options={locationOptions}
-            placeholder="Bengaluru — pick or type to add"
-          />
+          <Field label="Location *">
+            <SearchSelect value={f.location} onChange={(v) => setF((p) => ({ ...p, location: v }))} options={locationOptions} placeholder="Select a location…" searchPlaceholder="Search or add a city…" allowCustom />
+          </Field>
           <Field label="Min YOE *"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_min} onChange={set('yoe_min')} /></Field>
           <Field label="Max YOE *"><input type="number" min="0" step="0.5" className={inputClass} value={f.yoe_max} onChange={set('yoe_max')} /></Field>
           <Field label="Priority">
-            <select className={inputClass} value={f.priority} onChange={set('priority')}>
-              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
-            </select>
+            <SearchSelect value={f.priority} onChange={(v) => setF((p) => ({ ...p, priority: v }))} options={PRIORITY_OPTS} allowCustom={false} />
           </Field>
           <Field label="Work mode">
-            <select className={inputClass} value={f.work_mode} onChange={set('work_mode')}>
-              <option value="onsite">Onsite</option><option value="hybrid">Hybrid</option><option value="remote">Remote</option>
-            </select>
+            <SearchSelect value={f.work_mode} onChange={(v) => setF((p) => ({ ...p, work_mode: v }))} options={WORK_MODE_OPTS} allowCustom={false} />
           </Field>
           <Field label="Hiring deadline"><input type="date" className={inputClass} value={f.hiring_deadline} onChange={set('hiring_deadline')} /></Field>
           <Field label="Hiring start date" hint="When the team begins actively sourcing candidates"><input type="date" className={inputClass} value={f.start_hiring_date} onChange={set('start_hiring_date')} /></Field>
@@ -314,16 +305,10 @@ function NewRoleForm({ onCreated, onCancel }) {
           <p className="text-xs text-slate-400">Mapped from people in Settings → Users &amp; roles.</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Field label="Hiring manager *">
-              <select className={inputClass} value={f.hiring_manager} onChange={set('hiring_manager')}>
-                <option value="">Select…</option>
-                {teamOpts.hm.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              <SearchSelect value={f.hiring_manager} onChange={(v) => setF((p) => ({ ...p, hiring_manager: v }))} options={teamOpts.hm} placeholder="Select…" searchPlaceholder="Search people…" allowCustom={false} />
             </Field>
             <Field label="Recruiter *">
-              <select className={inputClass} value={f.recruiter} onChange={set('recruiter')}>
-                <option value="">Select…</option>
-                {teamOpts.rec.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              <SearchSelect value={f.recruiter} onChange={(v) => setF((p) => ({ ...p, recruiter: v }))} options={teamOpts.rec} placeholder="Select…" searchPlaceholder="Search people…" allowCustom={false} />
             </Field>
             <Field label="Panelists">
               <MultiSelect

@@ -5,6 +5,7 @@ import { Card, Button, Spinner, EmptyState, PageHeader, Field, Badge, Modal, inp
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { TEAM_SEEDS, DEPARTMENT_SEEDS } from '../constants'
+import { DesignationSelect, SearchSelect } from '../components/role/jobFormParts'
 
 function fmtSize(n) {
   if (!n) return ''
@@ -202,14 +203,14 @@ function EditAssessmentModal({ assessment, scopeOptions, onClose, onSaved }) {
         <Field label="Name *"><input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Team">
-            <ScopeSelect value={team} onChange={setTeam} options={scopeOptions.teams} placeholder="Select a team…" allowCustom={false} />
+            <SearchSelect value={team} onChange={setTeam} options={scopeOptions.teams} placeholder="Select a team…" searchPlaceholder="Search teams…" allowCustom={false} />
           </Field>
           <Field label="Department" hint="Used to auto-suggest this assessment for matching jobs">
-            <ScopeSelect value={department} onChange={setDepartment} options={scopeOptions.departments} placeholder="Select a department…" allowCustom={false} />
+            <SearchSelect value={department} onChange={setDepartment} options={scopeOptions.departments} placeholder="Select a department…" searchPlaceholder="Search departments…" allowCustom={false} />
           </Field>
         </div>
         <Field label="Role">
-          <ScopeSelect value={role} onChange={setRole} options={scopeOptions.roles} placeholder="Select a role…" />
+          <DesignationSelect value={role} onChange={(title, rec) => { setRole(title); if (rec?.autofill) { setTeam(rec.team); setDepartment(rec.dept) } }} placeholder="Select a role…" />
         </Field>
         <Field label="Description"><input className={inputClass} value={desc} onChange={(e) => setDesc(e.target.value)} /></Field>
 
@@ -324,7 +325,9 @@ export default function Assessments() {
     <div className="space-y-6">
       <PageHeader title="Assessments" subtitle="Upload a test or take-home task once, then attach it to an “Assessment” interview round or send it to candidates (single or in bulk)." />
 
-      <Card className="p-5">
+      {/* The page runs full-width for the assessment grid; the upload form keeps a readable
+          measure so its inputs don't stretch across the whole monitor. */}
+      <Card className="max-w-5xl p-5">
         <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-slate-800">
           <Upload className="h-4 w-4 text-brand-600" /> Add assessment
         </h3>
@@ -334,14 +337,14 @@ export default function Assessments() {
             <input ref={fileRef} type="file" multiple className={inputClass} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
           </Field>
           <Field label="Team *">
-            <ScopeSelect value={team} onChange={setTeam} options={scopeOptions.teams} placeholder="Select a team…" allowCustom={false} />
+            <SearchSelect value={team} onChange={setTeam} options={scopeOptions.teams} placeholder="Select a team…" searchPlaceholder="Search teams…" allowCustom={false} />
           </Field>
           <Field label="Department *" hint="A job in this department can auto-suggest this assessment">
-            <ScopeSelect value={department} onChange={setDepartment} options={scopeOptions.departments} placeholder="Select a department…" allowCustom={false} />
+            <SearchSelect value={department} onChange={setDepartment} options={scopeOptions.departments} placeholder="Select a department…" searchPlaceholder="Search departments…" allowCustom={false} />
           </Field>
           <div className="sm:col-span-2">
             <Field label="Role *">
-              <ScopeSelect value={role} onChange={setRole} options={scopeOptions.roles} placeholder="Select a role…" />
+              <DesignationSelect value={role} onChange={(title, rec) => { setRole(title); if (rec?.autofill) { setTeam(rec.team); setDepartment(rec.dept) } }} placeholder="Select a role…" />
             </Field>
           </div>
           <div className="sm:col-span-2">

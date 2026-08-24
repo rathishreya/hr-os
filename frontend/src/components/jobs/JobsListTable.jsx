@@ -186,10 +186,15 @@ export default function JobsListTable({ rows, onStatusChange }) {
     }
   }
 
-  function SortHead({ label, col, filterKey }) {
+  // `align` must match the alignment of the cells below it — a left-aligned header over
+  // centred values is what makes the grid look staggered.
+  function SortHead({ label, col, filterKey, align = 'left' }) {
     const active = sort.key === col
     return (
-      <th className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
+      <th className={cx(
+        'whitespace-nowrap px-3 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-500',
+        align === 'center' ? 'text-center' : 'text-left',
+      )}>
         <span className="inline-flex items-center gap-1">
           <span className="inline-flex cursor-pointer items-center gap-1 hover:text-brand-700" onClick={() => toggleSort(col)}>
             {label}
@@ -211,9 +216,9 @@ export default function JobsListTable({ rows, onStatusChange }) {
             <tr className="border-b border-slate-200">
               <SortHead label="Job ID" col="id" filterKey="id" />
               <SortHead label="Charge code" col="charge_code" filterKey="charge_code" />
-              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500">JD</th>
-              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Status {colFilter('status')}</span></th>
-              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500" title="AI-validation OK — a green check means the JD is generated and the AI raised no flags; an empty circle means no JD yet or open AI flags to review.">
+              <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">JD</th>
+              <th className="px-2 py-3 text-left text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Status {colFilter('status')}</span></th>
+              <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500" title="AI-validation OK — a green check means the JD is generated and the AI raised no flags; an empty circle means no JD yet or open AI flags to review.">
                 <span className="inline-flex cursor-help items-center gap-1">OK</span>
               </th>
               <SortHead label="Job Title" col="position" filterKey="position" />
@@ -223,10 +228,10 @@ export default function JobsListTable({ rows, onStatusChange }) {
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Shortlisted</th>
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Interview</th>
               <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Offer</th>
-              <SortHead label="Exp (yrs)" col="yoe_max" filterKey="yoe" />
+              <SortHead label="Exp (yrs)" col="yoe_max" filterKey="yoe" align="center" />
               <SortHead label="Min Salary" col="salary_min" filterKey="salary_min" />
               <SortHead label="Max Salary" col="salary_max" filterKey="salary_max" />
-              <SortHead label="Ageing" col="ageing_days" filterKey="ageing" />
+              <SortHead label="Ageing" col="ageing_days" filterKey="ageing" align="center" />
               <th className="px-3 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Hiring Mgr {colFilter('hiring_manager')}</span></th>
               <th className="px-3 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Recruiter {colFilter('recruiter')}</span></th>
               <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Type {colFilter('employment_type')}</span></th>
