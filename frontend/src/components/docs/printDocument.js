@@ -10,13 +10,14 @@ export function printDocument(doc) {
   const body = documentBodyHtml(doc)
 
   // Self-hosted Poppins; absolute URLs because the print window is a fresh about:blank document.
+  const script = `@font-face{ font-family:'Great Vibes'; src:url('${location.origin}/fonts/GreatVibes-Regular.ttf') format('truetype'); }`
   const fonts = ['Regular:400:normal', 'SemiBold:600:normal', 'Italic:400:italic', 'SemiBoldItalic:600:italic']
     .map((spec) => {
       const [file, weight, style] = spec.split(':')
       const range = weight === '600' ? '600 800' : '100 500'
       return `@font-face{ font-family:'Poppins'; src:url('${location.origin}/fonts/Poppins-${file}.ttf') format('truetype'); font-weight:${range}; font-style:${style}; }`
     })
-    .join('\n  ')
+    .join('\n  ') + '\n  ' + script
 
   const html = `<!doctype html><html><head><meta charset="utf-8"/><title>${esc(doc.title || 'Document')}</title>
 <style>
@@ -53,6 +54,7 @@ export function printDocument(doc) {
   .notes .nt{ font-weight:600; font-size:7pt; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; margin-bottom:3px; }
   .notes ul{ font-size:8pt; color:#4b5563; margin:0; padding-left:16px; }
 
+  p.script,.sig .scr{ font-family:'Great Vibes',cursive; font-size:20pt; line-height:1.1; margin:2px 0; }
   .sig{ display:flex; gap:48px; margin-top:22px; break-inside:avoid; }
   .sig .col{ min-width:62mm; } .sig .line{ border-bottom:1px solid #475569; height:24px; padding-left:2px; }
   .sig .lbl{ font-size:7.5pt; text-transform:uppercase; font-weight:600; color:#475569; margin-top:3px; }

@@ -17,14 +17,14 @@ import { ENTITY, C, logoSvg } from './letterhead'
 let poppinsVfs = null
 async function loadPoppins() {
   if (poppinsVfs) return poppinsVfs
-  const styles = ['Regular', 'SemiBold', 'Italic', 'SemiBoldItalic']
-  const entries = await Promise.all(styles.map(async (n) => {
-    const res = await fetch(`/fonts/Poppins-${n}.ttf`)
+  const files = ['Poppins-Regular', 'Poppins-SemiBold', 'Poppins-Italic', 'Poppins-SemiBoldItalic', 'GreatVibes-Regular']
+  const entries = await Promise.all(files.map(async (n) => {
+    const res = await fetch(`/fonts/${n}.ttf`)
     if (!res.ok) throw new Error(`font ${n}: HTTP ${res.status}`)
     const buf = new Uint8Array(await res.arrayBuffer())
     let bin = ''
     for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000))
-    return [`Poppins-${n}.ttf`, btoa(bin)]
+    return [`${n}.ttf`, btoa(bin)]
   }))
   poppinsVfs = Object.fromEntries(entries)
   return poppinsVfs
@@ -171,12 +171,15 @@ function blockToPdf(b) {
         layout: { hLineColor: () => RULE, vLineColor: () => RULE, hLineWidth: () => 0.5, vLineWidth: () => 0.5 },
         margin: [0, 4, 0, 8],
       }
+    case 'script':
+      return { text: b.text || '', font: 'GreatVibes', fontSize: 20, lineHeight: 1, margin: [0, 4, 0, 2] }
     case 'signature':
       return {
         columns: (b.columns || []).map((c) => ({
           width: '*',
           stack: [
-            { text: c.name || ' ', fontSize: 10.5, bold: true, margin: [0, 14, 0, 2] },
+            ...(c.script ? [{ text: c.script, font: 'GreatVibes', fontSize: 17, lineHeight: 1, margin: [0, 6, 0, 0] }] : []),
+            { text: c.name || ' ', fontSize: 10.5, bold: true, margin: [0, c.script ? 2 : 14, 0, 2] },
             { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 0.7, lineColor: '#6b7280' }] },
             { text: c.label || '', fontSize: 7.5, bold: true, color: MUTED, margin: [0, 3, 0, 0] },
           ],
@@ -308,9 +311,26 @@ async function makePdf(doc) {
         normal: 'Poppins-Regular.ttf', bold: 'Poppins-SemiBold.ttf',
         italics: 'Poppins-Italic.ttf', bolditalics: 'Poppins-SemiBoldItalic.ttf',
       },
+      GreatVibes: {
+        normal: 'GreatVibes-Regular.ttf', bold: 'GreatVibes-Regular.ttf',
+        italics: 'GreatVibes-Regular.ttf', bolditalics: 'GreatVibes-Regular.ttf',
+      },
     }
     bodyFont = 'Poppins'
-  } catch { /* Roboto fallback */ }
+  } catch {
+    // Roboto fallback — and script blocks reference GreatVibes by name, so map that face to
+    // Roboto italic rather than letting an unregistered font crash the render.
+    pdfMake.fonts = {
+      Roboto: {
+        normal: 'Roboto-Regular.ttf', bold: 'Roboto-Medium.ttf',
+        italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-MediumItalic.ttf',
+      },
+      GreatVibes: {
+        normal: 'Roboto-Italic.ttf', bold: 'Roboto-Italic.ttf',
+        italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-Italic.ttf',
+      },
+    }
+  }
 
   return pdfMake.createPdf(await buildDefinition(doc, bodyFont))
 }

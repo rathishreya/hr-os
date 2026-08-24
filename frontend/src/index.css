@@ -91,6 +91,7 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 @font-face { font-family: 'Poppins'; src: url('/fonts/Poppins-SemiBold.ttf') format('truetype'); font-weight: 600 800; font-style: normal; font-display: swap; }
 @font-face { font-family: 'Poppins'; src: url('/fonts/Poppins-Italic.ttf') format('truetype'); font-weight: 100 500; font-style: italic; font-display: swap; }
 @font-face { font-family: 'Poppins'; src: url('/fonts/Poppins-SemiBoldItalic.ttf') format('truetype'); font-weight: 600 800; font-style: italic; font-display: swap; }
+@font-face { font-family: 'Great Vibes'; src: url('/fonts/GreatVibes-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
 
 /* On-screen rendering of a document's rich HTML (offer letters/contracts) — mirrors the print CSS
    in printDocument.js so the editor/preview looks like the saved PDF. Poppins body, bordered tables. */
@@ -119,6 +120,7 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 .doc-html .notes { border: 1px solid #cbd5e1; background: #f8fafc; padding: 7px 10px; margin: 6px 0; }
 .doc-html .notes .nt { font-family: Arial, sans-serif; font-weight: 700; font-size: 9px; text-transform: uppercase; letter-spacing: .5px; color: #6b7280; margin-bottom: 3px; }
 .doc-html .notes ul { font-size: 11px; color: #4b5563; margin: 0; padding-left: 16px; }
+.doc-html p.script, .doc-html .sig .scr { font-family: 'Great Vibes', cursive; font-size: 26px; line-height: 1.1; margin: 2px 0; }
 .doc-html .sig { display: flex; flex-wrap: wrap; gap: 40px; margin-top: 22px; }
 .doc-html .sig .col { min-width: 200px; } .doc-html .sig .line { border-bottom: 1px solid #475569; height: 26px; padding-left: 2px; }
 .doc-html .sig .lbl { font-family: Arial, sans-serif; font-size: 10px; text-transform: uppercase; font-weight: 700; color: #475569; margin-top: 3px; }

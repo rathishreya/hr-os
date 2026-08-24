@@ -54,9 +54,24 @@ def comp_block(annual_ctc: int | None, *, extra_notes: list[str] | None = None) 
     return {"type": "comp", "rows": b["rows"], "notes": list(b["notes"]) + list(extra_notes or []), "known": b["known"]}
 
 
-def signature(*columns: tuple[str, str]) -> dict:
-    """Signature strip: one (label, name) per column; an empty name renders a blank rule."""
-    return {"type": "signature", "columns": [{"label": lbl, "name": name} for lbl, name in columns]}
+def signature(*columns: tuple) -> dict:
+    """Signature strip: one (label, name) or (label, name, script) per column. An empty name
+    renders a blank rule; `script` is a handwritten-style signature drawn above the rule, as the
+    source letters carry for the People-team witness."""
+    out = []
+    for col in columns:
+        lbl, name = col[0], col[1]
+        entry = {"label": lbl, "name": name}
+        if len(col) > 2 and col[2]:
+            entry["script"] = str(col[2])
+        out.append(entry)
+    return {"type": "signature", "columns": out}
+
+
+def script(text: str) -> dict:
+    """A handwritten-style signature line (script face) above a typed sign-off, as the source
+    offer letters carry for Divya Anand."""
+    return {"type": "script", "text": str(text)}
 
 
 def table(columns: list[str], rows: list[list[str]], *, align: list[str] | None = None) -> dict:

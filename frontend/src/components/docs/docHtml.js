@@ -71,9 +71,11 @@ export function blockToHtml(b) {
         .join('')
       return `<table class="grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
     }
+    case 'script':
+      return `<p class="script">${esc(b.text)}</p>`
     case 'signature':
       return `<div class="sig">${(b.columns || [])
-        .map((c) => `<div class="col"><div class="line">${esc(c.name)}</div><div class="lbl">${esc(c.label)}</div></div>`)
+        .map((c) => `<div class="col">${c.script ? `<div class="scr">${esc(c.script)}</div>` : ''}<div class="line">${esc(c.name)}</div><div class="lbl">${esc(c.label)}</div></div>`)
         .join('')}</div>`
     case 'divider':
       return '<div class="pb"></div>'

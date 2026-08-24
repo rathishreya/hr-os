@@ -200,6 +200,8 @@ def _blocks_to_text(blocks: list[dict]) -> str:
                 out.append("  " + " | ".join(str(c) for c in cols))
             for row in bl.get("rows", []):
                 out.append("  " + " | ".join(str(c) for c in (row or [])))
+        elif t == "script":
+            out.append(f"  [signed] {bl.get('text', '')}")
         elif t == "signature":
             out.append("")
             for col in bl.get("columns", []):

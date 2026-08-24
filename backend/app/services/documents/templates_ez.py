@@ -623,6 +623,7 @@ def nda_tech(ctx: dict) -> dict:
                 (
                     "WITNESS to PARTICIPANT - NAME",
                     f"{ctx['signatory_name'].upper()} - {ctx['signatory_title']}",
+                    ctx['signatory_name'],
                 ),
             ),
         ],
@@ -823,6 +824,7 @@ def offer_letter(ctx: dict) -> dict:
             ),
             b.p("We welcome you to EZ team."),
             b.p("Best Wishes!"),
+            b.script(ctx['signatory_name']),
             b.p(f"**{ctx['signatory_name']}**"),
             b.p(ctx["signatory_title"]),
             b.p("EZ Lab Private Limited"),
@@ -1171,7 +1173,7 @@ def full_contract(ctx: dict) -> dict:
         b.p("**Signed in the presence of:**"),
         b.signature(
             ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
-            ("WITNESS to PARTICIPANT - NAME", f"{witness.upper()} - {ctx['signatory_title']}"),
+            ("WITNESS to PARTICIPANT - NAME", f"{witness.upper()} - {ctx['signatory_title']}", witness),
         ),
     ]
 
@@ -1796,7 +1798,7 @@ def nda(ctx: dict) -> dict:
             b.p("**Signed in the presence of:**"),
             b.signature(
                 ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
-                ("WITNESS to PARTICIPANT - NAME", f"{witness.upper()}-{ctx['signatory_title']}"),
+                ("WITNESS to PARTICIPANT - NAME", f"{witness.upper()}-{ctx['signatory_title']}", witness),
             ),
         ],
     }
@@ -1970,6 +1972,7 @@ def traineeship_offer(ctx: dict) -> dict:
             ),
             b.p("We welcome you to EZ team."),
             b.p("Best Wishes!"),
+            b.script(ctx['signatory_name']),
             b.p(f"**{ctx['signatory_name']}**"),
             b.p(ctx["signatory_title"]),
             b.p("EZ Lab Private Limited"),

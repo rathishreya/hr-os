@@ -141,11 +141,14 @@ function GridTable({ block }) {
   )
 }
 
+const SCRIPT_STYLE = { fontFamily: "'Great Vibes', cursive", fontSize: '26px', lineHeight: 1.1, color: '#1f2430' }
+
 function Signature({ block }) {
   return (
     <div className="mt-2 flex flex-wrap gap-8">
       {(block.columns || []).map((c, i) => (
         <div key={i} className="min-w-[200px]">
+          {c.script && <div style={SCRIPT_STYLE}>{c.script}</div>}
           <div className="mb-1 h-6 border-b border-slate-400">{c.name}</div>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{c.label}</div>
         </div>
@@ -182,6 +185,8 @@ function renderBlock(b, i) {
       return <CompTable key={i} block={b} />
     case 'table':
       return <GridTable key={i} block={b} />
+    case 'script':
+      return <p key={i} style={SCRIPT_STYLE}>{b.text}</p>
     case 'signature':
       return <Signature key={i} block={b} />
     case 'divider':

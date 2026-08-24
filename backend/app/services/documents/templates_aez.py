@@ -653,7 +653,7 @@ def professional_service_contract(ctx: dict) -> dict:
             b.p("**Signed in the presence of:**", align="right"),
             b.signature(
                 ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
-                ("WITNESS to PARTICIPANT - NAME", witness.upper()),
+                ("WITNESS to PARTICIPANT - NAME", witness.upper(), witness),
             ),
             b.divider(),
 
@@ -673,7 +673,7 @@ def professional_service_contract(ctx: dict) -> dict:
             b.p("**Signed in the presence of:**", align="right"),
             b.signature(
                 ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
-                ("WITNESS to PARTICIPANT - NAME", witness.upper()),
+                ("WITNESS to PARTICIPANT - NAME", witness.upper(), witness),
             ),
         ],
     }
@@ -956,7 +956,7 @@ def freelance_contract(ctx: dict) -> dict:
         b.p("**Signed in the presence of:**", align="right"),
         b.signature(
             ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
-            ("WITNESS to PARTICIPANT - NAME", witness.upper()),
+            ("WITNESS to PARTICIPANT - NAME", witness.upper(), witness),
         ),
     ]
 
@@ -2066,7 +2066,7 @@ def freelance_nda(ctx: dict) -> dict:
             b.p("**Signed in the presence of:**", align="right"),
             b.signature(
                 ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
-                ("WITNESS to PARTICIPANT - NAME", f"{witness.upper()} – {ctx['signatory_title']}"),
+                ("WITNESS to PARTICIPANT - NAME", f"{witness.upper()} – {ctx['signatory_title']}", witness),
             ),
         ],
     }
@@ -2332,7 +2332,7 @@ def professional_service_nda(ctx: dict) -> dict:
             b.p("**Signed in the presence of:**", align="right"),
             b.signature(
                 ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
-                ("WITNESS to PARTICIPANT - NAME", witness.upper()),
+                ("WITNESS to PARTICIPANT - NAME", witness.upper(), witness),
             ),
         ],
     }
