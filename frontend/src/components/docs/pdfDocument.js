@@ -9,20 +9,30 @@
  *  document and never on initial page load.
  */
 import { richSegments } from './rich'
+import { ENTITY, C, logoSvg } from './letterhead'
 
-// Letterhead per legal entity — mirrors printDocument.js so the emailed copy matches the printed one.
-const ENTITY = {
-  EZ: {
-    name: 'EZ Lab Private Limited',
-    addr: 'Technology and Innovation Hub: EZ, Sector-62, Gurugram, Haryana - 122102. INDIA',
-    web: 'www.ez.works',
-  },
-  AEZ: {
-    name: 'ArabEasy LLC',
-    addr: 'Registered Office: 10, Level 1, Sharjah Media City, Sharjah, UAE',
-    web: 'www.ez.works',
-  },
+// ── Poppins, embedded so the attached PDF sets the same face as the preview and print paths.
+// Fetched once from the app's own /fonts (they ship in the build) and cached; if the fetch
+// fails the PDF falls back to pdfmake's bundled Roboto rather than failing the send.
+let poppinsVfs = null
+async function loadPoppins() {
+  if (poppinsVfs) return poppinsVfs
+  const styles = ['Regular', 'SemiBold', 'Italic', 'SemiBoldItalic']
+  const entries = await Promise.all(styles.map(async (n) => {
+    const res = await fetch(`/fonts/Poppins-${n}.ttf`)
+    if (!res.ok) throw new Error(`font ${n}: HTTP ${res.status}`)
+    const buf = new Uint8Array(await res.arrayBuffer())
+    let bin = ''
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000))
+    return [`Poppins-${n}.ttf`, btoa(bin)]
+  }))
+  poppinsVfs = Object.fromEntries(entries)
+  return poppinsVfs
 }
+
+const MM = 2.8346 // mm -> pt
+const PAGE_W = 595.28
+const PAGE_H = 841.89
 
 const NAVY = '#1f3b5c'
 const INK = '#1f2937'
@@ -40,9 +50,9 @@ function runs(text, base = {}) {
 }
 
 function headingStyle(level) {
-  if (level === 1) return { fontSize: 12.5, bold: true, alignment: 'center', margin: [0, 10, 0, 6], characterSpacing: 0.4 }
-  if (level === 3) return { fontSize: 11, bold: true, alignment: 'center', margin: [0, 6, 0, 5] }
-  return { fontSize: 11, bold: true, margin: [0, 8, 0, 4] }
+  if (level === 1) return { fontSize: 11.5, bold: true, alignment: 'center', margin: [0, 10, 0, 6], characterSpacing: 0.4 }
+  if (level === 3) return { fontSize: 10.5, bold: true, alignment: 'center', margin: [0, 6, 0, 5] }
+  return { fontSize: 10.5, bold: true, margin: [0, 8, 0, 4] }
 }
 
 /** One document block -> pdfmake content node(s). Mirrors DocumentBlocks.jsx case for case. */
@@ -57,7 +67,7 @@ function blockToPdf(b) {
       const prefix = b.strong_prefix
       const text = b.text || ''
       const style = {
-        fontSize: 9.5,
+        fontSize: 10.5,
         alignment: b.align === 'right' ? 'right' : 'left',
         color: b.muted ? MUTED : INK,
         margin: [0, 0, 0, 5],
@@ -77,8 +87,8 @@ function blockToPdf(b) {
           : runs(rest)
         return {
           columns: [
-            { width: 22, text: marker, fontSize: 9.5, color: b.muted ? MUTED : INK },
-            { width: '*', ...inner, fontSize: 9.5, color: b.muted ? MUTED : INK, alignment: 'left', lineHeight: 1.25 },
+            { width: 24, text: marker, fontSize: 10.5, color: b.muted ? MUTED : INK },
+            { width: '*', ...inner, fontSize: 10.5, color: b.muted ? MUTED : INK, alignment: 'left', lineHeight: 1.25 },
           ],
           columnGap: 0,
           margin: [0, 0, 0, 5],
@@ -90,7 +100,7 @@ function blockToPdf(b) {
       return {
         [b.ordered ? 'ol' : 'ul']: (b.items || []).map((i) => runs(i)),
         ...(b.ordered && b.start ? { start: Number(b.start) } : {}),
-        fontSize: 9.5,
+        fontSize: 10.5,
         color: INK,
         margin: [8, 0, 0, 6],
         lineHeight: 1.25,
@@ -166,7 +176,7 @@ function blockToPdf(b) {
         columns: (b.columns || []).map((c) => ({
           width: '*',
           stack: [
-            { text: c.name || ' ', fontSize: 9.5, bold: true, margin: [0, 14, 0, 2] },
+            { text: c.name || ' ', fontSize: 10.5, bold: true, margin: [0, 14, 0, 2] },
             { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 0.7, lineColor: '#6b7280' }] },
             { text: c.label || '', fontSize: 7.5, bold: true, color: MUTED, margin: [0, 3, 0, 0] },
           ],
@@ -182,29 +192,53 @@ function blockToPdf(b) {
   }
 }
 
-/** The repeating letterhead drawn into the top margin of every page. */
-function letterhead(entityKey) {
+/** The repeating letterhead drawn into the top margin of every page — the same logo, ISO badge
+ *  lines and company block the preview and print window render (letterhead.js). */
+function letterhead(entityKey, brandName) {
   const e = ENTITY[entityKey] || ENTITY.EZ
   return () => ({
-    margin: [42, 22, 42, 0],
+    margin: [54, 14, 17, 0],
     columns: [
       {
         width: '*',
         stack: [
-          { text: 'EZ', fontSize: 15, bold: true, color: '#6ba43a' },
-          { text: e === ENTITY.AEZ ? 'ArabEasy' : 'EZ Lab Private Limited', fontSize: 9, bold: true, color: '#4b7a2c' },
-          { text: 'ISO 27001:2022   ISO 9001:2015', fontSize: 6.5, bold: true, color: '#374151', margin: [0, 3, 0, 0] },
+          { svg: logoSvg(entityKey, brandName), width: 128 },
+          { text: 'ISO 27001:2022', fontSize: 6.2, bold: true, characterSpacing: 1.6, color: '#374151', margin: [0, 4, 0, 0] },
+          { text: 'ISO 9001:2015', fontSize: 6.2, bold: true, characterSpacing: 1.6, color: '#374151', margin: [0, 1.5, 0, 0] },
         ],
       },
       {
         width: 'auto',
         alignment: 'right',
         stack: [
-          { text: e.name, fontSize: 8.5, bold: true, color: '#111827' },
-          { text: e.addr, fontSize: 6.5, color: '#374151', margin: [0, 2, 0, 0] },
-          { text: e.web, fontSize: 6.5, bold: true, color: NAVY, margin: [0, 2, 0, 0] },
+          { text: brandName || e.name, fontSize: 8.5, bold: true, color: C.ink },
+          { text: e.addr, fontSize: 6.4, color: '#4B5563', margin: [0, 2, 0, 0] },
+          { text: e.web, fontSize: 6.6, bold: true, color: C.ink, margin: [0, 2, 0, 0] },
         ],
+        margin: [0, 2, 0, 0],
       },
+    ],
+    columnGap: 12,
+  })
+}
+
+/** The colored edge bars, drawn on every page behind the content — geometry matches
+ *  letterhead.accentsHtml (mm figures converted to pt). */
+function pageBackground() {
+  const bar = (x, yMm, hMm, color, wMm = 4.5) => ({
+    type: 'rect', x, y: yMm * MM, w: wMm * MM, h: hMm * MM, color,
+  })
+  const R = PAGE_W - 4.5 * MM
+  return () => ({
+    canvas: [
+      bar(R, 0, 32, C.yellow),
+      bar(R, 32, 46, C.navy),
+      bar(R, 80, 48, C.maroon),
+      { type: 'rect', x: PAGE_W - (1.5 + 2.6) * MM, y: 255 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
+      { type: 'rect', x: 7 * MM, y: 92 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
+      bar(0, 232, 34, C.maroon),
+      bar(0, 266, 24, C.navy),
+      bar(0, 290, 7, C.yellow),
     ],
   })
 }
@@ -220,24 +254,39 @@ export async function documentToPdfBase64(doc) {
   ])
   pdfMake.vfs = vfs.default?.pdfMake?.vfs || vfs.pdfMake?.vfs || vfs.default || vfs
 
+  // Embed Poppins so the attachment matches the preview; fall back to Roboto if the fetch fails
+  // rather than blocking the send.
+  let bodyFont = 'Roboto'
+  try {
+    const poppins = await loadPoppins()
+    pdfMake.vfs = { ...pdfMake.vfs, ...poppins }
+    pdfMake.fonts = {
+      ...(pdfMake.fonts || {}),
+      Roboto: {
+        normal: 'Roboto-Regular.ttf', bold: 'Roboto-Medium.ttf',
+        italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-MediumItalic.ttf',
+      },
+      Poppins: {
+        normal: 'Poppins-Regular.ttf', bold: 'Poppins-SemiBold.ttf',
+        italics: 'Poppins-Italic.ttf', bolditalics: 'Poppins-SemiBoldItalic.ttf',
+      },
+    }
+    bodyFont = 'Poppins'
+  } catch { /* Roboto fallback */ }
+
   const blocks = Array.isArray(doc.blocks) ? doc.blocks : []
   const content = blocks.length
     ? blocks.map(blockToPdf).filter(Boolean)
-    : [{ text: doc.content || '', fontSize: 9.5, lineHeight: 1.25 }]
+    : [{ text: doc.content || '', fontSize: 10.5, lineHeight: 1.3 }]
 
   const definition = {
     pageSize: 'A4',
-    pageMargins: [42, 78, 42, 45],
-    header: letterhead(doc.entity),
-    footer: (page, total) => ({
-      text: `${page} / ${total}`,
-      alignment: 'center',
-      fontSize: 7.5,
-      color: MUTED,
-      margin: [0, 12, 0, 0],
-    }),
+    // 19mm sides / 31mm top / 17mm bottom — the print window's @page box.
+    pageMargins: [54, 88, 54, 48],
+    header: letterhead(doc.entity, doc.brandName),
+    background: pageBackground(),
     info: { title: doc.title || 'Document' },
-    defaultStyle: { fontSize: 9.5, color: INK, lineHeight: 1.25 },
+    defaultStyle: { font: bodyFont, fontSize: 10.5, color: C.ink, lineHeight: 1.3 },
     content,
   }
 

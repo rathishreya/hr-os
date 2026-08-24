@@ -24,9 +24,15 @@ export const isClause = (b) =>
   /^\s*\d{1,2}(\.\d+)?[.)]?\s/.test(String(b?.strong_prefix || b?.text || ''))
 
 function strong(text, prefix) {
-  if (prefix && String(text).startsWith(prefix)) return `<strong>${esc(prefix)}</strong>${richHtml(String(text).slice(prefix.length))}`
-  if (prefix && !text) return `<strong>${esc(prefix)}</strong>`
-  if (prefix) return `<strong>${esc(prefix)}: </strong>${richHtml(text)}`
+  // The source documents set the clause number in regular weight and only the label bold
+  // ("1. Effectiveness:"), so a leading number is split out of the bold span.
+  const boldPrefix = (p) => {
+    const m = /^(\s*\d{1,2}(?:\.\d+)?[.)]?\s+)([\s\S]*)$/.exec(p)
+    return m ? `${esc(m[1])}<strong>${esc(m[2])}</strong>` : `<strong>${esc(p)}</strong>`
+  }
+  if (prefix && String(text).startsWith(prefix)) return `${boldPrefix(prefix)}${richHtml(String(text).slice(prefix.length))}`
+  if (prefix && !text) return boldPrefix(prefix)
+  if (prefix) return `${boldPrefix(prefix)}<strong>: </strong>${richHtml(text)}`
   return richHtml(text)
 }
 

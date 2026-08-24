@@ -19,13 +19,20 @@ function Rich({ text }) {
 }
 
 function StrongPrefix({ text, prefix }) {
+  // The sources set a clause number in regular weight with only the label bold, so a leading
+  // "N. " is split out of the bold span.
+  const Bold = ({ children }) => <strong className="font-semibold text-slate-800">{children}</strong>
+  const BoldPrefix = ({ p }) => {
+    const m = /^(\s*\d{1,2}(?:\.\d+)?[.)]?\s+)([\s\S]*)$/.exec(p)
+    return m ? (<>{m[1]}<Bold>{m[2]}</Bold></>) : <Bold>{p}</Bold>
+  }
   // prefix already embedded at the start of text (e.g. a name/signatory line): bold just that span.
   if (prefix && text.startsWith(prefix)) {
-    return (<><strong className="font-semibold text-slate-800">{prefix}</strong><Rich text={text.slice(prefix.length)} /></>)
+    return (<><BoldPrefix p={prefix} /><Rich text={text.slice(prefix.length)} /></>)
   }
-  if (prefix && !text) return <strong className="font-semibold text-slate-800">{prefix}</strong>
+  if (prefix && !text) return <BoldPrefix p={prefix} />
   // prefix is a standalone label (e.g. "Effectiveness", "Termination"): render "Label: body".
-  if (prefix) return (<><strong className="font-semibold text-slate-800">{prefix}: </strong><Rich text={text} /></>)
+  if (prefix) return (<><BoldPrefix p={prefix} /><Bold>: </Bold><Rich text={text} /></>)
   return <Rich text={text} />
 }
 

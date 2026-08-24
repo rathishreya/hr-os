@@ -85,11 +85,18 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 }
 .menu-in { animation: menu-in 0.14s var(--ease-snappy); }
 
+/* Poppins — the typeface of the EZ Lab / ArabEasy source documents. Self-hosted so the
+   preview, the print window and the emailed PDF all set the same face. */
+@font-face { font-family: 'Poppins'; src: url('/fonts/Poppins-Regular.ttf') format('truetype'); font-weight: 100 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Poppins'; src: url('/fonts/Poppins-SemiBold.ttf') format('truetype'); font-weight: 600 800; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Poppins'; src: url('/fonts/Poppins-Italic.ttf') format('truetype'); font-weight: 100 500; font-style: italic; font-display: swap; }
+@font-face { font-family: 'Poppins'; src: url('/fonts/Poppins-SemiBoldItalic.ttf') format('truetype'); font-weight: 600 800; font-style: italic; font-display: swap; }
+
 /* On-screen rendering of a document's rich HTML (offer letters/contracts) — mirrors the print CSS
-   in printDocument.js so the editor/preview looks like the saved PDF. Serif body, bordered tables. */
-.doc-html { font-family: 'Segoe UI', Lato, 'Helvetica Neue', Arial, sans-serif; color: #1f2937; font-size: 13px; line-height: 1.55; }
-.doc-html h1 { font-size: 16px; text-align: center; text-transform: uppercase; letter-spacing: .4px; font-weight: 700; margin: 14px 0 8px; }
-.doc-html h2 { font-size: 14px; font-weight: 700; text-transform: uppercase; margin: 12px 0 6px; }
+   in printDocument.js so the editor/preview looks like the saved PDF. Poppins body, bordered tables. */
+.doc-html { font-family: Poppins, 'Segoe UI', Arial, sans-serif; color: #1f2430; font-size: 14px; line-height: 1.55; }
+.doc-html h1 { font-size: 15px; text-align: center; text-transform: uppercase; letter-spacing: .4px; font-weight: 700; margin: 14px 0 8px; }
+.doc-html h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; margin: 12px 0 6px; }
 .doc-html h3 { font-size: 13.5px; text-align: center; font-weight: 700; margin: 8px 0; }
 .doc-html h1.ul, .doc-html h2.ul, .doc-html h3.ul { text-decoration: underline; text-underline-offset: 3px; }
 .doc-html u { text-decoration: underline; }
@@ -102,7 +109,7 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 .doc-html ol, .doc-html ul { margin: 6px 0; padding-left: 26px; }
 .doc-html ol { list-style: decimal; } .doc-html ul { list-style: disc; }
 .doc-html li { margin: 3px 0; text-align: left; padding-left: 4px; }
-.doc-html strong { font-weight: 700; }
+.doc-html strong { font-weight: 600; }
 .doc-html table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12.5px; }
 .doc-html table.terms th { width: 42%; background: #f4f6f9; text-align: left; vertical-align: top; font-weight: 700; }
 .doc-html table.terms th, .doc-html table.terms td { border: 1px solid #9aa7b8; padding: 6px 8px; vertical-align: top; }
