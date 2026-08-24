@@ -174,8 +174,12 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
   )
 }
 
-function Th({ children }) {
-  return <th className="whitespace-nowrap px-3 py-2.5"><span className="inline-flex items-center gap-1">{children}</span></th>
+function Th({ children, className }) {
+  return (
+    <th className={cx('whitespace-nowrap px-3 py-2.5', className)}>
+      <span className="inline-flex items-center gap-1">{children}</span>
+    </th>
+  )
 }
 
 // Filter accessors for the grouped (one-row-per-candidate) view. Per-document fields like
@@ -204,9 +208,12 @@ function groupByCandidate(docs) {
 // Uniform 32px icon-button styles so every row action lines up and reads as one set.
 const ROW_ICON = 'inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 ring-1 ring-slate-200 transition duration-150 ease-snappy hover:bg-brand-50/60 hover:text-brand-600 hover:ring-brand-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-40'
 const ROW_ICON_GREEN = 'inline-flex h-8 w-8 items-center justify-center rounded-lg text-emerald-600 ring-1 ring-emerald-200 transition duration-150 ease-snappy hover:bg-emerald-50 active:scale-95'
-// "Generate a new document" is an additive action — give it a distinct brand-filled affordance so
-// it never reads the same as the neutral "Edit (regenerate in place)" pencil.
-const ROW_ICON_BRAND = 'inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white ring-1 ring-brand-600 transition duration-150 ease-snappy hover:bg-brand-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-40'
+// Row actions are peers and all share ROW_ICON. The brand-filled variant is reserved for
+// candidate-level actions in the group header ("Add document"), where it is the only accent —
+// inside a document row it made two of five buttons shout for no reason.
+const ROW_ICON_BRAND = 'inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white transition duration-150 ease-snappy hover:bg-brand-700 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-40'
+// Label above an inline value in the document row. Replaces the nested table's own header row.
+const FIELD_LABEL = 'block text-[10px] font-medium uppercase tracking-wide text-slate-400'
 
 // A small offer-administration status, derived from the system state (no separate offer-lifecycle
 // column exists yet). Reflects the document's progress: Draft → Approved → Signed copy on file →
@@ -242,8 +249,10 @@ function InlineText({ doc, field, value, type = 'text', placeholder, onSaved, lo
   }
 
   if (locked) {
-    return <span className="inline-flex items-center gap-1 text-slate-500">{value || '—'}<Lock className="h-3 w-3 text-slate-300" /></span>
+    return <span className="inline-flex items-center gap-1 text-sm text-slate-500">{value || '—'}<Lock className="h-3 w-3 text-slate-300" /></span>
   }
+  // Reads as text until you touch it. A grid of permanently-bordered inputs turned the document
+  // list into a form; the value is the content, the box is only an editing affordance.
   return (
     <input
       type={type}
@@ -254,7 +263,11 @@ function InlineText({ doc, field, value, type = 'text', placeholder, onSaved, lo
       onChange={(e) => setVal(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-      className="w-full min-w-[8rem] rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none transition-colors duration-150 ease-snappy placeholder:text-slate-300 hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50"
+      className={cx(
+        'w-full min-w-[9rem] rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm text-slate-700 outline-none transition-colors duration-150 ease-snappy',
+        'placeholder:text-slate-400 placeholder:italic hover:border-slate-200 hover:bg-white',
+        'focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50',
+      )}
     />
   )
 }
@@ -284,7 +297,7 @@ function InlineEntity({ doc, value, onSaved, locked }) {
       disabled={busy}
       onClick={(e) => e.stopPropagation()}
       onChange={onChange}
-      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none transition-colors duration-150 ease-snappy hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50"
+      className="-ml-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm text-slate-700 outline-none transition-colors duration-150 ease-snappy hover:border-slate-200 hover:bg-white focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50"
     >
       <option value="EZ">EZ</option>
       <option value="AEZ">AEZ</option>
@@ -476,7 +489,7 @@ export default function OfferDocs() {
     <div className="space-y-6">
       <PageHeader
         title="Offer & Docs"
-        subtitle="Offer letters, contracts & NDAs across every candidate. Pick the entity and document, fill the details (autofilled where we can), then generate and approve."
+        subtitle="Offer letters, contracts and NDAs for every candidate. Open a candidate to fill their details, preview the document, email it for signature, then file the signed copy back."
       />
 
       {docs === null ? (
@@ -498,7 +511,7 @@ export default function OfferDocs() {
                   <Th>Contact {docFilter('contact')}</Th>
                   <Th>Documents {docFilter('document')}</Th>
                   <Th>Status {docFilter('status')}</Th>
-                  <Th>Onboarding {docFilter('onboarding')}</Th>
+                  <Th className="text-right">Actions {docFilter('onboarding')}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -553,72 +566,88 @@ export default function OfferDocs() {
                           </span>
                         </td>
                         <td className="px-3 py-3 align-middle">
-                          <SendToOnboarding group={g} anyMoved={anyMoved} onMoved={mergeDoc} />
+                          <div className="flex items-center justify-end gap-2">
+                            {g.docs[0]?.application_id && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setForm({ doc: g.docs[0], mode: 'new' }) }}
+                                title={`Add another document for ${g.name}`}
+                                className={ROW_ICON_BRAND}
+                              >
+                                <FilePlus2 className="h-3.5 w-3.5" /> Add document
+                              </button>
+                            )}
+                            <SendToOnboarding group={g} anyMoved={anyMoved} onMoved={mergeDoc} />
+                          </div>
                         </td>
                       </tr>
                       {isOpen && (
-                        <tr className="bg-slate-50/50">
-                          <td colSpan={6} className="px-3 pb-3 pt-1">
-                            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="border-b border-slate-100 bg-slate-50/70 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                                    <th className="px-3 py-2 font-semibold">Document</th>
-                                    <th className="px-3 py-2 font-semibold">Status</th>
-                                    <th className="px-3 py-2 font-semibold">Personal email</th>
-                                    <th className="px-3 py-2 font-semibold">Joining date</th>
-                                    <th className="px-3 py-2 font-semibold">Entity</th>
-                                    <th className="px-3 py-2 text-right font-semibold">Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {g.docs.map((d) => {
-                                    const st = docStatus(d)
-                                    const locked = !!d.move_to_onboarding
-                                    return (
-                                    <tr key={d.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
-                                      <td className="px-3 py-2.5 align-middle">
-                                        <div className="font-medium text-slate-800">{DOC_LABEL[d.doc_type] || d.doc_type}</div>
-                                        <div className="text-[11px] text-slate-400">{d.department || '—'}</div>
-                                      </td>
-                                      <td className="px-3 py-2.5 align-middle"><Badge tone={st.tone}>{st.label}</Badge></td>
-                                      <td className="px-3 py-2.5 align-middle">
-                                        <InlineText doc={d} field="personal_email" type="email" value={d.personal_email}
-                                          placeholder="personal@email.com" locked={locked} onSaved={mergeDoc} />
-                                      </td>
-                                      <td className="px-3 py-2.5 align-middle">
-                                        <InlineText doc={d} field="joining_date" value={d.joining_date}
-                                          placeholder="1 July 2026" locked={locked} onSaved={mergeDoc} />
-                                      </td>
-                                      <td className="px-3 py-2.5 align-middle">
-                                        <InlineEntity doc={d} value={d.entity} locked={locked} onSaved={mergeDoc} />
-                                      </td>
-                                      <td className="px-3 py-2.5 align-middle">
-                                        <div className="flex items-center justify-end gap-1.5">
-                                          <UploadCell doc={d} onUploaded={mergeDoc} />
-                                          <button
-                                            type="button"
-                                            onClick={() => setEmailing(d)}
-                                            title={d.email_sent_at ? `Already emailed — review and send again` : 'Review & email this document to the candidate'}
-                                            aria-label="Email this document"
-                                            className={ROW_ICON_BRAND}
-                                          >
-                                            {d.email_sent_at ? <MailCheck className="h-4 w-4 text-emerald-600" /> : <Mail className="h-4 w-4" />}
-                                          </button>
-                                          {d.application_id && (
-                                            <button type="button" onClick={() => setForm({ doc: d, mode: 'new' })} title="Generate a new document" aria-label="Generate a new document" className={ROW_ICON_BRAND}><FilePlus2 className="h-4 w-4" /></button>
-                                          )}
-                                          {d.status !== 'approved' && !d.move_to_onboarding && (
-                                            <button type="button" onClick={() => openEditor(d)} title="Edit the letter directly" aria-label="Edit the letter" className={ROW_ICON}><PenLine className="h-4 w-4" /></button>
-                                          )}
-                                          <button type="button" onClick={() => openView(d)} title="Preview" aria-label="Preview document" className={ROW_ICON}><Eye className="h-4 w-4" /></button>
+                        <tr className="border-b border-slate-100 bg-slate-50/60">
+                          <td colSpan={6} className="px-3 pb-3 pt-0">
+                            {/* Documents render as a single list, not a table inside a table. The
+                                nested <thead> duplicated the parent's column language and was the
+                                main reason this area read as a different screen. */}
+                            <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                              {g.docs.map((d) => {
+                                const st = docStatus(d)
+                                const locked = !!d.move_to_onboarding
+                                return (
+                                  <div key={d.id} className="flex flex-col gap-3 p-3 transition-colors duration-150 ease-snappy hover:bg-slate-50/70 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-medium text-slate-800">{DOC_LABEL[d.doc_type] || d.doc_type}</span>
+                                        <Badge tone={st.tone}>{st.label}</Badge>
+                                        {d.email_sent_at && (
+                                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600">
+                                            <MailCheck className="h-3 w-3" /> Emailed
+                                          </span>
+                                        )}
+                                      </div>
+                                      <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-3">
+                                        <div className="min-w-0">
+                                          <dt className={FIELD_LABEL}>Personal email</dt>
+                                          <dd className="mt-0.5">
+                                            <InlineText doc={d} field="personal_email" type="email" value={d.personal_email}
+                                              placeholder="Add personal email" locked={locked} onSaved={mergeDoc} />
+                                          </dd>
                                         </div>
-                                      </td>
-                                    </tr>
-                                    )
-                                  })}
-                                </tbody>
-                              </table>
+                                        <div className="min-w-0">
+                                          <dt className={FIELD_LABEL}>Joining date</dt>
+                                          <dd className="mt-0.5">
+                                            <InlineText doc={d} field="joining_date" value={d.joining_date}
+                                              placeholder="Add joining date" locked={locked} onSaved={mergeDoc} />
+                                          </dd>
+                                        </div>
+                                        <div className="min-w-0">
+                                          <dt className={FIELD_LABEL}>Entity</dt>
+                                          <dd className="mt-0.5">
+                                            <InlineEntity doc={d} value={d.entity} locked={locked} onSaved={mergeDoc} />
+                                          </dd>
+                                        </div>
+                                      </dl>
+                                    </div>
+                                    {/* Five peers, one visual weight. The set reads left-to-right in
+                                        the order the work actually happens: read it, edit it, mail
+                                        it, file the signed copy back. */}
+                                    <div className="flex shrink-0 items-center gap-1.5 sm:pl-4">
+                                      <button type="button" onClick={() => openView(d)} title="Preview" aria-label="Preview document" className={ROW_ICON}><Eye className="h-4 w-4" /></button>
+                                      {d.status !== 'approved' && !d.move_to_onboarding && (
+                                        <button type="button" onClick={() => openEditor(d)} title="Edit the letter directly" aria-label="Edit the letter" className={ROW_ICON}><PenLine className="h-4 w-4" /></button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => setEmailing(d)}
+                                        title={d.email_sent_at ? 'Already emailed — review and send again' : 'Review & email this document to the candidate'}
+                                        aria-label="Email this document"
+                                        className={cx(ROW_ICON, d.email_sent_at && 'text-emerald-600 ring-emerald-200')}
+                                      >
+                                        {d.email_sent_at ? <MailCheck className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
+                                      </button>
+                                      <UploadCell doc={d} onUploaded={mergeDoc} />
+                                    </div>
+                                  </div>
+                                )
+                              })}
                             </div>
                           </td>
                         </tr>
