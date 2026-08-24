@@ -4,12 +4,9 @@ import { api } from '../../api'
 import { Badge, Button, Spinner, cx, inputClass } from '../../ui'
 import { useToast } from '../Toast'
 
-const DOC_TYPES = [
-  { id: 'offer_letter', label: 'Offer letter' },
-  { id: 'employment_agreement', label: 'Employment agreement' },
-  { id: 'nda', label: 'NDA' },
-  { id: 'contractor_agreement', label: 'Contractor agreement' },
-]
+// The documents on offer come from the server registry rather than a hardcoded list, so this
+// panel can never drift from the templates that actually exist (it used to name four keys, two
+// of which stopped resolving when the templates were re-keyed).
 const TERM_FIELDS = [
   { key: 'ctc', label: 'Compensation / CTC', ph: 'e.g. 26 LPA' },
   { key: 'joining_date', label: 'Joining date', ph: 'e.g. 2026-07-01', type: 'date' },
@@ -20,7 +17,8 @@ const TERM_FIELDS = [
 
 export default function OfferPanel({ app }) {
   const { toast } = useToast()
-  const [docType, setDocType] = useState('offer_letter')
+  const [templates, setTemplates] = useState([])
+  const [docType, setDocType] = useState('')
   const [terms, setTerms] = useState({})
   const [docs, setDocs] = useState([])
   const [selected, setSelected] = useState(null)
@@ -31,11 +29,19 @@ export default function OfferPanel({ app }) {
     if (list.length && !selected) setSelected(list[0])
   }).catch(() => {})
   useEffect(() => { load() }, [app.id])
+  useEffect(() => {
+    api.listDocumentTemplates()
+      .then((list) => {
+        setTemplates(list)
+        setDocType((cur) => (list.some((t) => t.key === cur) ? cur : list[0]?.key || ''))
+      })
+      .catch(() => setTemplates([]))
+  }, [])
 
   async function generate() {
     setBusy(true)
     try {
-      const doc = await api.generateDocument({ application_id: app.id, doc_type: docType, terms })
+      const doc = await api.generateDocument({ application_id: app.id, doc_type: docType, template_key: docType, terms })
       setSelected(doc)
       setDocs((d) => [doc, ...d])
       toast('Draft generated')
@@ -67,10 +73,17 @@ export default function OfferPanel({ app }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <select className={`${inputClass} sm:w-52`} value={docType} onChange={(e) => setDocType(e.target.value)}>
-          {DOC_TYPES.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+        <select
+          className={`${inputClass} sm:w-64`}
+          value={docType}
+          disabled={!templates.length}
+          onChange={(e) => setDocType(e.target.value)}
+        >
+          {templates.length
+            ? templates.map((t) => <option key={t.key} value={t.key}>{t.entity} — {t.label}</option>)
+            : <option value="">— no templates configured —</option>}
         </select>
-        <Button onClick={generate} disabled={busy}>
+        <Button onClick={generate} disabled={busy || !docType}>
           {busy ? <Spinner /> : <FileSignature className="h-4 w-4" />} Generate draft
         </Button>
       </div>

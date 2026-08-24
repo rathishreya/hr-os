@@ -35,14 +35,16 @@ def _ensure_hire_artifacts(db: Session, app: models.Application) -> None:
     has_offer = db.scalar(
         select(models.Document.id).where(
             models.Document.application_id == app.id,
-            models.Document.doc_type.in_(("offer_letter", "traineeship_offer")),
+            # "offer" is the current doc_type; the two legacy names are kept so rows drafted
+            # before the templates were re-keyed still count and are never duplicated.
+            models.Document.doc_type.in_(("offer", "offer_letter", "traineeship_offer")),
         ).limit(1)
     )
     if not has_offer:
         # Draft the EZ Lab letter from a template (trainee roles get the traineeship offer),
         # grounded in the role's title, JD responsibilities and CTC. HR edits terms + approves.
         pos = (hr.position if hr else "").lower()
-        template_key = "traineeship_offer" if any(w in pos for w in ("trainee", "intern")) else "offer_letter"
+        template_key = "ez_traineeship_offer" if any(w in pos for w in ("trainee", "intern")) else "ez_offer_letter"
         job = hr.job if hr else None
         rendered = render_document(template_key, {
             "name": (cand.name if cand else "") or "",
@@ -299,8 +301,14 @@ def move_stage(app_id: int, body: schemas.StageUpdate, db: Session = Depends(get
         try:
             _ensure_hire_artifacts(db, app)
             db.commit()
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            # Never let a drafting failure undo the stage change — but do not swallow it either.
+            # A silent rollback here once hid a template rename for a whole release: candidates
+            # were marked Hired and simply never appeared on Offer & Docs.
             db.rollback()
+            recruitment.log(db, "application.hire_artifacts_failed", "application", app.id,
+                            {"error": str(exc)[:300]}, actor="system")
+            db.commit()
     return app
 
 
