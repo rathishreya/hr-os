@@ -264,14 +264,14 @@ function letterhead(entityKey, brandName) {
 /** The colored edge bars, drawn on every page behind the content — geometry matches
  *  letterhead.accentsHtml (mm figures converted to pt). */
 function pageBackground() {
-  const bar = (x, yMm, hMm, color, wMm = 4.5) => ({
+  const bar = (x, yMm, hMm, color, wMm = 6) => ({
     type: 'rect', x, y: yMm * MM, w: wMm * MM, h: hMm * MM, color,
   })
   // Everything on each side shares the bar column's centerline (2.25mm from the page edge):
   // square, rule and bars form one continuous vertical strip, as the sources set them.
-  const R = PAGE_W - 4.5 * MM
-  const axisL = 2.25 * MM
-  const axisR = PAGE_W - 2.25 * MM
+  const R = PAGE_W - 6 * MM
+  const axisL = 3 * MM
+  const axisR = PAGE_W - 3 * MM
   return () => ({
     canvas: [
       // Right: bars fill the top, the rule drops from the maroon to the square.

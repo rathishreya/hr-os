@@ -110,10 +110,10 @@ export function accentsHtml() {
     <span class="acc-bar" style="right:0;top:0;height:46mm;background:${C.yellow}"></span>
     <span class="acc-bar" style="right:0;top:46mm;height:71mm;background:${C.navy}"></span>
     <span class="acc-bar" style="right:0;top:117mm;height:58mm;background:${C.maroon}"></span>
-    <span class="acc-rule" style="right:2.05mm;top:175mm;height:102.5mm"></span>
-    <span class="acc-sq" style="right:0.95mm;top:277.5mm"></span>
-    <span class="acc-sq" style="left:0.95mm;top:30mm"></span>
-    <span class="acc-rule" style="left:2.05mm;top:32.6mm;height:149.4mm"></span>
+    <span class="acc-rule" style="right:2.8mm;top:175mm;height:102.5mm"></span>
+    <span class="acc-sq" style="right:1.7mm;top:277.5mm"></span>
+    <span class="acc-sq" style="left:1.7mm;top:30mm"></span>
+    <span class="acc-rule" style="left:2.8mm;top:32.6mm;height:149.4mm"></span>
     <span class="acc-bar" style="left:0;top:182mm;height:39mm;background:${C.maroon}"></span>
     <span class="acc-bar" style="left:0;top:221mm;height:47mm;background:${C.navy}"></span>
     <span class="acc-bar" style="left:0;top:268mm;height:29mm;background:${C.yellow}"></span>
@@ -138,7 +138,7 @@ export function chromeCss(mode) {
   .lh-web{ font-family:Poppins, Arial, sans-serif; font-weight:600; font-size:8px; color:${C.ink}; }
   .lh-chip{ display:inline-flex; align-items:center; justify-content:center; width:9mm; height:5.5mm;
             background:${C.chip}; border-radius:3mm 0 0 3mm; margin-right:-6mm; }
-  .acc-bar{ position:${pos}; width:4.5mm; display:block; }
+  .acc-bar{ position:${pos}; width:6mm; display:block; }
   .acc-sq{ position:${pos}; width:2.6mm; height:2.6mm; background:${C.navy}; display:block; }
   .acc-rule{ position:${pos}; width:0.4mm; background:${C.navy}; display:block; }`
 }
