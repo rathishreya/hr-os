@@ -270,16 +270,18 @@ function pageBackground() {
   const R = PAGE_W - 4.5 * MM
   return () => ({
     canvas: [
-      bar(R, 0, 32, C.yellow),
-      bar(R, 32, 46, C.navy),
-      bar(R, 80, 48, C.maroon),
-      { type: 'rect', x: PAGE_W - (1.5 + 2.6) * MM, y: 255 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      { type: 'rect', x: 7 * MM, y: 92 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      // The thin vertical rule down the left margin, hanging from the small square.
-      { type: 'rect', x: 8.1 * MM, y: 95 * MM, w: 0.4 * MM, h: 158 * MM, color: C.navy },
-      bar(0, 232, 34, C.maroon),
-      bar(0, 266, 24, C.navy),
-      bar(0, 290, 7, C.yellow),
+      // Right edge: bars fill the top, a thin rule drops to a small square near the bottom.
+      bar(R, 0, 46, C.yellow),
+      bar(R, 46, 71, C.navy),
+      bar(R, 117, 58, C.maroon),
+      { type: 'rect', x: PAGE_W - 2.8 * MM, y: 178 * MM, w: 0.4 * MM, h: 100 * MM, color: C.navy },
+      { type: 'rect', x: PAGE_W - (1.6 + 2.6) * MM, y: 279.5 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
+      // Left edge: square + rule hang down the top half, bars fill to the page bottom.
+      { type: 'rect', x: 7 * MM, y: 30 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
+      { type: 'rect', x: 8.1 * MM, y: 33 * MM, w: 0.4 * MM, h: 147 * MM, color: C.navy },
+      bar(0, 182, 39, C.maroon),
+      bar(0, 221, 47, C.navy),
+      bar(0, 268, 29, C.yellow),
     ],
   })
 }

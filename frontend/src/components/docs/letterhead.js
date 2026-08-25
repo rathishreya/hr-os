@@ -99,21 +99,24 @@ export function letterheadHtml(entityKey, brandName) {
   </div>`
 }
 
-/** The colored edge bars, matching the source geometry: yellow -> navy -> maroon down the right
- *  edge, a maroon -> navy -> yellow stack rising from the bottom-left corner, and the two small
- *  floating navy squares. */
+/** The colored edge accents, one continuous mirrored element per side as the sources set them:
+ *  LEFT  - small navy square at 30mm, thin rule hanging to 180mm, then maroon -> navy -> yellow
+ *          bars filling to the page bottom;
+ *  RIGHT - yellow -> navy -> maroon bars filling from the top, then a thin rule dropping to a
+ *          small navy square near the page bottom. */
 export function accentsHtml() {
   return `
   <div class="acc" aria-hidden="true">
-    <span class="acc-bar" style="right:0;top:0;height:32mm;background:${C.yellow}"></span>
-    <span class="acc-bar" style="right:0;top:32mm;height:46mm;background:${C.navy}"></span>
-    <span class="acc-bar" style="right:0;top:80mm;height:48mm;background:${C.maroon}"></span>
-    <span class="acc-sq" style="right:1.5mm;top:255mm"></span>
-    <span class="acc-sq" style="left:7mm;top:92mm"></span>
-    <span class="acc-rule" style="left:8.1mm;top:95mm;height:158mm"></span>
-    <span class="acc-bar" style="left:0;top:232mm;height:34mm;background:${C.maroon}"></span>
-    <span class="acc-bar" style="left:0;top:266mm;height:24mm;background:${C.navy}"></span>
-    <span class="acc-bar" style="left:0;top:290mm;height:7mm;background:${C.yellow}"></span>
+    <span class="acc-bar" style="right:0;top:0;height:46mm;background:${C.yellow}"></span>
+    <span class="acc-bar" style="right:0;top:46mm;height:71mm;background:${C.navy}"></span>
+    <span class="acc-bar" style="right:0;top:117mm;height:58mm;background:${C.maroon}"></span>
+    <span class="acc-rule" style="right:2.6mm;top:178mm;height:100mm"></span>
+    <span class="acc-sq" style="right:1.6mm;top:279.5mm"></span>
+    <span class="acc-sq" style="left:7mm;top:30mm"></span>
+    <span class="acc-rule" style="left:8.1mm;top:33mm;height:147mm"></span>
+    <span class="acc-bar" style="left:0;top:182mm;height:39mm;background:${C.maroon}"></span>
+    <span class="acc-bar" style="left:0;top:221mm;height:47mm;background:${C.navy}"></span>
+    <span class="acc-bar" style="left:0;top:268mm;height:29mm;background:${C.yellow}"></span>
   </div>`
 }
 
