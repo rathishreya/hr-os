@@ -43,23 +43,23 @@ export const ENTITY = {
 const LOGO_EZ = `
 <svg width="150" height="42" viewBox="0 0 158 44" xmlns="http://www.w3.org/2000/svg" aria-label="EZ Lab Private Limited">
   <rect x="1.5" y="4" width="36" height="36" rx="9" fill="none" stroke="${C.ezGreen}" stroke-width="2.6"/>
-  <text x="19.5" y="29" font-family="Poppins, Arial, sans-serif" font-weight="600" font-size="16" fill="${C.ezGreen}" text-anchor="middle">EZ</text>
-  <text x="46" y="20" font-family="Poppins, Arial, sans-serif" font-weight="600" font-size="15.5" fill="${C.ezGreenDark}">EZ Lab</text>
-  <text x="46" y="36" font-family="Poppins, Arial, sans-serif" font-weight="500" font-size="11.5" fill="#6B7280">Private Limited</text>
+  <text x="19.5" y="29" font-family="Exo2, Arial, sans-serif" font-weight="600" font-size="16" fill="${C.ezGreen}" text-anchor="middle">EZ</text>
+  <text x="46" y="20" font-family="Exo2, Arial, sans-serif" font-weight="600" font-size="15.5" fill="${C.ezGreenDark}">EZ Lab</text>
+  <text x="46" y="36" font-family="Exo2, Arial, sans-serif" font-weight="500" font-size="11.5" fill="#6B7280">Private Limited</text>
 </svg>`
 
 const LOGO_AEZ = `
 <svg width="150" height="42" viewBox="0 0 158 44" xmlns="http://www.w3.org/2000/svg" aria-label="ArabEasy LLC">
   <rect x="1.5" y="4" width="36" height="36" rx="9" fill="none" stroke="${C.aeOrange}" stroke-width="2.6"/>
-  <text x="19.5" y="29" font-family="Poppins, Arial, sans-serif" font-weight="600" font-size="16" fill="${C.aeOrange}" text-anchor="middle">EZ</text>
-  <text x="46" y="30" font-family="Poppins, Arial, sans-serif" font-weight="600" font-size="17" fill="${C.aeBlue}">ArabEasy</text>
+  <text x="19.5" y="29" font-family="Exo2, Arial, sans-serif" font-weight="600" font-size="16" fill="${C.aeOrange}" text-anchor="middle">EZ</text>
+  <text x="46" y="30" font-family="Exo2, Arial, sans-serif" font-weight="600" font-size="17" fill="${C.aeBlue}">ArabEasy</text>
 </svg>`
 
 // Compact single mark (used by the JD, which shows a brandName instead of the legal entity).
 const LOGO_MARK = `
 <svg width="42" height="42" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg" aria-label="EZ">
   <rect x="3" y="3" width="36" height="36" rx="9" fill="none" stroke="${C.ezGreen}" stroke-width="2.6"/>
-  <text x="21" y="28" font-family="Poppins, Arial, sans-serif" font-weight="600" font-size="16" fill="${C.ezGreen}" text-anchor="middle">EZ</text>
+  <text x="21" y="28" font-family="Exo2, Arial, sans-serif" font-weight="600" font-size="16" fill="${C.ezGreen}" text-anchor="middle">EZ</text>
 </svg>`
 
 // Icon chips at the right edge of the letterhead: a red map pin beside the address, a globe
@@ -128,14 +128,14 @@ export function chromeCss(mode) {
   .lh{ position:${pos}; top:0; left:0; right:0; height:27mm; padding:5mm 6mm 0 8mm;
        display:flex; justify-content:space-between; align-items:flex-start; }
   .lh-l{ display:flex; flex-direction:column; gap:1.2mm; }
-  .lh-iso{ font-family:Poppins, Arial, sans-serif; font-weight:600; font-size:7.5px;
+  .lh-iso{ font-family:Exo2, Arial, sans-serif; font-weight:600; font-size:7.5px;
            letter-spacing:2.2px; color:#374151; line-height:1.65; }
   .lh-r{ display:flex; flex-direction:column; align-items:flex-end; gap:1.4mm; padding-top:1mm; }
   .lh-row{ display:flex; align-items:center; gap:2mm; }
   .lh-txt{ text-align:right; }
-  .lh-co{ font-family:Poppins, Arial, sans-serif; font-weight:600; font-size:10.5px; color:${C.ink}; }
-  .lh-ad{ font-family:Poppins, Arial, sans-serif; font-size:7.5px; color:#4B5563; margin-top:0.8mm; }
-  .lh-web{ font-family:Poppins, Arial, sans-serif; font-weight:600; font-size:8px; color:${C.ink}; }
+  .lh-co{ font-family:Exo2, Arial, sans-serif; font-weight:600; font-size:10.5px; color:${C.ink}; }
+  .lh-ad{ font-family:Exo2, Arial, sans-serif; font-size:7.5px; color:#4B5563; margin-top:0.8mm; }
+  .lh-web{ font-family:Exo2, Arial, sans-serif; font-weight:600; font-size:8px; color:${C.ink}; }
   .lh-chip{ display:inline-flex; align-items:center; justify-content:center; width:9mm; height:5.5mm;
             background:${C.chip}; border-radius:3mm 0 0 3mm; margin-right:-6mm; }
   .acc-bar{ position:${pos}; width:6mm; display:block; }

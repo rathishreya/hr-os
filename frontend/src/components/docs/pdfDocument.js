@@ -17,11 +17,7 @@ import { ENTITY, C, logoSvg } from './letterhead'
 let poppinsVfs = null
 async function loadPoppins() {
   if (poppinsVfs) return poppinsVfs
-  const files = [
-    'Poppins-Regular', 'Poppins-SemiBold', 'Poppins-Italic', 'Poppins-SemiBoldItalic',
-    'Arimo-Regular', 'Arimo-Bold', 'Arimo-Italic', 'Arimo-BoldItalic',
-    'GreatVibes-Regular',
-  ]
+  const files = ['Exo2-Regular', 'Exo2-Bold', 'Exo2-Italic', 'Exo2-BoldItalic', 'GreatVibes-Regular']
   const entries = await Promise.all(files.map(async (n) => {
     const res = await fetch(`/fonts/${n}.ttf`)
     if (!res.ok) throw new Error(`font ${n}: HTTP ${res.status}`)
@@ -59,11 +55,15 @@ function headingStyle(level) {
   return { fontSize: 10.5, bold: true, margin: [0, 8, 0, 4] }
 }
 
+// EZ documents set the right-aligned Reference/Date meta in green (Word Green Accent-6 D25),
+// ArabEasy ones in ink. Set per build; rendering is sequential so a module flag is safe.
+let metaGreen = false
+
 /** One document block -> pdfmake content node(s). Mirrors DocumentBlocks.jsx case for case. */
 function blockToPdf(b) {
   switch (b?.type) {
     case 'heading': {
-      const node = runs((b.text || '').toUpperCase(), headingStyle(b.level))
+      const node = runs(b.text || '', headingStyle(b.level))
       if (b.underline) node.decoration = 'underline'
       return node
     }
@@ -73,7 +73,7 @@ function blockToPdf(b) {
       const style = {
         fontSize: 10.5,
         alignment: b.align === 'right' ? 'right' : 'left',
-        color: b.muted ? MUTED : INK,
+        color: b.align === 'right' && metaGreen ? '#538135' : b.muted ? MUTED : INK,
         margin: [0, 0, 0, 5],
         lineHeight: 1.25,
       }
@@ -290,6 +290,7 @@ const GLOBE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="15
 /** The full pdfmake document definition — one builder shared by the emailed attachment, the
  *  page-by-page preview and any future export, so they cannot diverge. */
 async function buildDefinition(doc, bodyFont) {
+  metaGreen = doc.entity !== 'AEZ'
   let content
   if (doc.content_html) {
     // A hand-edited letter: its blocks are stale, the edited HTML is the document. Convert it so
@@ -336,15 +337,10 @@ async function makePdf(doc) {
       pdfMake.addVirtualFileSystem(await loadPoppins())
       pdfMake.addFonts({
         Roboto: ROBOTO,
-        Poppins: {
-          normal: 'Poppins-Regular.ttf', bold: 'Poppins-SemiBold.ttf',
-          italics: 'Poppins-Italic.ttf', bolditalics: 'Poppins-SemiBoldItalic.ttf',
-        },
-        // Arimo is metrically identical to Arial -- the face the EZ Lab source documents are
-        // actually set in (the ArabEasy sources are the Poppins ones).
-        Arimo: {
-          normal: 'Arimo-Regular.ttf', bold: 'Arimo-Bold.ttf',
-          italics: 'Arimo-Italic.ttf', bolditalics: 'Arimo-BoldItalic.ttf',
+        // Exo 2: the face every source document is set in (user-confirmed).
+        Exo2: {
+          normal: 'Exo2-Regular.ttf', bold: 'Exo2-Bold.ttf',
+          italics: 'Exo2-Italic.ttf', bolditalics: 'Exo2-BoldItalic.ttf',
         },
         GreatVibes: {
           normal: 'GreatVibes-Regular.ttf', bold: 'GreatVibes-Regular.ttf',
@@ -356,8 +352,7 @@ async function makePdf(doc) {
       // the render degrades instead of hanging on an unregistered face.
       pdfMake.addFonts({
         Roboto: ROBOTO,
-        Poppins: ROBOTO,
-        Arimo: ROBOTO,
+        Exo2: ROBOTO,
         GreatVibes: {
           normal: 'Roboto-Italic.ttf', bold: 'Roboto-Italic.ttf',
           italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-Italic.ttf',
@@ -366,9 +361,7 @@ async function makePdf(doc) {
     }
     fontsRegistered = true
   }
-  // The EZ Lab sources are set in Arial (Arimo carries its exact metrics); the ArabEasy sources
-  // in Poppins. In the fallback set both names map to Roboto, so either is safe unloaded.
-  bodyFont = doc.entity === 'AEZ' ? 'Poppins' : 'Arimo'
+  bodyFont = 'Exo2'  // every source document is set in Exo 2; maps to Roboto if unloaded
 
   return pdfMake.createPdf(await buildDefinition(doc, bodyFont))
 }

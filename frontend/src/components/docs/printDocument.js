@@ -11,11 +11,11 @@ export function printDocument(doc) {
 
   // Self-hosted Poppins; absolute URLs because the print window is a fresh about:blank document.
   const script = `@font-face{ font-family:'Great Vibes'; src:url('${location.origin}/fonts/GreatVibes-Regular.ttf') format('truetype'); }`
-  const fonts = ['Regular:400:normal', 'SemiBold:600:normal', 'Italic:400:italic', 'SemiBoldItalic:600:italic']
+  const fonts = ['Regular:400:normal', 'Bold:700:normal', 'Italic:400:italic', 'BoldItalic:700:italic']
     .map((spec) => {
       const [file, weight, style] = spec.split(':')
-      const range = weight === '600' ? '600 800' : '100 500'
-      return `@font-face{ font-family:'Poppins'; src:url('${location.origin}/fonts/Poppins-${file}.ttf') format('truetype'); font-weight:${range}; font-style:${style}; }`
+      const range = weight === '700' ? '600 900' : '100 500'
+      return `@font-face{ font-family:'Exo2'; src:url('${location.origin}/fonts/Exo2-${file}.ttf') format('truetype'); font-weight:${range}; font-style:${style}; }`
     })
     .join('\n  ') + '\n  ' + script
 
@@ -24,18 +24,18 @@ export function printDocument(doc) {
   ${fonts}
   @page { size: A4; margin: 31mm 19mm 17mm 19mm; }
   *{ box-sizing:border-box; }
-  body{ font-family:${doc.entity === 'AEZ' ? "Poppins,'Segoe UI',Arial,sans-serif" : "Arial,'Arimo','Helvetica Neue',sans-serif"}; color:#1f2430; font-size:10.5pt; line-height:1.5; margin:0; }
+  body{ font-family:'Exo2','Segoe UI',Arial,sans-serif; color:#1f2430; font-size:10.5pt; line-height:1.5; margin:0; }
   ${chromeCss('print')}
 
-  h1{ font-size:11.5pt; font-weight:600; text-align:center; text-transform:uppercase; letter-spacing:.6px; margin:14px 0 8px; }
-  h2{ font-size:10.5pt; font-weight:600; text-transform:uppercase; margin:12px 0 6px; }
+  h1{ font-size:11.5pt; font-weight:600; text-align:center; margin:14px 0 8px; }
+  h2{ font-size:10.5pt; font-weight:600; margin:12px 0 6px; }
   h3{ font-size:10.5pt; text-align:center; font-weight:600; margin:8px 0; }
   h1.ul,h2.ul,h3.ul{ text-decoration:underline; text-underline-offset:3px; }
   u{ text-decoration:underline; }
   p{ margin:7px 0; text-align:left; }
   p.clause{ padding-left:2em; text-indent:-2em; }
   p.muted{ color:#4b5563; }
-  p.right{ text-align:right; color:#2e7d5b; font-weight:600; margin:1px 0; }
+  p.right{ text-align:right; ${doc.entity === 'AEZ' ? '' : 'color:#538135;'} font-weight:600; margin:1px 0; }
   ol,ul{ margin:6px 0; padding-left:24px; } li{ margin:3px 0; text-align:left; padding-left:4px; }
   ul.plain{ list-style:none; padding-left:12px; } ul.plain li{ padding-left:2em; text-indent:-2em; }
   strong{ font-weight:600; }

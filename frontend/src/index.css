@@ -85,22 +85,22 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 }
 .menu-in { animation: menu-in 0.14s var(--ease-snappy); }
 
-/* Poppins — the typeface of the EZ Lab / ArabEasy source documents. Self-hosted so the
-   preview, the print window and the emailed PDF all set the same face. */
-@font-face { font-family: 'Poppins'; src: url('/fonts/Poppins-Regular.ttf') format('truetype'); font-weight: 100 500; font-style: normal; font-display: swap; }
-@font-face { font-family: 'Poppins'; src: url('/fonts/Poppins-SemiBold.ttf') format('truetype'); font-weight: 600 800; font-style: normal; font-display: swap; }
-@font-face { font-family: 'Poppins'; src: url('/fonts/Poppins-Italic.ttf') format('truetype'); font-weight: 100 500; font-style: italic; font-display: swap; }
-@font-face { font-family: 'Poppins'; src: url('/fonts/Poppins-SemiBoldItalic.ttf') format('truetype'); font-weight: 600 800; font-style: italic; font-display: swap; }
+/* Exo 2 — the typeface every source document is set in. Self-hosted so the preview, the print
+   window and the emailed PDF all carry the same face. */
+@font-face { font-family: 'Exo2'; src: url('/fonts/Exo2-Regular.ttf') format('truetype'); font-weight: 100 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Exo2'; src: url('/fonts/Exo2-Bold.ttf') format('truetype'); font-weight: 600 900; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Exo2'; src: url('/fonts/Exo2-Italic.ttf') format('truetype'); font-weight: 100 500; font-style: italic; font-display: swap; }
+@font-face { font-family: 'Exo2'; src: url('/fonts/Exo2-BoldItalic.ttf') format('truetype'); font-weight: 600 900; font-style: italic; font-display: swap; }
 @font-face { font-family: 'Great Vibes'; src: url('/fonts/GreatVibes-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
 
 /* On-screen rendering of a document's rich HTML (offer letters/contracts) — mirrors the print CSS
    in printDocument.js so the editor/preview looks like the saved PDF. Poppins body, bordered tables. */
-.doc-html { font-family: Poppins, 'Segoe UI', Arial, sans-serif; color: #1f2430; font-size: 14px; line-height: 1.55; }
-/* EZ Lab source documents are set in Arial; ArabEasy ones in Poppins. The paper wrapper flips
-   this class per entity. */
-.doc-font-ez .doc-html { font-family: Arial, 'Arimo', 'Helvetica Neue', sans-serif; }
-.doc-html h1 { font-size: 15px; text-align: center; text-transform: uppercase; letter-spacing: .4px; font-weight: 700; margin: 14px 0 8px; }
-.doc-html h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; margin: 12px 0 6px; }
+.doc-html { font-family: 'Exo2', 'Segoe UI', Arial, sans-serif; color: #1f2430; font-size: 14px; line-height: 1.55; }
+/* EZ documents color the Reference/Date meta lines green, as the sources do; ArabEasy sources
+   set them in ink. The paper wrapper flips this class per entity. */
+.doc-font-ez .doc-html p.right { color: #538135; }
+.doc-html h1 { font-size: 15px; text-align: center; font-weight: 700; margin: 14px 0 8px; }
+.doc-html h2 { font-size: 14px; font-weight: 600; margin: 12px 0 6px; }
 .doc-html h3 { font-size: 13.5px; text-align: center; font-weight: 700; margin: 8px 0; }
 .doc-html h1.ul, .doc-html h2.ul, .doc-html h3.ul { text-decoration: underline; text-underline-offset: 3px; }
 .doc-html u { text-decoration: underline; }
@@ -109,7 +109,7 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
    text, matching how the source contracts are set. */
 .doc-html p.clause { padding-left: 2em; text-indent: -2em; }
 .doc-html p.muted { color: #4b5563; }
-.doc-html p.right { text-align: right; color: #2e7d5b; font-weight: 600; margin: 1px 0; }
+.doc-html p.right { text-align: right; font-weight: 600; margin: 1px 0; }
 .doc-html ol, .doc-html ul { margin: 6px 0; padding-left: 26px; }
 .doc-html ol { list-style: decimal; } .doc-html ul { list-style: disc; }
 .doc-html li { margin: 3px 0; text-align: left; padding-left: 4px; }

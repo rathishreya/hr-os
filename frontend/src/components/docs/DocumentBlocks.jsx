@@ -164,8 +164,8 @@ function Signature({ block }) {
 }
 
 const HEADING_CLASS = {
-  1: 'mt-2 text-center text-base font-bold uppercase tracking-wide text-slate-900',
-  2: 'text-sm font-bold uppercase tracking-wide text-slate-800',
+  1: 'mt-2 text-center text-base font-bold text-slate-900',
+  2: 'text-sm font-bold text-slate-800',
   3: 'text-center text-sm font-semibold text-slate-800',
 }
 
@@ -177,7 +177,7 @@ function renderBlock(b, i) {
       return (
         <p
           key={i}
-          className={`text-sm leading-relaxed ${b.muted ? 'text-slate-500' : 'text-slate-700'} ${b.align === 'right' ? 'text-right text-emerald-700' : 'text-left'}`}
+          className={`text-sm leading-relaxed ${b.muted ? 'text-slate-500' : 'text-slate-700'} ${b.align === 'right' ? 'text-right font-semibold' : 'text-left'}`}
           style={isClause(b) ? { paddingLeft: '2em', textIndent: '-2em' } : undefined}
         >
           <StrongPrefix text={b.text || ''} prefix={b.strong_prefix} />
