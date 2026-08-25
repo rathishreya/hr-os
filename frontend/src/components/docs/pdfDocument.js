@@ -267,26 +267,24 @@ function pageBackground() {
   const bar = (x, yMm, hMm, color, wMm = 6) => ({
     type: 'rect', x, y: yMm * MM, w: wMm * MM, h: hMm * MM, color,
   })
-  // Both edges carry the SAME element, rotated 180 degrees: square -> rule -> three bars,
-  // the rule meeting the maroon block's edge with no gap.
-  // Left reads top-to-bottom, right reads bottom-to-top. Identical heights, rule and gap.
+  // Lengths calibrated from the full-page source; left is the exact 180-degree mirror of right.
   const R = PAGE_W - 6 * MM
   const axisL = 6 * MM      // the maroon bar's inner edge
   const axisR = PAGE_W - 6 * MM
   return () => ({
     canvas: [
-      // Right (mirror of left): bars from the top, then rule down to the square.
-      bar(R, 0, 29, C.yellow),
-      bar(R, 29, 47, C.navy),
-      bar(R, 76, 39, C.maroon),
-      { type: 'rect', x: axisR, y: 115 * MM, w: 0.15 * MM, h: 149.4 * MM, color: C.navy },
-      { type: 'rect', x: axisR - 1.175 * MM, y: 264.4 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      // Left: square, rule, gap, bars to the page bottom.
-      { type: 'rect', x: axisL - 1.425 * MM, y: 30 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      { type: 'rect', x: axisL - 0.15 * MM, y: 32.6 * MM, w: 0.15 * MM, h: 149.4 * MM, color: C.navy },
-      bar(0, 182, 39, C.maroon),
-      bar(0, 221, 47, C.navy),
-      bar(0, 268, 29, C.yellow),
+      // Right: bars fill the top ~85mm, rule drops to the square at 215mm.
+      bar(R, 0, 21.5, C.yellow),
+      bar(R, 21.5, 31.5, C.navy),
+      bar(R, 53, 31.5, C.maroon),
+      { type: 'rect', x: axisR, y: 84.5 * MM, w: 0.15 * MM, h: 130.5 * MM, color: C.navy },
+      { type: 'rect', x: axisR - 1.175 * MM, y: 215 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
+      // Left: square at 79.4mm, rule to the maroon at 212.5mm, bars fill to the page bottom.
+      { type: 'rect', x: axisL - 1.425 * MM, y: 79.4 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
+      { type: 'rect', x: axisL - 0.15 * MM, y: 82 * MM, w: 0.15 * MM, h: 130.5 * MM, color: C.navy },
+      bar(0, 212.5, 31.5, C.maroon),
+      bar(0, 244, 31.5, C.navy),
+      bar(0, 275.5, 21.5, C.yellow),
     ],
   })
 }
