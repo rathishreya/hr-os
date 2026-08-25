@@ -37,6 +37,7 @@ export function printDocument(doc) {
   p.muted{ color:#4b5563; }
   p.right{ text-align:right; color:#2e7d5b; font-weight:600; margin:1px 0; }
   ol,ul{ margin:6px 0; padding-left:24px; } li{ margin:3px 0; text-align:left; padding-left:4px; }
+  ul.plain{ list-style:none; padding-left:12px; } ul.plain li{ padding-left:2em; text-indent:-2em; }
   strong{ font-weight:600; }
 
   table{ border-collapse:collapse; width:100%; margin:10px 0; font-size:9.5pt; break-inside:avoid; }

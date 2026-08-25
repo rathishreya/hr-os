@@ -1,5 +1,5 @@
 import { richSegments } from './rich'
-import { isClause } from './docHtml'
+import { isClause, selfMarked } from './docHtml'
 
 /**
  * Renders a structured EZ Lab document (offer letter / contract) from its `blocks`, matching the
@@ -56,10 +56,12 @@ function MiniBlocks({ blocks }) {
 
 function List({ block, dense = false }) {
   const Tag = block.ordered ? 'ol' : 'ul'
+  // Self-marked items (A., a), (i), iii.) are set without bullets in the sources.
+  const plain = !block.ordered && selfMarked(block.items)
   return (
     <Tag
       start={block.ordered && block.start ? Number(block.start) : undefined}
-      className={`${block.ordered ? 'list-decimal' : 'list-disc'} space-y-1 pl-6 text-sm leading-relaxed text-slate-700 marker:text-slate-500 ${dense ? '' : 'my-1'}`}
+      className={`${plain ? 'list-none pl-3 [&>li]:pl-8 [&>li]:-indent-8' : block.ordered ? 'list-decimal pl-6' : 'list-disc pl-6'} space-y-1 text-sm leading-relaxed text-slate-700 marker:text-slate-500 ${dense ? '' : 'my-1'}`}
     >
       {(block.items || []).map((it, i) => (<li key={i}><Rich text={it} /></li>))}
     </Tag>

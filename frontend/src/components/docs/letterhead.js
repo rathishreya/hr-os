@@ -110,6 +110,7 @@ export function accentsHtml() {
     <span class="acc-bar" style="right:0;top:80mm;height:48mm;background:${C.maroon}"></span>
     <span class="acc-sq" style="right:1.5mm;top:255mm"></span>
     <span class="acc-sq" style="left:7mm;top:92mm"></span>
+    <span class="acc-rule" style="left:8.1mm;top:95mm;height:158mm"></span>
     <span class="acc-bar" style="left:0;top:232mm;height:34mm;background:${C.maroon}"></span>
     <span class="acc-bar" style="left:0;top:266mm;height:24mm;background:${C.navy}"></span>
     <span class="acc-bar" style="left:0;top:290mm;height:7mm;background:${C.yellow}"></span>
@@ -135,5 +136,6 @@ export function chromeCss(mode) {
   .lh-chip{ display:inline-flex; align-items:center; justify-content:center; width:9mm; height:5.5mm;
             background:${C.chip}; border-radius:3mm 0 0 3mm; margin-right:-6mm; }
   .acc-bar{ position:${pos}; width:4.5mm; display:block; }
-  .acc-sq{ position:${pos}; width:2.6mm; height:2.6mm; background:${C.navy}; display:block; }`
+  .acc-sq{ position:${pos}; width:2.6mm; height:2.6mm; background:${C.navy}; display:block; }
+  .acc-rule{ position:${pos}; width:0.4mm; background:${C.navy}; display:block; }`
 }

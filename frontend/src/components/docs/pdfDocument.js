@@ -100,15 +100,36 @@ function blockToPdf(b) {
       }
       return { ...body, ...style }
     }
-    case 'list':
+    case 'list': {
+      const items = b.items || []
+      const MARK = /^(\s*\(?[A-Za-z0-9]{1,5}[.)])\s+([\s\S]*)$/
+      // Self-marked items render without bullets, marker hanging in its own column, as the
+      // sources set them.
+      if (!b.ordered && items.length && items.every((i) => MARK.test(String(i)))) {
+        return {
+          stack: items.map((i) => {
+            const [, marker, rest] = MARK.exec(String(i))
+            return {
+              columns: [
+                { width: 26, text: marker.trim(), fontSize: 10.5, color: INK },
+                { width: '*', ...runs(rest), fontSize: 10.5, color: INK, alignment: 'left', lineHeight: 1.25 },
+              ],
+              columnGap: 4,
+              margin: [10, 0, 0, 3],
+            }
+          }),
+          margin: [0, 0, 0, 4],
+        }
+      }
       return {
-        [b.ordered ? 'ol' : 'ul']: (b.items || []).map((i) => runs(i)),
+        [b.ordered ? 'ol' : 'ul']: items.map((i) => runs(i)),
         ...(b.ordered && b.start ? { start: Number(b.start) } : {}),
         fontSize: 10.5,
         color: INK,
         margin: [8, 0, 0, 6],
         lineHeight: 1.25,
       }
+    }
     case 'terms':
       return {
         table: {
@@ -254,6 +275,8 @@ function pageBackground() {
       bar(R, 80, 48, C.maroon),
       { type: 'rect', x: PAGE_W - (1.5 + 2.6) * MM, y: 255 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
       { type: 'rect', x: 7 * MM, y: 92 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
+      // The thin vertical rule down the left margin, hanging from the small square.
+      { type: 'rect', x: 8.1 * MM, y: 95 * MM, w: 0.4 * MM, h: 158 * MM, color: C.navy },
       bar(0, 232, 34, C.maroon),
       bar(0, 266, 24, C.navy),
       bar(0, 290, 7, C.yellow),

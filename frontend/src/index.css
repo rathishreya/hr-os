@@ -113,6 +113,8 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 .doc-html ol, .doc-html ul { margin: 6px 0; padding-left: 26px; }
 .doc-html ol { list-style: decimal; } .doc-html ul { list-style: disc; }
 .doc-html li { margin: 3px 0; text-align: left; padding-left: 4px; }
+.doc-html ul.plain { list-style: none; padding-left: 14px; }
+.doc-html ul.plain li { padding-left: 2em; text-indent: -2em; }
 .doc-html strong { font-weight: 600; }
 .doc-html table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12.5px; }
 .doc-html table.terms th { width: 34%; background: #f4f6f9; text-align: left; vertical-align: top; font-weight: 600; }

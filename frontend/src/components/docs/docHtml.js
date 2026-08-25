@@ -20,6 +20,11 @@ function richHtml(text) {
 
 // A clause-shaped paragraph: "1. ..." / "12.1 ..." in the body, or a numbered strong_prefix
 // ("2. Duties & Responsibilities"). These get a hanging indent so the number sits in the gutter.
+// Every item opens with its own enumerator ("A.", "a)", "(i)", "iii.", "1.") -- the source
+// documents set such lists without bullets, the marker IS the text.
+const MARK_RE = /^\s*\(?[A-Za-z0-9]{1,5}[.)]\s/
+export const selfMarked = (items) => Array.isArray(items) && items.length > 0 && items.every((i) => MARK_RE.test(String(i)))
+
 export const isClause = (b) =>
   /^\s*\d{1,2}(\.\d+)?[.)]?\s/.test(String(b?.strong_prefix || b?.text || ''))
 
@@ -48,7 +53,10 @@ export function blockToHtml(b) {
     case 'list': {
       const tag = b.ordered ? 'ol' : 'ul'
       const attr = b.ordered && b.start ? ` start="${Number(b.start)}"` : ''
-      return `<${tag}${attr}>${(b.items || []).map((i) => `<li>${richHtml(i)}</li>`).join('')}</${tag}>`
+      // Items that carry their own marker (A., a), (i), iii., 1.) are set in the sources as
+      // plain indented lines -- adding a disc would double-mark them.
+      const plain = !b.ordered && selfMarked(b.items) ? ' class="plain"' : ''
+      return `<${tag}${attr}${plain}>${(b.items || []).map((i) => `<li>${richHtml(i)}</li>`).join('')}</${tag}>`
     }
     case 'terms':
       return `<table class="terms">${(b.rows || [])
