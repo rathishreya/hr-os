@@ -267,7 +267,8 @@ function pageBackground() {
   const bar = (x, yMm, hMm, color, wMm = 6) => ({
     type: 'rect', x, y: yMm * MM, w: wMm * MM, h: hMm * MM, color,
   })
-  // Both edges carry the SAME element, rotated 180 degrees: square -> rule -> gap -> three bars.
+  // Both edges carry the SAME element, rotated 180 degrees: square -> rule -> three bars,
+  // the rule meeting the maroon block's edge with no gap.
   // Left reads top-to-bottom, right reads bottom-to-top. Identical heights, rule and gap.
   const R = PAGE_W - 6 * MM
   const axisL = 3 * MM
@@ -278,11 +279,11 @@ function pageBackground() {
       bar(R, 0, 29, C.yellow),
       bar(R, 29, 47, C.navy),
       bar(R, 76, 39, C.maroon),
-      { type: 'rect', x: axisR - 0.2 * MM, y: 152 * MM, w: 0.4 * MM, h: 112.4 * MM, color: C.navy },
+      { type: 'rect', x: axisR - 0.2 * MM, y: 115 * MM, w: 0.4 * MM, h: 149.4 * MM, color: C.navy },
       { type: 'rect', x: axisR - 1.3 * MM, y: 264.4 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
       // Left: square, rule, gap, bars to the page bottom.
       { type: 'rect', x: axisL - 1.3 * MM, y: 30 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      { type: 'rect', x: axisL - 0.2 * MM, y: 32.6 * MM, w: 0.4 * MM, h: 112.4 * MM, color: C.navy },
+      { type: 'rect', x: axisL - 0.2 * MM, y: 32.6 * MM, w: 0.4 * MM, h: 149.4 * MM, color: C.navy },
       bar(0, 182, 39, C.maroon),
       bar(0, 221, 47, C.navy),
       bar(0, 268, 29, C.yellow),
