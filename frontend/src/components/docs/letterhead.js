@@ -50,9 +50,9 @@ const LOGO_EZ = `
 
 const LOGO_AEZ = `
 <svg width="150" height="42" viewBox="0 0 158 44" xmlns="http://www.w3.org/2000/svg" aria-label="ArabEasy LLC">
-  <rect x="1.5" y="4" width="36" height="36" rx="9" fill="none" stroke="${C.aeOrange}" stroke-width="2.6"/>
-  <text x="19.5" y="29" font-family="Exo2, Arial, sans-serif" font-weight="600" font-size="16" fill="${C.aeOrange}" text-anchor="middle">EZ</text>
-  <text x="46" y="30" font-family="Exo2, Arial, sans-serif" font-weight="600" font-size="17" fill="${C.aeBlue}">ArabEasy</text>
+  <rect x="1.5" y="4" width="36" height="36" rx="10" fill="none" stroke="${C.aeOrange}" stroke-width="2.2"/>
+  <text x="19.5" y="29.5" font-family="Exo2, Arial, sans-serif" font-weight="700" font-size="15" fill="${C.aeBlue}" text-anchor="middle">EZ</text>
+  <text x="45" y="30.5" font-family="Exo2, Arial, sans-serif" font-weight="700" font-size="18.5" fill="${C.aeBlue}">ArabEasy</text>
 </svg>`
 
 // Compact single mark (used by the JD, which shows a brandName instead of the legal entity).

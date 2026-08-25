@@ -47,7 +47,7 @@ def agency_contract(ctx: dict) -> dict:
             b.p(f"Dear {ctx['agency_poc_name']},"),
             b.p(
                 f"We are pleased to confirm our verbal discussion to bring you on as a Service Provider "
-                f"for {ctx['service_type']} at {contracting} (hereinafter referred to as \"EZ\"), effective "
+                f"for {ctx['service_type']} at {contracting} (hereinafter referred to as \"**EZ**\"), effective "
                 f"{ctx['commencement_date']}. You are to keep all our client and EZ's information "
                 f"confidential. Additional details regarding the work process and a non-disclosure "
                 f"agreement is attached for your review and confirmation."
@@ -301,20 +301,20 @@ def agency_contract(ctx: dict) -> dict:
             b.ol([
                 "Disclosing Party will give the Receiving Party access to proprietary and confidential "
                 "information belonging to EZ, its clients, its suppliers and others (the proprietary and "
-                "confidential information are collectively referred to in this Agreement as \"Confidential "
-                "Information\"). Confidential Information includes but is not limited to client lists, marketing "
+                "confidential information are collectively referred to in this Agreement as \"**Confidential "
+                "Information**\"). Confidential Information includes but is not limited to client lists, marketing "
                 "plans, proposals, contracts, technical and/or financial information, databases, software and "
                 "know-how. All Confidential Information remains confidential and proprietary information of EZ.",
 
-                "As referred to herein, the \"Business of EZ\" shall relate to the business of EZ as the same is "
+                "As referred to herein, the \"**Business of EZ**\" shall relate to the business of EZ as the same is "
                 "determined by the Proprietor of EZ from time to time.",
 
                 "The Receiving Party may in the course of the working process conceive, develop or contribute to "
                 "material or information related to the Business of EZ, including, without limitation, software, "
                 "technical documentation, ideas, inventions (whether or not patentable), hardware, know-how, "
                 "marketing plans, designs, techniques, documentation, and records, regardless of the form or "
-                "media, if any, on which such is stored (referred to in this Agreement as \"Proprietary "
-                "Property\"). EZ shall exclusively own all Proprietary Property which the Participant conceives, "
+                "media, if any, on which such is stored (referred to in this Agreement as \"**Proprietary "
+                "Property**\"). EZ shall exclusively own all Proprietary Property which the Participant conceives, "
                 "develops or contributes to in the course of the working process and all intellectual and "
                 "industrial property and other rights of any kind in or relating to the Proprietary Property, "
                 "including but not limited to all copyright, patent, trade secret and trade-mark rights in or "
@@ -444,16 +444,16 @@ def nda_tech(ctx: dict) -> dict:
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
             b.p(
                 'In consideration of employment as an employee or engagement as an independent '
-                'contractor with EZ Lab Private Limited ("EZ Lab"), the undersigned (the '
-                '"Participant") agrees and covenants as follows:'
+                'contractor with EZ Lab Private Limited ("**EZ Lab**"), the undersigned (the '
+                '"**Participant**") agrees and covenants as follows:'
             ),
 
             b.p(
                 '1. Employment with EZ Lab as an employee or engagement with EZ Lab as an independent '
-                'contractor, as the case may be (the "Engagement"), will give the Participant access to '
+                'contractor, as the case may be (the "**Engagement**"), will give the Participant access to '
                 'proprietary and confidential information belonging to EZ Lab, its customers, its '
                 'suppliers and others (the proprietary and confidential information is collectively '
-                'referred to in this Agreement as "Confidential Information"). Confidential Information '
+                'referred to in this Agreement as "**Confidential Information**"). Confidential Information '
                 'includes but is not limited to customer lists, marketing plans, proposals, contracts, '
                 'technical and/or financial information, databases, software, know-how (including, but '
                 'not limited to, research, product plans or other information regarding EZ Lab’s '
@@ -465,7 +465,7 @@ def nda_tech(ctx: dict) -> dict:
                 'confidential and proprietary information of EZ Lab.'
             ),
             b.p(
-                '2. As referred to herein, the "Business of EZ Lab" shall relate to the business of EZ '
+                '2. As referred to herein, the "**Business of EZ Lab**" shall relate to the business of EZ '
                 'Lab as the same is determined by the Proprietor of EZ Lab from time to time.'
             ),
             b.p(
@@ -476,7 +476,7 @@ def nda_tech(ctx: dict) -> dict:
                 '(whether or not patentable), hardware, know-how, marketing plans, designs, techniques, '
                 'any other intellectual property (Intellectual Property), documentation and records, '
                 'regardless of the form or media, if any, on which such is stored (referred to in this '
-                'Agreement as "Proprietary Property"). EZ Lab shall exclusively own all rights, title '
+                'Agreement as "**Proprietary Property**"). EZ Lab shall exclusively own all rights, title '
                 'and interest in and to the Proprietary Property which the Participant conceives, '
                 'develops or contributes to in the course of the Employment or Engagement as the case '
                 'may be and all Intellectual Property and industrial property and other rights of any '
@@ -593,7 +593,7 @@ def nda_tech(ctx: dict) -> dict:
                 'become familiar with Confidential Information concerning such Related Companies, and '
                 'with investment opportunities relating to their respective businesses and therefore '
                 'agree that, during the term of this Agreement and for a period of two years thereafter '
-                '(the "Noncompete Period"), he or she will not directly or indirectly own, manage, '
+                '(the "**Noncompete Period**"), he or she will not directly or indirectly own, manage, '
                 'control, participate in, consult with, render services for, or in any other manner '
                 'engage in any business, or invest in or lend money to any business which constitutes or '
                 'is competitive with (including, without limitation, by competing for the same '
@@ -831,13 +831,13 @@ def offer_letter(ctx: dict) -> dict:
             b.divider(),
 
             # ── Annexure-1 ────────────────────────────────────────────────────────────────
-            b.h(1, "ANNEXURE - 1"),
+            b.h(1, "ANNEXURE - 1", underline=True),
             b.p("**THE HIGH-LEVEL JOB-DESCRIPTION IS AS BELOW:**"),
             *_jd_blocks(),
             b.divider(),
 
             # ── Annexure-2 ────────────────────────────────────────────────────────────────
-            b.h(1, "ANNEXURE - 2"),
+            b.h(1, "ANNEXURE - 2", underline=True),
             b.p("**COMPENSATION WOULD BE AS FOLLOWS:**"),
             b.comp_custom(annexure["rows"], annexure["notes"], known=annexure["known"]),
             b.p("**NOTES:**"),
@@ -845,7 +845,7 @@ def offer_letter(ctx: dict) -> dict:
             b.divider(),
 
             # ── Acceptance ────────────────────────────────────────────────────────────────
-            b.h(1, "ACCEPTANCE"),
+            b.h(1, "ACCEPTANCE", underline=True),
             b.p(
                 "I have read and understood the terms & conditions and also agree that the "
                 "Remuneration and other details are Confidential between the Organization and me. I "
@@ -1019,23 +1019,23 @@ def _fc_termination() -> list[dict]:
 
 _FC_SCHEDULE_B = [
     "Employment with EZ Lab as an employee or engagement with EZ Lab as an independent contractor, "
-    "as the case may be (the “Engagement”), will give the Participant access to proprietary and "
+    "as the case may be (the “**Engagement**”), will give the Participant access to proprietary and "
     "confidential information belonging to EZ Lab, its customers, its suppliers and others (the "
     "proprietary and confidential information is collectively referred to in this Agreement as "
-    "“Confidential Information”). Confidential Information includes but is not limited to customer "
+    "“**Confidential Information**”). Confidential Information includes but is not limited to customer "
     "lists, marketing plans, proposals, contracts, technical and/or financial information, "
     "databases, software and know-how. All Confidential Information remains the confidential and "
     "proprietary information of EZ Lab.",
 
-    "As referred to herein, the “Business of EZ Lab” shall relate to the business of EZ Lab as the "
+    "As referred to herein, the “**Business of EZ Lab**” shall relate to the business of EZ Lab as the "
     "same is determined by the Proprietor of EZ Lab from time to time.",
 
     "The Participant may in the course of the Engagement conceive, develop or contribute to material "
     "or information related to the Business of EZ Lab, including, without limitation, software, "
     "technical documentation, ideas, inventions (whether or not patentable), hardware, know-how, "
     "marketing plans, designs, techniques, documentation and records, regardless of the form or "
-    "media, if any, on which such is stored (referred to in this Agreement as “Proprietary "
-    "Property”). EZ Lab shall exclusively own all Proprietary Property which the Participant "
+    "media, if any, on which such is stored (referred to in this Agreement as “**Proprietary "
+    "Property**”). EZ Lab shall exclusively own all Proprietary Property which the Participant "
     "conceives, develops or contributes to in the course of the Engagement and all intellectual and "
     "industrial property and other rights of any kind in or relating to the Proprietary Property, "
     "including but not limited to all copyright, patent, trade secret and trade-mark rights in or "
@@ -1097,7 +1097,7 @@ _FC_SCHEDULE_B = [
     "The Participant acknowledges that, during the term of this Agreement, he or she may become "
     "familiar with Confidential Information concerning such Related Companies, and with investment "
     "opportunities relating to their respective businesses and therefore agree that, during the term "
-    "of this Agreement and for a period of two years thereafter (the “Noncompete Period”), he or she "
+    "of this Agreement and for a period of two years thereafter (the “**Noncompete Period**”), he or she "
     "will not directly or indirectly own, manage, control, participate in, consult with, render "
     "services for, or in any other manner engage in any business, or invest in or lend money to any "
     "business which constitutes or is competitive with (including, without limitation, by competing "
@@ -1422,8 +1422,8 @@ def full_contract(ctx: dict) -> dict:
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
             b.p(
                 "In consideration of employment as an employee or engagement as an independent "
-                "contractor with EZ Lab Private Limited (“EZ Lab”), the undersigned (the "
-                "“Participant”) agrees and covenants as follows:"
+                "contractor with EZ Lab Private Limited (“**EZ Lab**”), the undersigned (the "
+                "“**Participant**”) agrees and covenants as follows:"
             ),
             *_fc_schedule_b_blocks(),
             *execution,
@@ -1505,13 +1505,13 @@ def agency_nda(ctx: dict) -> dict:
                 "1. Disclosing Party will give the Receiving Party access to proprietary and "
                 "confidential information belonging to EZ, its clients, its suppliers and others "
                 "(the proprietary and confidential information are collectively referred to in this "
-                "Agreement as “Confidential Information”). Confidential Information includes but is "
+                "Agreement as “**Confidential Information**”). Confidential Information includes but is "
                 "not limited to client lists, marketing plans, proposals, contracts, technical "
                 "and/or financial information, databases, software and know-how. All Confidential "
                 "Information remains confidential and proprietary information of EZ."
             ),
             b.p(
-                "2. As referred to herein, the “Business of EZ” shall relate to the business of EZ "
+                "2. As referred to herein, the “**Business of EZ**” shall relate to the business of EZ "
                 "as the same is determined by the Proprietor of EZ from time to time."
             ),
             b.p(
@@ -1520,7 +1520,7 @@ def agency_nda(ctx: dict) -> dict:
                 "without limitation, software, technical documentation, ideas, inventions (whether "
                 "or not patentable), hardware, know-how, marketing plans, designs, techniques, "
                 "documentation, and records, regardless of the form or media, if any, on which such "
-                "is stored (referred to in this Agreement as “Proprietary Property”). EZ shall "
+                "is stored (referred to in this Agreement as “**Proprietary Property**”). EZ shall "
                 "exclusively own all Proprietary Property which the Participant conceives, develops "
                 "or contributes to in the course of the working process and all intellectual and "
                 "industrial property and other rights of any kind in or relating to the Proprietary "
@@ -1638,23 +1638,23 @@ register(
 
 _NDA_CLAUSES = [
     "Employment with EZ Lab as an employee or engagement with EZ Lab as an independent contractor, "
-    "as the case may be (the “Engagement”), will give the Participant access to proprietary and "
+    "as the case may be (the “**Engagement**”), will give the Participant access to proprietary and "
     "confidential information belonging to EZ Lab, its customers, its suppliers and others (the "
     "proprietary and confidential information is collectively referred to in this Agreement as "
-    "“Confidential Information”). Confidential Information includes but is not limited to customer "
+    "“**Confidential Information**”). Confidential Information includes but is not limited to customer "
     "lists, marketing plans, proposals, contracts, technical and/or financial information, "
     "databases, software and know-how. All Confidential Information remains the confidential and "
     "proprietary information of EZ Lab.",
 
-    "As referred to herein, the “Business of EZ Lab” shall relate to the business of EZ Lab as the "
+    "As referred to herein, the “**Business of EZ Lab**” shall relate to the business of EZ Lab as the "
     "same is determined by the Proprietor of EZ Lab from time to time.",
 
     "The Participant may in the course of the Engagement conceive, develop or contribute to material "
     "or information related to the Business of EZ Lab, including, without limitation, software, "
     "technical documentation, ideas, inventions (whether or not patentable), hardware, know-how, "
     "marketing plans, designs, techniques, documentation and records, regardless of the form or "
-    "media, if any, on which such is stored (referred to in this Agreement as “Proprietary "
-    "Property”). EZ Lab shall exclusively own all Proprietary Property which the Participant "
+    "media, if any, on which such is stored (referred to in this Agreement as “**Proprietary "
+    "Property**”). EZ Lab shall exclusively own all Proprietary Property which the Participant "
     "conceives, develops or contributes to in the course of the Engagement and all intellectual and "
     "industrial property and other rights of any kind in or relating to the Proprietary Property, "
     "including but not limited to all copyright, patent, trade secret and trade-mark rights in or "
@@ -1716,7 +1716,7 @@ _NDA_CLAUSES = [
     "The Participant acknowledges that, during the term of this Agreement, he or she may become "
     "familiar with Confidential Information concerning such Related Companies, and with investment "
     "opportunities relating to their respective businesses and therefore agree that, during the term "
-    "of this Agreement and for a period of two years thereafter (the “Noncompete Period”), he or she "
+    "of this Agreement and for a period of two years thereafter (the “**Noncompete Period**”), he or she "
     "will not directly or indirectly own, manage, control, participate in, consult with, render "
     "services for, or in any other manner engage in any business, or invest in or lend money to any "
     "business which constitutes or is competitive with (including, without limitation, by competing "
@@ -1787,7 +1787,7 @@ def nda(ctx: dict) -> dict:
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
             b.p(
                 "In consideration of employment as an employee or engagement as an independent "
-                "contractor with EZ Lab Private Limited (“EZ Lab”), the undersigned (the "
+                "contractor with EZ Lab Private Limited (“**EZ Lab**”), the undersigned (the "
                 "“**Participant**”) agrees and covenants as follows:"
             ),
             *body,
@@ -1979,14 +1979,14 @@ def traineeship_offer(ctx: dict) -> dict:
             b.divider(),
 
             # ── Annexure-1 ────────────────────────────────────────────────────────────────
-            b.h(1, "ANNEXURE - 1"),
+            b.h(1, "ANNEXURE - 1", underline=True),
             b.p("**THE HIGH-LEVEL JOB-DESCRIPTION IS AS BELOW:**"),
             b.ul(_TRAINEE_JD),
             *[b.p(t) for t in _TRAINEE_UNDERTAKINGS],
             b.divider(),
 
             # ── Annexure-2 ────────────────────────────────────────────────────────────────
-            b.h(1, "ANNEXURE - 2"),
+            b.h(1, "ANNEXURE - 2", underline=True),
             b.p("**COMPENSATION WOULD BE AS FOLLOWS:**"),
             b.comp_custom(annexure["rows"], annexure["notes"], known=annexure["known"]),
             b.p("**NOTES:**"),
@@ -1994,7 +1994,7 @@ def traineeship_offer(ctx: dict) -> dict:
             b.divider(),
 
             # ── Acceptance ────────────────────────────────────────────────────────────────
-            b.h(1, "ACCEPTANCE"),
+            b.h(1, "ACCEPTANCE", underline=True),
             b.p(
                 "I have read and understood the terms & conditions and also agree that the "
                 "Remuneration and other details are Confidential between the Organization and me. I "

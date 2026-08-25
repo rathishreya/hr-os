@@ -287,10 +287,10 @@ def _psc_misc() -> list[dict]:
 
 _SCHEDULE_B_CLAUSES = [
     "Professional service contract with EZ as service professional or engagement with EZ as an "
-    "independent contractor, as the case may be (the “Engagement”), will give the Participant "
+    "independent contractor, as the case may be (the “**Engagement**”), will give the Participant "
     "access to proprietary and confidential information belonging to EZ, its clients, its suppliers "
     "and others (the proprietary and confidential information is collectively referred to in this "
-    "Agreement as “Confidential Information”). Confidential Information includes but is not limited "
+    "Agreement as “**Confidential Information**”). Confidential Information includes but is not limited "
     "to client lists, marketing plans, proposals, contracts, technical and/or financial information, "
     "databases, software, and know-how. All Confidential Information remains confidential and "
     "proprietary information of EZ.",
@@ -325,7 +325,7 @@ _SCHEDULE_B_CLAUSES = [
 
     "You specifically agrees that for two (2) years after you are no longer engaged by EZ, you shall "
     "not directly or indirectly solicit, agree to perform or perform services of any type that EZ "
-    "can render (the \"Services\") for any person or entity who paid or engaged EZ for the Services, "
+    "can render (the \"**Services**\") for any person or entity who paid or engaged EZ for the Services, "
     "or who received the benefit of EZ's Services, or with whom you had any substantial dealing "
     "while engaged by EZ.",
 
@@ -350,15 +350,15 @@ _SCHEDULE_B_CLAUSES = [
     "regarding data security should be reported promptly to the designated authority within the "
     "organization.",
 
-    "As referred to herein, the “Business of EZ” shall relate to the business of EZ as the same is "
+    "As referred to herein, the “**Business of EZ**” shall relate to the business of EZ as the same is "
     "determined by the Proprietor of EZ from time to time.",
 
     "The Participant may in the course of the Engagement conceive, develop or contribute to material "
     "or information related to the Business of EZ, including, without limitation, software, "
     "technical documentation, ideas, inventions (whether or not patentable), hardware, know-how, "
     "marketing plans, designs, techniques, documentation and records, regardless of the form or "
-    "media, if any, on which such is stored (referred to in this Agreement as “Proprietary "
-    "Property”). EZ shall exclusively own all Proprietary Property which the Participant conceives, "
+    "media, if any, on which such is stored (referred to in this Agreement as “**Proprietary "
+    "Property**”). EZ shall exclusively own all Proprietary Property which the Participant conceives, "
     "develops or contributes to in the course of the Engagement and all intellectual and industrial "
     "property and other rights of any kind in or relating to the Proprietary Property, including but "
     "not limited to all copyright, patent, trade secret and trade-mark rights in or relating to the "
@@ -427,7 +427,7 @@ _SCHEDULE_B_CLAUSES = [
     "The Participant acknowledges that, during the term of this Agreement, he or she may become "
     "familiar with Confidential Information concerning such Related Companies, and with investment "
     "opportunities relating to their respective businesses and therefore agree that, during the term "
-    "of this Agreement and for a period of two years thereafter (the “Noncompete Period”), he or she "
+    "of this Agreement and for a period of two years thereafter (the “**Noncompete Period**”), he or she "
     "will not directly or indirectly own, manage, control, participate in, consult with, render "
     "services for, or in any other manner engage in any business, or invest in or lend money to any "
     "business which constitutes or is competitive with (including, without limitation, by competing "
@@ -443,7 +443,7 @@ _SCHEDULE_B_CLAUSES = [
 
     "The company may terminate this Offer and your professional service contract immediately without "
     "notice for any of the reasons stated in Articles 88 or 120 of the UAE Labour Law being Federal "
-    "Law No. 8 of 1980 (as amended) (the “Labour Law”).",
+    "Law No. 8 of 1980 (as amended) (the “**Labour Law**”).",
 
     "If you are absent from work without prior approval or any valid reason, the company may "
     "terminate the professional service contract immediately, without notice or payment in lieu of "
@@ -505,7 +505,7 @@ def professional_service_contract(ctx: dict) -> dict:
             b.p(f"Dear {who},"),
             b.p(
                 f"We are pleased to confirm this offer of a **Professional Service Expert** position "
-                f"with ArabEasy LLC (hereinafter referred to as \"EZ\") as **{role}**, effective "
+                f"with ArabEasy LLC (hereinafter referred to as \"**EZ**\") as **{role}**, effective "
                 f"**{start}**. As discussed, this offer is conditional upon completion of satisfactory "
                 f"reference check with the references provided by you that could include, but is not "
                 f"necessarily limited to successful completion of satisfactory verification checks of "
@@ -542,7 +542,7 @@ def professional_service_contract(ctx: dict) -> dict:
             b.divider(),
 
             # ── Schedule A ────────────────────────────────────────────────────────────────
-            b.h(1, "Schedule A"),
+            b.h(1, "Schedule A", underline=True),
             b.h(3, "ArabEasy LLC"),
             b.h(3, "Terms and Conditions of Professional Service Contract"),
             b.p(
@@ -658,12 +658,12 @@ def professional_service_contract(ctx: dict) -> dict:
             b.divider(),
 
             # ── Schedule B ────────────────────────────────────────────────────────────────
-            b.h(1, "Schedule B"),
+            b.h(1, "Schedule B", underline=True),
             b.h(3, "Covenants"),
-            b.h(3, "Confidentiality, Non-Solicitation, Non- Competition and Proprietary Information Agreement"),
+            b.h(3, "Confidentiality, Non-Solicitation, Non- Competition and Proprietary Information Agreement", underline=True),
             b.p(
                 "In consideration of professional service contract as a service professional or expert "
-                "with ArabEasy LLC, the undersigned (the “Participant”) agrees, and covenants as "
+                "with ArabEasy LLC, the undersigned (the “**Participant**”) agrees, and covenants as "
                 "follows:"
             ),
             b.ol(_SCHEDULE_B_CLAUSES),
@@ -728,10 +728,10 @@ def _freelance_schedule_b() -> list[dict]:
     return [
         b.p(
             "1. Freelance contract with EZ as a freelancer or engagement with EZ as an independent "
-            "contractor, as the case may be (the “Engagement”), will give the Participant access to "
+            "contractor, as the case may be (the “**Engagement**”), will give the Participant access to "
             "proprietary and confidential information belonging to EZ, its clients, its suppliers "
             "and others (the proprietary and confidential information is collectively referred to "
-            "in this Agreement as “Confidential Information”). Confidential Information includes "
+            "in this Agreement as “**Confidential Information**”). Confidential Information includes "
             "but is not limited to client lists, marketing plans, proposals, contracts, technical "
             "and/or financial information, databases, software, and know-how. All Confidential "
             "Information remains confidential and proprietary information of EZ."
@@ -776,7 +776,7 @@ def _freelance_schedule_b() -> list[dict]:
             "organization."
         ),
         b.p(
-            "6. As referred to herein, the “Business of EZ” shall relate to the business of EZ as "
+            "6. As referred to herein, the “**Business of EZ**” shall relate to the business of EZ as "
             "the same is determined by the Proprietor of EZ from time to time."
         ),
         b.p(
@@ -785,7 +785,7 @@ def _freelance_schedule_b() -> list[dict]:
             "limitation, software, technical documentation, ideas, inventions (whether or not "
             "patentable), hardware, know-how, marketing plans, designs, techniques, documentation "
             "and records, regardless of the form or media, if any, on which such is stored "
-            "(referred to in this Agreement as “Proprietary Property”). EZ shall exclusively own "
+            "(referred to in this Agreement as “**Proprietary Property**”). EZ shall exclusively own "
             "all Proprietary Property which the Participant conceives, develops or contributes to "
             "in the course of the Engagement and all intellectual and industrial property and other "
             "rights of any kind in or relating to the Proprietary Property, including but not "
@@ -820,12 +820,12 @@ def _freelance_schedule_b() -> list[dict]:
             "(iv) The Freelancer specifically agrees that for two (2) years after expiry or "
             "termination of the Agreement, Freelancer (or its Affiliate) shall not directly or "
             "indirectly solicit, agree to perform or perform services of any type that the EZ can "
-            "render (the \"Services\") for any person or entity who paid or engaged the EZ for the "
+            "render (the \"**Services**\") for any person or entity who paid or engaged the EZ for the "
             "Services, or who received the benefit of EZ's Services, or with whom Freelancer (or its "
             "Affiliate) had any substantial dealing during the term of Agreement.",
         ]),
         b.p(
-            "For the purposes of this clause, “Affiliate” shall mean an entity that controls, or is "
+            "For the purposes of this clause, “**Affiliate**” shall mean an entity that controls, or is "
             "controlled by, or is under common control of the Freelancer or any entity that controls "
             "the Freelancer."
         ),
@@ -905,7 +905,7 @@ def _freelance_schedule_b() -> list[dict]:
             "become familiar with Confidential Information concerning such Related Companies, and "
             "with investment opportunities relating to their respective businesses and therefore "
             "agree that, during the term of this Agreement and for a period of two years thereafter "
-            "(the “Noncompete Period”), he or she will not directly or indirectly own, manage, "
+            "(the “**Noncompete Period**”), he or she will not directly or indirectly own, manage, "
             "control, participate in, consult with, render services for, or in any other manner "
             "engage in any business, or invest in or lend money to any business which constitutes or "
             "is competitive with (including, without limitation, by competing for the same "
@@ -1009,7 +1009,7 @@ def freelance_contract(ctx: dict) -> dict:
             b.divider(),
 
             # ── Schedule A ────────────────────────────────────────────────────────────────
-            b.h(1, "Schedule A"),
+            b.h(1, "Schedule A", underline=True),
             b.h(3, "ArabEasy LLC"),
             b.h(3, "Terms and Conditions of Freelance Contract"),
             b.p(
@@ -1131,12 +1131,12 @@ def freelance_contract(ctx: dict) -> dict:
             b.divider(),
 
             # ── Schedule B ────────────────────────────────────────────────────────────────
-            b.h(1, "Schedule B"),
+            b.h(1, "Schedule B", underline=True),
             b.h(3, "Covenants"),
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
             b.p(
                 "In consideration of freelance contract as a freelancer or engagement as an "
-                "independent contractor with ArabEasy LLC, the undersigned (the “Participant”) "
+                "independent contractor with ArabEasy LLC, the undersigned (the “**Participant**”) "
                 "agrees, and covenants as follows:"
             ),
             *_freelance_schedule_b(),
@@ -1181,7 +1181,7 @@ def agency_nda(ctx: dict) -> dict:
         "blocks": [
             b.p(f"Ref # {ctx['reference']}", align="right"),
             b.p(f"Date: {ctx['letter_date']}", align="right"),
-            b.h(1, "Schedule B"),
+            b.h(1, "Schedule B", underline=True),
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
             b.p(f"This Agreement is made on this {ctx['effective_date']} by and between:"),
             b.p(
@@ -1217,13 +1217,13 @@ def agency_nda(ctx: dict) -> dict:
                 "1. Disclosing Party will give the Receiving Party access to proprietary and "
                 "confidential information belonging to EZ, its clients, its suppliers and others "
                 "(the proprietary and confidential information are collectively referred to in this "
-                "Agreement as “Confidential Information”). Confidential Information includes but is "
+                "Agreement as “**Confidential Information**”). Confidential Information includes but is "
                 "not limited to client lists, marketing plans, proposals, contracts, technical "
                 "and/or financial information, databases, software and know-how. All Confidential "
                 "Information remains confidential and proprietary information of EZ."
             ),
             b.p(
-                "2. As referred to herein, the “Business of EZ” shall relate to the business of EZ as "
+                "2. As referred to herein, the “**Business of EZ**” shall relate to the business of EZ as "
                 "the same is determined by the Proprietor of EZ from time to time."
             ),
             b.p(
@@ -1232,7 +1232,7 @@ def agency_nda(ctx: dict) -> dict:
                 "without limitation, software, technical documentation, ideas, inventions (whether or "
                 "not patentable), hardware, know-how, marketing plans, designs, techniques, "
                 "documentation, and records, regardless of the form or media, if any, on which such "
-                "is stored (referred to in this Agreement as “Proprietary Property”). EZ shall "
+                "is stored (referred to in this Agreement as “**Proprietary Property**”). EZ shall "
                 "exclusively own all Proprietary Property which the Participant conceives, develops "
                 "or contributes to in the course of the working process and all intellectual and "
                 "industrial property and other rights of any kind in or relating to the Proprietary "
@@ -1368,20 +1368,20 @@ _AEZ_AGENCY_FEES = [
 _AEZ_NDA_CLAUSES = [
     "Disclosing Party will give the Receiving Party access to proprietary and confidential "
     "information belonging to EZ, its clients, its suppliers and others (the proprietary and "
-    "confidential information are collectively referred to in this Agreement as “Confidential "
-    "Information”). Confidential Information includes but is not limited to client lists, marketing "
+    "confidential information are collectively referred to in this Agreement as “**Confidential "
+    "Information**”). Confidential Information includes but is not limited to client lists, marketing "
     "plans, proposals, contracts, technical and/or financial information, databases, software and "
     "know-how. All Confidential Information remains confidential and proprietary information of EZ.",
 
-    "As referred to herein, the “Business of EZ” shall relate to the business of EZ as the same is "
+    "As referred to herein, the “**Business of EZ**” shall relate to the business of EZ as the same is "
     "determined by the Proprietor of EZ from time to time.",
 
     "The Receiving Party may in the course of the working process conceive, develop or contribute "
     "to material or information related to the Business of EZ, including, without limitation, "
     "software, technical documentation, ideas, inventions (whether or not patentable), hardware, "
     "know-how, marketing plans, designs, techniques, documentation, and records, regardless of the "
-    "form or media, if any, on which such is stored (referred to in this Agreement as “Proprietary "
-    "Property”). EZ shall exclusively own all Proprietary Property which the Participant conceives, "
+    "form or media, if any, on which such is stored (referred to in this Agreement as “**Proprietary "
+    "Property**”). EZ shall exclusively own all Proprietary Property which the Participant conceives, "
     "develops or contributes to in the course of the working process and all intellectual and "
     "industrial property and other rights of any kind in or relating to the Proprietary Property, "
     "including but not limited to all copyright, patent, trade secret and trade-mark rights in or "
@@ -1499,7 +1499,7 @@ def agency_contract(ctx: dict) -> dict:
             b.p(
                 f"We are pleased to confirm our verbal discussion to bring you on as a Service "
                 f"Provider for {ctx['service_type']} at ARABEASY LLC (hereinafter referred to as "
-                f"\"EZ\"), effective {ctx['commencement_date']} (Start Date). You are to keep all our "
+                f"\"**EZ**\"), effective {ctx['commencement_date']} (Start Date). You are to keep all our "
                 f"client and EZ’s information confidential. Additional details regarding the work "
                 f"process and a non-disclosure agreement is attached for your review and "
                 f"confirmation."
@@ -1529,7 +1529,7 @@ def agency_contract(ctx: dict) -> dict:
             b.divider(),
 
             # ── Schedule A ────────────────────────────────────────────────────────────────
-            b.h(1, "Schedule A"),
+            b.h(1, "Schedule A", underline=True),
             b.h(3, f"Terms and Conditions of Contract between {agency} and EZ"),
             b.p("The following outlines the terms and conditions of a contract by and between:"),
             b.p(
@@ -1732,7 +1732,7 @@ def agency_contract(ctx: dict) -> dict:
             b.divider(),
 
             # ── Schedule B ────────────────────────────────────────────────────────────────
-            b.h(1, "Schedule B"),
+            b.h(1, "Schedule B", underline=True),
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
             b.p(f"This Agreement is made on this **{ctx['effective_date']}** by and between:"),
             b.p(
@@ -1838,7 +1838,7 @@ _FREELANCE_NDA_NONSOLICIT = [
 
     "v. The Freelancer specifically agrees that for two (2) years after expiry or termination of the "
     "Agreement, Freelancer (or its Affiliate) shall not directly or indirectly solicit, agree to "
-    "perform or perform services of any type that the EZ can render (the \"Services\") for any person "
+    "perform or perform services of any type that the EZ can render (the \"**Services**\") for any person "
     "or entity who paid or engaged the EZ for the Services, or who received the benefit of EZ's "
     "Services, or with whom Freelancer (or its Affiliate) had any substantial dealing during the "
     "term of Agreement.",
@@ -1865,16 +1865,16 @@ def freelance_nda(ctx: dict) -> dict:
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
             b.p(
                 "In consideration of freelance contract as a freelancer or engagement as an "
-                "independent contractor with ArabEasy LLC, the undersigned (the “Participant”) "
+                "independent contractor with ArabEasy LLC, the undersigned (the “**Participant**”) "
                 "agrees, and covenants as follows:"
             ),
 
             b.p(
                 "1. Freelance contract with EZ as a freelancer or engagement with EZ as an "
-                "independent contractor, as the case may be (the “Engagement”), will give the "
+                "independent contractor, as the case may be (the “**Engagement**”), will give the "
                 "Participant access to proprietary and confidential information belonging to EZ, its "
                 "clients, its suppliers and others (the proprietary and confidential information is "
-                "collectively referred to in this Agreement as “Confidential Information”). "
+                "collectively referred to in this Agreement as “**Confidential Information**”). "
                 "Confidential Information includes but is not limited to client lists, marketing "
                 "plans, proposals, contracts, technical and/or financial information, databases, "
                 "software, and know-how. All Confidential Information remains confidential and "
@@ -1921,7 +1921,7 @@ def freelance_nda(ctx: dict) -> dict:
                 "within the organization."
             ),
             b.p(
-                "6. As referred to herein, the “Business of EZ” shall relate to the business of EZ as "
+                "6. As referred to herein, the “**Business of EZ**” shall relate to the business of EZ as "
                 "the same is determined by the Proprietor of EZ from time to time."
             ),
             b.p(
@@ -1930,7 +1930,7 @@ def freelance_nda(ctx: dict) -> dict:
                 "without limitation, software, technical documentation, ideas, inventions (whether or "
                 "not patentable), hardware, know-how, marketing plans, designs, techniques, "
                 "documentation and records, regardless of the form or media, if any, on which such is "
-                "stored (referred to in this Agreement as “Proprietary Property”). EZ shall "
+                "stored (referred to in this Agreement as “**Proprietary Property**”). EZ shall "
                 "exclusively own all Proprietary Property which the Participant conceives, develops "
                 "or contributes to in the course of the Engagement and all intellectual and "
                 "industrial property and other rights of any kind in or relating to the Proprietary "
@@ -1948,7 +1948,7 @@ def freelance_nda(ctx: dict) -> dict:
             b.p("8. Non-Solicitation and Non-Competition"),
             b.ul(_FREELANCE_NDA_NONSOLICIT),
             b.p(
-                "For the purposes of this clause, “Affiliate” shall mean an entity that controls, or "
+                "For the purposes of this clause, “**Affiliate**” shall mean an entity that controls, or "
                 "is controlled by, or is under common control of the Freelancer or any entity that "
                 "controls the Freelancer."
             ),
@@ -2028,7 +2028,7 @@ def freelance_nda(ctx: dict) -> dict:
                 "may become familiar with Confidential Information concerning such Related Companies, "
                 "and with investment opportunities relating to their respective businesses and "
                 "therefore agree that, during the term of this Agreement and for a period of two "
-                "years thereafter (the “Noncompete Period”), he or she will not directly or "
+                "years thereafter (the “**Noncompete Period**”), he or she will not directly or "
                 "indirectly own, manage, control, participate in, consult with, render services for, "
                 "or in any other manner engage in any business, or invest in or lend money to any "
                 "business which constitutes or is competitive with (including, without limitation, by "
@@ -2092,10 +2092,10 @@ register(
 # was supplied as final, so an amendment to one must never silently rewrite the other.
 _PS_NDA_CLAUSES = [
     "Professional service contract with EZ as service professional or engagement with EZ as an "
-    "independent contractor, as the case may be (the “Engagement”), will give the Participant "
+    "independent contractor, as the case may be (the “**Engagement**”), will give the Participant "
     "access to proprietary and confidential information belonging to EZ, its clients, its suppliers "
     "and others (the proprietary and confidential information is collectively referred to in this "
-    "Agreement as “Confidential Information”). Confidential Information includes but is not limited "
+    "Agreement as “**Confidential Information**”). Confidential Information includes but is not limited "
     "to client lists, marketing plans, proposals, contracts, technical and/or financial information, "
     "databases, software, and know-how. All Confidential Information remains confidential and "
     "proprietary information of EZ.",
@@ -2130,7 +2130,7 @@ _PS_NDA_CLAUSES = [
 
     "You specifically agrees that for two (2) years after you are no longer engaged by EZ, you shall "
     "not directly or indirectly solicit, agree to perform or perform services of any type that EZ "
-    "can render (the \"Services\") for any person or entity who paid or engaged EZ for the Services, "
+    "can render (the \"**Services**\") for any person or entity who paid or engaged EZ for the Services, "
     "or who received the benefit of EZ's Services, or with whom you had any substantial dealing "
     "while engaged by EZ.",
 
@@ -2155,15 +2155,15 @@ _PS_NDA_CLAUSES = [
     "regarding data security should be reported promptly to the designated authority within the "
     "organization.",
 
-    "As referred to herein, the “Business of EZ” shall relate to the business of EZ as the same is "
+    "As referred to herein, the “**Business of EZ**” shall relate to the business of EZ as the same is "
     "determined by the Proprietor of EZ from time to time.",
 
     "The Participant may in the course of the Engagement conceive, develop or contribute to material "
     "or information related to the Business of EZ, including, without limitation, software, "
     "technical documentation, ideas, inventions (whether or not patentable), hardware, know-how, "
     "marketing plans, designs, techniques, documentation and records, regardless of the form or "
-    "media, if any, on which such is stored (referred to in this Agreement as “Proprietary "
-    "Property”). EZ shall exclusively own all Proprietary Property which the Participant conceives, "
+    "media, if any, on which such is stored (referred to in this Agreement as “**Proprietary "
+    "Property**”). EZ shall exclusively own all Proprietary Property which the Participant conceives, "
     "develops or contributes to in the course of the Engagement and all intellectual and industrial "
     "property and other rights of any kind in or relating to the Proprietary Property, including but "
     "not limited to all copyright, patent, trade secret and trade-mark rights in or relating to the "
@@ -2224,7 +2224,7 @@ _PS_NDA_CLAUSES = [
     "The Participant acknowledges that, during the term of this Agreement, he or she may become "
     "familiar with Confidential Information concerning such Related Companies, and with investment "
     "opportunities relating to their respective businesses and therefore agree that, during the term "
-    "of this Agreement and for a period of two years thereafter (the “Noncompete Period”), he or she "
+    "of this Agreement and for a period of two years thereafter (the “**Noncompete Period**”), he or she "
     "will not directly or indirectly own, manage, control, participate in, consult with, render "
     "services for, or in any other manner engage in any business, or invest in or lend money to any "
     "business which constitutes or is competitive with (including, without limitation, by competing "
@@ -2240,7 +2240,7 @@ _PS_NDA_CLAUSES = [
 
     "The company may terminate this Offer and your professional service contract immediately without "
     "notice for any of the reasons stated in Articles 88 or 120 of the UAE Labour Law being Federal "
-    "Law No. 8 of 1980 (as amended) (the “Labour Law”).",
+    "Law No. 8 of 1980 (as amended) (the “**Labour Law**”).",
 
     "If you are absent from work without prior approval or any valid reason, the company may "
     "terminate the professional service contract immediately, without notice or payment in lieu of "
@@ -2316,12 +2316,12 @@ def professional_service_nda(ctx: dict) -> dict:
         "blocks": [
             b.p(f"Ref # {ctx['reference']}", align="right"),
             b.p(f"Date: {ctx['letter_date']}", align="right"),
-            b.h(1, "Schedule B"),
+            b.h(1, "Schedule B", underline=True),
             b.h(3, "Covenants"),
-            b.h(3, "Confidentiality, Non-Solicitation, Non- Competition and Proprietary Information Agreement"),
+            b.h(3, "Confidentiality, Non-Solicitation, Non- Competition and Proprietary Information Agreement", underline=True),
             b.p(
                 "In consideration of professional service contract as a service professional or "
-                "expert with ArabEasy LLC, the undersigned (the “Participant”) agrees, and covenants "
+                "expert with ArabEasy LLC, the undersigned (the “**Participant**”) agrees, and covenants "
                 "as follows:"
             ),
             *_ps_nda_blocks(),
