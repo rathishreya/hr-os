@@ -267,18 +267,22 @@ function pageBackground() {
   const bar = (x, yMm, hMm, color, wMm = 4.5) => ({
     type: 'rect', x, y: yMm * MM, w: wMm * MM, h: hMm * MM, color,
   })
+  // Everything on each side shares the bar column's centerline (2.25mm from the page edge):
+  // square, rule and bars form one continuous vertical strip, as the sources set them.
   const R = PAGE_W - 4.5 * MM
+  const axisL = 2.25 * MM
+  const axisR = PAGE_W - 2.25 * MM
   return () => ({
     canvas: [
-      // Right edge: bars fill the top, a thin rule drops to a small square near the bottom.
+      // Right: bars fill the top, the rule drops from the maroon to the square.
       bar(R, 0, 46, C.yellow),
       bar(R, 46, 71, C.navy),
       bar(R, 117, 58, C.maroon),
-      { type: 'rect', x: PAGE_W - 2.8 * MM, y: 178 * MM, w: 0.4 * MM, h: 100 * MM, color: C.navy },
-      { type: 'rect', x: PAGE_W - (1.6 + 2.6) * MM, y: 279.5 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      // Left edge: square + rule hang down the top half, bars fill to the page bottom.
-      { type: 'rect', x: 7 * MM, y: 30 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      { type: 'rect', x: 8.1 * MM, y: 33 * MM, w: 0.4 * MM, h: 147 * MM, color: C.navy },
+      { type: 'rect', x: axisR - 0.2 * MM, y: 175 * MM, w: 0.4 * MM, h: 102.5 * MM, color: C.navy },
+      { type: 'rect', x: axisR - 1.3 * MM, y: 277.5 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
+      // Left: square + rule hang to the maroon, bars fill to the page bottom.
+      { type: 'rect', x: axisL - 1.3 * MM, y: 30 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
+      { type: 'rect', x: axisL - 0.2 * MM, y: 32.6 * MM, w: 0.4 * MM, h: 149.4 * MM, color: C.navy },
       bar(0, 182, 39, C.maroon),
       bar(0, 221, 47, C.navy),
       bar(0, 268, 29, C.yellow),
