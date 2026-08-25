@@ -1,5 +1,13 @@
 import { richSegments } from './rich'
 import { isClause, selfMarked } from './docHtml'
+import { signImageFor } from './signatureAssets'
+
+// The real handwritten sign where we hold the artwork; Great Vibes stand-in otherwise.
+function ScriptSign({ text, height }) {
+  const img = signImageFor(text)
+  if (img) return <img src={img} alt={text} style={{ height, margin: '4px 0' }} />
+  return <span style={SCRIPT_STYLE}>{text}</span>
+}
 
 /**
  * Renders a structured EZ Lab document (offer letter / contract) from its `blocks`, matching the
@@ -154,7 +162,7 @@ function Signature({ block }) {
     <div className="mt-2 flex flex-wrap gap-8">
       {(block.columns || []).map((c, i) => (
         <div key={i} className="min-w-[200px]">
-          {c.script && <div style={SCRIPT_STYLE}>{c.script}</div>}
+          {c.script && <div><ScriptSign text={c.script} height="26px" /></div>}
           <div className="mb-1 h-6 border-b border-slate-400">{c.name}</div>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{c.label}</div>
         </div>
@@ -192,7 +200,7 @@ function renderBlock(b, i) {
     case 'table':
       return <GridTable key={i} block={b} />
     case 'script':
-      return <p key={i} style={SCRIPT_STYLE}>{b.text}</p>
+      return <p key={i}><ScriptSign text={b.text} height="30px" /></p>
     case 'signature':
       return <Signature key={i} block={b} />
     case 'divider':

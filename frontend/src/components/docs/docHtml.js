@@ -3,6 +3,7 @@
 // round-trips through preview → editor → PDF unchanged. The on-screen `.doc-html` CSS (index.css)
 // and the print CSS (printDocument.js) both style these tags identically.
 import { richSegments } from './rich'
+import { signImageFor } from './signatureAssets'
 
 export const esc = (s) =>
   String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
@@ -80,11 +81,22 @@ export function blockToHtml(b) {
         .join('')
       return `<table class="grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
     }
-    case 'script':
+    case 'script': {
+      // The real handwritten sign where we hold the artwork; Great Vibes stand-in otherwise.
+      // Explicit height so html-to-pdfmake (edited letters) sizes it the same as the CSS.
+      const img = signImageFor(b.text)
+      if (img) return `<p class="script"><img src="${img}" alt="${esc(b.text)}" height="30" style="height:30px"/></p>`
       return `<p class="script">${esc(b.text)}</p>`
+    }
     case 'signature':
       return `<div class="sig">${(b.columns || [])
-        .map((c) => `<div class="col">${c.script ? `<div class="scr">${esc(c.script)}</div>` : ''}<div class="line">${esc(c.name)}</div><div class="lbl">${esc(c.label)}</div></div>`)
+        .map((c) => {
+          const img = c.script ? signImageFor(c.script) : null
+          const scr = img
+            ? `<div class="scr"><img src="${img}" alt="${esc(c.script)}" height="26" style="height:26px"/></div>`
+            : c.script ? `<div class="scr">${esc(c.script)}</div>` : ''
+          return `<div class="col">${scr}<div class="line">${esc(c.name)}</div><div class="lbl">${esc(c.label)}</div></div>`
+        })
         .join('')}</div>`
     case 'divider':
       return '<div class="pb"></div>'
