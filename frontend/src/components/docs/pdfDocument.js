@@ -146,12 +146,12 @@ function blockToPdf(b) {
       const cell = (text, opts = {}) => ({ text, fontSize: 9.5, margin: [4, 1.5, 4, 1.5], ...opts })
       const body = [
         [
-          cell('Component', { bold: true, fillColor: '#e9eef5' }),
-          cell('INR', { bold: true, fillColor: '#e9eef5', alignment: 'right' }),
+          cell('Component', { bold: true, fillColor: '#D9D9D9' }),
+          cell('INR', { bold: true, fillColor: '#D9D9D9', alignment: 'right' }),
         ],
         ...(b.rows || []).map((r) => [
-          cell(r.label || '', { bold: !!r.emphasis, fillColor: r.emphasis ? '#f4f6f9' : undefined }),
-          cell(r.value || '', { bold: !!r.emphasis, fillColor: r.emphasis ? '#f4f6f9' : undefined, alignment: 'right' }),
+          cell(r.label || '', { bold: !!r.emphasis, fillColor: r.emphasis ? '#D9D9D9' : undefined }),
+          cell(r.value || '', { bold: !!r.emphasis, fillColor: r.emphasis ? '#D9D9D9' : undefined, alignment: 'right' }),
         ]),
       ]
       // Important Points as full-width italic rows inside the table, as the sources set them.
@@ -163,12 +163,7 @@ function blockToPdf(b) {
       }
       return {
         table: { widths: ['*', 90], headerRows: 1, body },
-        layout: {
-          hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 1 : 0.5),
-          vLineWidth: (i, node) => (i === 0 || i === node.table.widths.length ? 1 : 0.5),
-          hLineColor: (i, node) => (i === 0 || i === node.table.body.length ? '#333333' : '#b3b3b3'),
-          vLineColor: (i, node) => (i === 0 || i === node.table.widths.length ? '#333333' : '#b3b3b3'),
-        },
+        layout: { hLineColor: () => RULE, vLineColor: () => RULE, hLineWidth: () => 0.5, vLineWidth: () => 0.5 },
         margin: [0, 4, 0, 8],
       }
     }

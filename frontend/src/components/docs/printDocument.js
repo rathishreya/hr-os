@@ -48,10 +48,10 @@ export function printDocument(doc) {
   table.grid th{ background:#e9eef5; font-weight:600; }
   table.grid th,table.grid td{ border:0.5pt solid #333; padding:4px 7px; vertical-align:top; text-align:left; }
   table.grid .r{ text-align:right; } table.grid .c{ text-align:center; }
-  table.comp{ border:1.2pt solid #333; }
-  table.comp th{ background:#e9eef5; font-weight:600; }
-  table.comp th,table.comp td{ border:0.5pt solid #b3b3b3; padding:2px 7px; }
-  table.comp .r{ text-align:right; } table.comp tr.em{ font-weight:600; background:#f4f6f9; }
+  table.comp{ border:0.5pt solid #333; }
+  table.comp th{ background:#D9D9D9; font-weight:600; }
+  table.comp th,table.comp td{ border:0.5pt solid #333; padding:2px 7px; }
+  table.comp .r{ text-align:right; } table.comp tr.em{ font-weight:600; background:#D9D9D9; }
   table.comp tr.ni td{ font-style:italic; font-size:8.5pt; }
 
   p.script,.sig .scr{ font-family:'Great Vibes',cursive; font-size:20pt; line-height:1.1; margin:2px 0; }

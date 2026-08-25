@@ -83,21 +83,21 @@ function TermsTable({ block }) {
   )
 }
 
-const CELL = 'border border-[#b3b3b3] px-2 py-[2px]'
+const CELL = 'border border-[#333] px-2 py-[2px]'
 
 function CompTable({ block }) {
   return (
     <div>
-      <table className="w-full border-collapse border-[1.5px] border-[#333] text-sm">
+      <table className="w-full border-collapse text-sm">
         <thead>
           <tr>
-            <th className={`${CELL} bg-[#e9eef5] text-left font-semibold text-slate-800`}>Component</th>
-            <th className={`${CELL} bg-[#e9eef5] text-right font-semibold text-slate-800`}>INR</th>
+            <th className={`${CELL} bg-[#D9D9D9] text-left font-semibold text-slate-800`}>Component</th>
+            <th className={`${CELL} bg-[#D9D9D9] text-right font-semibold text-slate-800`}>INR</th>
           </tr>
         </thead>
         <tbody>
           {(block.rows || []).map((row, i) => (
-            <tr key={i} className={row.emphasis ? 'bg-[#f4f6f9] font-semibold text-slate-900' : 'text-slate-700'}>
+            <tr key={i} className={row.emphasis ? 'bg-[#D9D9D9] font-semibold text-slate-900' : 'text-slate-700'}>
               <td className={CELL}>{row.label}</td>
               <td className={`${CELL} text-right tabular-nums`}>{row.value}</td>
             </tr>
