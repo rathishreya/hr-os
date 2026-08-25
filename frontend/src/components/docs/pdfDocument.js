@@ -271,19 +271,19 @@ function pageBackground() {
   // the rule meeting the maroon block's edge with no gap.
   // Left reads top-to-bottom, right reads bottom-to-top. Identical heights, rule and gap.
   const R = PAGE_W - 6 * MM
-  const axisL = 3 * MM
-  const axisR = PAGE_W - 3 * MM
+  const axisL = 6 * MM      // the maroon bar's inner edge
+  const axisR = PAGE_W - 6 * MM
   return () => ({
     canvas: [
       // Right (mirror of left): bars from the top, then rule down to the square.
       bar(R, 0, 29, C.yellow),
       bar(R, 29, 47, C.navy),
       bar(R, 76, 39, C.maroon),
-      { type: 'rect', x: axisR - 0.2 * MM, y: 115 * MM, w: 0.4 * MM, h: 149.4 * MM, color: C.navy },
-      { type: 'rect', x: axisR - 1.3 * MM, y: 264.4 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
+      { type: 'rect', x: axisR, y: 115 * MM, w: 0.25 * MM, h: 149.4 * MM, color: C.navy },
+      { type: 'rect', x: axisR - 1.175 * MM, y: 264.4 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
       // Left: square, rule, gap, bars to the page bottom.
-      { type: 'rect', x: axisL - 1.3 * MM, y: 30 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      { type: 'rect', x: axisL - 0.2 * MM, y: 32.6 * MM, w: 0.4 * MM, h: 149.4 * MM, color: C.navy },
+      { type: 'rect', x: axisL - 1.425 * MM, y: 30 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
+      { type: 'rect', x: axisL - 0.25 * MM, y: 32.6 * MM, w: 0.25 * MM, h: 149.4 * MM, color: C.navy },
       bar(0, 182, 39, C.maroon),
       bar(0, 221, 47, C.navy),
       bar(0, 268, 29, C.yellow),
