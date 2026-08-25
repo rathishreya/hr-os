@@ -282,7 +282,7 @@ function pageBackground() {
       { type: 'rect', x: axisR - 1.3 * MM, y: 277.5 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
       // Left: square + rule hang to the maroon, bars fill to the page bottom.
       { type: 'rect', x: axisL - 1.3 * MM, y: 30 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      { type: 'rect', x: axisL - 0.2 * MM, y: 32.6 * MM, w: 0.4 * MM, h: 149.4 * MM, color: C.navy },
+      { type: 'rect', x: axisL - 0.2 * MM, y: 32.6 * MM, w: 0.4 * MM, h: 112.4 * MM, color: C.navy },
       bar(0, 182, 39, C.maroon),
       bar(0, 221, 47, C.navy),
       bar(0, 268, 29, C.yellow),
