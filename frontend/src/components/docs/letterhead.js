@@ -7,6 +7,7 @@
  *  so the preview paper is literally A4-proportioned and WYSIWYG with print.
  */
 import { esc } from './docHtml'
+import { LOGO_EZ_IMG, LOGO_AEZ_IMG, LOGO_MARK_IMG } from './logoAssets'
 
 // Brand colors lifted from the source letterheads.
 export const C = {
@@ -36,31 +37,14 @@ export const ENTITY = {
 }
 
 // ── Logos ───────────────────────────────────────────────────────────────────────────────────
-// EZ Lab: green rounded-square mark + "EZ Lab / Private Limited" wordmark.
-// ArabEasy: orange rounded-square mark + light-blue "ArabEasy" wordmark.
-// The source glyph is a stylized epsilon-Z; "EZ" is used so every renderer (including the PDF's
-// embedded font) has the glyphs.
-const LOGO_EZ = `
-<svg width="150" height="42" viewBox="0 0 158 44" xmlns="http://www.w3.org/2000/svg" aria-label="EZ Lab Private Limited">
-  <rect x="1.5" y="4" width="36" height="36" rx="9" fill="none" stroke="${C.ezGreen}" stroke-width="2.6"/>
-  <text x="19.5" y="29" font-family="Exo2, Arial, sans-serif" font-weight="600" font-size="16" fill="${C.ezGreen}" text-anchor="middle">EZ</text>
-  <text x="46" y="20" font-family="Exo2, Arial, sans-serif" font-weight="600" font-size="15.5" fill="${C.ezGreenDark}">EZ Lab</text>
-  <text x="46" y="36" font-family="Exo2, Arial, sans-serif" font-weight="500" font-size="11.5" fill="#6B7280">Private Limited</text>
-</svg>`
+// The real artwork, extracted from the letterhead rasters embedded in the source PDFs — the
+// stylized epsilon-Z glyph, not a typeface approximation. Sized to the sources: ~9.5mm tall.
+const LOGO_EZ = `<img src="${LOGO_EZ_IMG}" alt="EZ Lab Private Limited" style="height:9.5mm;width:auto;display:block"/>`
 
-const LOGO_AEZ = `
-<svg width="150" height="42" viewBox="0 0 158 44" xmlns="http://www.w3.org/2000/svg" aria-label="ArabEasy LLC">
-  <rect x="1.5" y="4" width="36" height="36" rx="10" fill="none" stroke="${C.aeOrange}" stroke-width="2.2"/>
-  <text x="19.5" y="29.5" font-family="Exo2, Arial, sans-serif" font-weight="700" font-size="15" fill="${C.aeBlue}" text-anchor="middle">EZ</text>
-  <text x="45" y="30.5" font-family="Exo2, Arial, sans-serif" font-weight="700" font-size="18.5" fill="${C.aeBlue}">ArabEasy</text>
-</svg>`
+const LOGO_AEZ = `<img src="${LOGO_AEZ_IMG}" alt="ArabEasy LLC" style="height:9.5mm;width:auto;display:block"/>`
 
 // Compact single mark (used by the JD, which shows a brandName instead of the legal entity).
-const LOGO_MARK = `
-<svg width="42" height="42" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg" aria-label="EZ">
-  <rect x="3" y="3" width="36" height="36" rx="9" fill="none" stroke="${C.ezGreen}" stroke-width="2.6"/>
-  <text x="21" y="28" font-family="Exo2, Arial, sans-serif" font-weight="600" font-size="16" fill="${C.ezGreen}" text-anchor="middle">EZ</text>
-</svg>`
+const LOGO_MARK = `<img src="${LOGO_MARK_IMG}" alt="EZ" style="height:9.5mm;width:auto;display:block"/>`
 
 // Icon chips at the right edge of the letterhead: a red map pin beside the address, a globe
 // beside the web address, each in a gray rounded pill bleeding to the page edge.
@@ -72,6 +56,12 @@ const GLOBE_CHIP = `
 export function logoSvg(entityKey, brandName) {
   if (brandName) return LOGO_MARK
   return entityKey === 'AEZ' ? LOGO_AEZ : LOGO_EZ
+}
+
+/** The same artwork as a bare data URI, for pdfmake's `image` element. */
+export function logoImage(entityKey, brandName) {
+  if (brandName) return LOGO_MARK_IMG
+  return entityKey === 'AEZ' ? LOGO_AEZ_IMG : LOGO_EZ_IMG
 }
 
 /** The letterhead row: logo + ISO badges left, company identity right with the icon chips. */

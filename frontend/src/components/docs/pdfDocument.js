@@ -9,7 +9,7 @@
  *  document and never on initial page load.
  */
 import { richSegments } from './rich'
-import { ENTITY, C, logoSvg } from './letterhead'
+import { ENTITY, C, logoImage } from './letterhead'
 import { signImageFor } from './signatureAssets'
 
 // ── Poppins, embedded so the attached PDF sets the same face as the preview and print paths.
@@ -233,7 +233,7 @@ function letterhead(entityKey, brandName) {
       {
         width: '*',
         stack: [
-          { svg: logoSvg(entityKey, brandName), width: 128 },
+          { image: logoImage(entityKey, brandName), fit: [128, 27] },
           { text: 'ISO 27001:2022', fontSize: 6.2, bold: true, characterSpacing: 1.6, color: '#374151', margin: [0, 4, 0, 0] },
           { text: 'ISO 9001:2015', fontSize: 6.2, bold: true, characterSpacing: 1.6, color: '#374151', margin: [0, 1.5, 0, 0] },
         ],
