@@ -140,7 +140,11 @@ def _enrich_doc(db: Session, d: models.Document) -> None:
     d.compensation = str(t.get("annual_ctc") or (hr.budget_ctc if hr else "") or "")
     d.location = t.get("location") or (hr.location if hr else "")
     d.joining_date = t.get("start_date") or ""
-    d.entity = t.get("entity") or "EZ"
+    # The template is authoritative for the operating entity; terms only cover legacy/AI docs
+    # with no template. Trusting terms alone rendered AEZ papers on EZ letterhead when a flow
+    # forgot to stamp terms["entity"].
+    tpl = TEMPLATES.get(d.template_key)
+    d.entity = (tpl.entity if tpl else "") or t.get("entity") or "EZ"
     d.reporting_manager = t.get("manager") or ""
     d.approving_manager = t.get("approving_manager") or ""
     d.has_upload = bool(d.upload_file)

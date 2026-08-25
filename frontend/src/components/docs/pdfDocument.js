@@ -223,78 +223,90 @@ function blockToPdf(b) {
   }
 }
 
-/** The repeating letterhead drawn into the top margin of every page — the same logo, ISO badge
- *  lines and company block the preview and print window render (letterhead.js). */
+/** The repeating letterhead drawn on every page. Every element sits at the coordinate the source
+ *  PDFs place it at — measured off the originals at 300 DPI (see LH) rather than flowed — so the
+ *  block is pin-identical. The preview and print window render the same figures (letterhead.js).
+ *
+ *  Coordinates are the source page's (596pt wide); right-anchored elements are expressed as an
+ *  inset from the right edge so they land identically on our 595.28pt A4.
+ */
+export const LH = {
+  logo: { x: 36, y: 17.8, w: 128.2, h: 26.8 },
+  iso: { x: 36, y1: 47.65, y2: 62.7, size: 9.7 },        // ink: x 36.8, w 68.4/61.6, y 49.6 and 64.4
+  name: { inset: 53.4, y: 17.72, size: 8.97 },           // ink: right 542.6, w 89.3, y 19.4
+  addr: { inset: 52.7, y: 30.26, size: 9.07 },           // ink: right 543.3, w 332.4, y 31.9
+  web: { inset: 52.2, y: 50.68, size: 9.76 },            // ink: right 543.8, w 62.4, y 52.4
+  chip: { inset: 20, w: 27, y1: 18.7, h1: 20.4, y2: 46.1, h2: 19.7 },
+}
+
 function letterhead(entityKey, brandName) {
   const e = ENTITY[entityKey] || ENTITY.EZ
+  // A plain text node ignores `width`, so right-aligned lines are wrapped in a fixed-width
+  // column whose right edge lands on the source's inset from the page edge.
+  const BOX = 400
+  const right = (inset, y, text, size, bold) => ({
+    columns: [{ width: BOX, text, fontSize: size, bold: !!bold, color: '#000000', alignment: 'right' }],
+    absolutePosition: { x: PAGE_W - inset - BOX, y },
+  })
   return () => ({
-    margin: [54, 14, 17, 0],
-    columns: [
-      {
-        width: '*',
-        stack: [
-          { image: logoImage(entityKey, brandName), fit: [128, 27] },
-          { text: 'ISO 27001:2022', fontSize: 6.2, bold: true, characterSpacing: 1.6, color: '#374151', margin: [0, 4, 0, 0] },
-          { text: 'ISO 9001:2015', fontSize: 6.2, bold: true, characterSpacing: 1.6, color: '#374151', margin: [0, 1.5, 0, 0] },
-        ],
-      },
-      {
-        width: 'auto',
-        alignment: 'right',
-        stack: [
-          {
-            columns: [
-              { width: '*', stack: [
-                { text: brandName || e.name, fontSize: 8.5, bold: true, color: C.ink, alignment: 'right' },
-                { text: e.addr, fontSize: 6.4, color: '#4B5563', alignment: 'right', margin: [0, 2, 0, 0] },
-              ] },
-              { width: 24, svg: PIN_SVG, margin: [4, 2, 0, 0] },
-            ],
-          },
-          {
-            columns: [
-              { width: '*', text: e.web, fontSize: 6.6, bold: true, color: C.ink, alignment: 'right', margin: [0, 3, 0, 0] },
-              { width: 24, svg: GLOBE_SVG, margin: [4, 1, 0, 0] },
-            ],
-          },
-        ],
-        margin: [0, 2, 0, 0],
-      },
+    stack: [
+      { image: logoImage(entityKey, brandName), fit: [LH.logo.w, LH.logo.h], absolutePosition: LH.logo },
+      { text: 'ISO 27001:2022', fontSize: LH.iso.size, color: '#000000', absolutePosition: { x: LH.iso.x, y: LH.iso.y1 } },
+      { text: 'ISO 9001:2015', fontSize: LH.iso.size, color: '#000000', absolutePosition: { x: LH.iso.x, y: LH.iso.y2 } },
+      right(LH.name.inset, LH.name.y, brandName || e.name, LH.name.size, true),
+      right(LH.addr.inset, LH.addr.y, e.addr, LH.addr.size),
+      right(LH.web.inset, LH.web.y, e.web, LH.web.size, true),
+      { svg: PIN_SVG, width: LH.chip.w, absolutePosition: { x: PAGE_W - LH.chip.inset - LH.chip.w, y: LH.chip.y1 } },
+      { svg: GLOBE_SVG, width: LH.chip.w, absolutePosition: { x: PAGE_W - LH.chip.inset - LH.chip.w, y: LH.chip.y2 } },
     ],
-    columnGap: 12,
   })
 }
 
-/** The colored edge bars, drawn on every page behind the content — geometry matches
- *  letterhead.accentsHtml (mm figures converted to pt). */
+/** The colored edge accents, drawn on every page behind the content. Geometry measured off the
+ *  source pages at 300 DPI: 6.35mm bars in 37.1mm bands, a 0.25mm navy hairline running from the
+ *  bars' inner edge to a 2.6mm square. The left side is the exact 180-degree mirror of the right.
+ *  letterhead.accentsHtml carries the same figures for the preview and print paths. */
+export const ACC = {
+  barW: 6.35, band: 37.15, ruleW: 0.25, sqW: 2.6, sqH: 2.5,
+  ruleR: [0.4, 216.1], sqRy: 216.1,                   // right: bars from the top, square at the foot
+  leftBars: 181.8, ruleL: [77.0, 292.8], sqLy: 74.5,  // left: square at the head, bars at the bottom
+  ruleOff: 0.23,  // the hairline sits this far inside the bars' inner edge, running their full length
+}
+
 function pageBackground() {
-  const bar = (x, yMm, hMm, color, wMm = 6) => ({
-    type: 'rect', x, y: yMm * MM, w: wMm * MM, h: hMm * MM, color,
+  const R = (mm) => ({ x: PAGE_W - mm * MM })
+  const rect = (xMm, yMm, wMm, hMm, color, fromRight) => ({
+    type: 'rect',
+    x: fromRight ? PAGE_W - (xMm + wMm) * MM : xMm * MM,
+    y: yMm * MM, w: wMm * MM, h: hMm * MM, color,
   })
-  // Lengths calibrated from the full-page source; left is the exact 180-degree mirror of right.
-  const R = PAGE_W - 6 * MM
-  const axisL = 6 * MM      // the maroon bar's inner edge
-  const axisR = PAGE_W - 6 * MM
+  const { barW, band, ruleW, sqW, sqH, ruleOff } = ACC
+  const ruleX = barW + ruleOff              // hairline x, measured in from the page edge
+  const sqX = ruleX + ruleW / 2 - sqW / 2   // square centred on the hairline
+  void R
   return () => ({
     canvas: [
-      // Right: bars fill the top ~85mm, rule drops to the square at 215mm.
-      bar(R, 0, 21.5, C.yellow),
-      bar(R, 21.5, 31.5, C.navy),
-      bar(R, 53, 31.5, C.maroon),
-      { type: 'rect', x: axisR, y: 84.5 * MM, w: 0.15 * MM, h: 130.5 * MM, color: C.navy },
-      { type: 'rect', x: axisR - 1.175 * MM, y: 215 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      // Left: square at 79.4mm, rule to the maroon at 212.5mm, bars fill to the page bottom.
-      { type: 'rect', x: axisL - 1.425 * MM, y: 79.4 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      { type: 'rect', x: axisL - 0.15 * MM, y: 82 * MM, w: 0.15 * MM, h: 130.5 * MM, color: C.navy },
-      bar(0, 212.5, 31.5, C.maroon),
-      bar(0, 244, 31.5, C.navy),
-      bar(0, 275.5, 21.5, C.yellow),
+      // Right edge: yellow → navy → maroon fill the top, then the hairline drops to the square.
+      rect(0, 0, barW, band, C.yellow, true),
+      rect(0, band, barW, band, C.navy, true),
+      rect(0, band * 2, barW, band, C.maroon, true),
+      rect(ruleX, ACC.ruleR[0], ruleW, ACC.ruleR[1] - ACC.ruleR[0], C.navy, true),
+      rect(sqX, ACC.sqRy, sqW, sqH, C.navy, true),
+      // Left edge: the square sits at the top of the hairline, bars fill the bottom.
+      rect(sqX, ACC.sqLy, sqW, sqH, C.navy, false),
+      rect(ruleX, ACC.ruleL[0], ruleW, ACC.ruleL[1] - ACC.ruleL[0], C.navy, false),
+      rect(0, ACC.leftBars, barW, band, C.maroon, false),
+      rect(0, ACC.leftBars + band, barW, band, C.navy, false),
+      rect(0, ACC.leftBars + band * 2, barW, band, C.yellow, false),
     ],
   })
 }
 
-const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="15" viewBox="0 0 24 15"><rect x="0" y="0" width="24" height="15" rx="7.5" fill="#E9ECEF"/><path transform="translate(8.4,2.2) scale(0.44)" d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="#C4302B"/></svg>`
-const GLOBE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="15" viewBox="0 0 24 15"><rect x="0" y="0" width="24" height="15" rx="7.5" fill="#E9ECEF"/><g transform="translate(8.4,2.2) scale(0.44)" fill="none" stroke="#6B7280" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.8 2.6 15.2 0 18M12 3c-2.6 2.8-2.6 15.2 0 18"/></g></svg>`
+// The two gray pills at the letterhead's right edge, as the sources draw them: rounded on the
+// left, running flat into the color bars on the right; the first holds a dark map pin, the
+// second is empty. The rect is drawn wider than the viewBox so its right corners fall outside.
+const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="27" height="20.4" viewBox="0 0 27 20.4"><rect x="0" y="0" width="37" height="20.4" rx="10.2" fill="#D8D8D8"/><path transform="translate(2.65,1.78) scale(0.71)" d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="#242628"/></svg>`
+const GLOBE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="27" height="19.7" viewBox="0 0 27 19.7"><rect x="0" y="0" width="37" height="19.7" rx="9.85" fill="#D8D8D8"/></svg>`
 
 /** The full pdfmake document definition — one builder shared by the emailed attachment, the
  *  page-by-page preview and any future export, so they cannot diverge. */

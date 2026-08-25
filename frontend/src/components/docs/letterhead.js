@@ -11,16 +11,17 @@ import { LOGO_EZ_IMG, LOGO_AEZ_IMG, LOGO_MARK_IMG } from './logoAssets'
 
 // Brand colors lifted from the source letterheads.
 export const C = {
-  yellow: '#F0B41C',
-  navy: '#1E3A5F',
-  maroon: '#9C2A2F',
+  // Sampled off the source pages at 300 DPI rather than eyeballed.
+  yellow: '#F1B715',
+  navy: '#0E2949',
+  maroon: '#901918',
   ezGreen: '#6BA43A',
   ezGreenDark: '#4F7F2E',
   aeBlue: '#29ABE2',
   aeOrange: '#F7941D',
   ink: '#1F2430',
   gray: '#4B5563',
-  chip: '#E9ECEF',
+  chip: '#D8D8D8',
 }
 
 export const ENTITY = {
@@ -39,19 +40,19 @@ export const ENTITY = {
 // ── Logos ───────────────────────────────────────────────────────────────────────────────────
 // The real artwork, extracted from the letterhead rasters embedded in the source PDFs — the
 // stylized epsilon-Z glyph, not a typeface approximation. Sized to the sources: ~9.5mm tall.
-const LOGO_EZ = `<img src="${LOGO_EZ_IMG}" alt="EZ Lab Private Limited" style="height:9.5mm;width:auto;display:block"/>`
+// Position and size come from chromeCss (.lh img), which carries the source's own measurements.
+const LOGO_EZ = `<img src="${LOGO_EZ_IMG}" alt="EZ Lab Private Limited"/>`
 
-const LOGO_AEZ = `<img src="${LOGO_AEZ_IMG}" alt="ArabEasy LLC" style="height:9.5mm;width:auto;display:block"/>`
+const LOGO_AEZ = `<img src="${LOGO_AEZ_IMG}" alt="ArabEasy LLC"/>`
 
 // Compact single mark (used by the JD, which shows a brandName instead of the legal entity).
-const LOGO_MARK = `<img src="${LOGO_MARK_IMG}" alt="EZ" style="height:9.5mm;width:auto;display:block"/>`
+const LOGO_MARK = `<img src="${LOGO_MARK_IMG}" alt="EZ"/>`
 
-// Icon chips at the right edge of the letterhead: a red map pin beside the address, a globe
-// beside the web address, each in a gray rounded pill bleeding to the page edge.
+// The sources set two gray pills at the letterhead's right edge, rounded on the left and running
+// flat into the color bars: the first holds a dark map pin beside the address, the second is empty.
 const PIN_CHIP = `
-<span class="lh-chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="#C4302B"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg></span>`
-const GLOBE_CHIP = `
-<span class="lh-chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.8 2.6 15.2 0 18M12 3c-2.6 2.8-2.6 15.2 0 18"/></svg></span>`
+<span class="lh-chip lh-chip1"><svg width="11.2" height="14.2" viewBox="0 0 24 24" fill="#242628" style="height:5mm;width:auto"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg></span>`
+const GLOBE_CHIP = `<span class="lh-chip lh-chip2"></span>`
 
 export function logoSvg(entityKey, brandName) {
   if (brandName) return LOGO_MARK
@@ -64,50 +65,37 @@ export function logoImage(entityKey, brandName) {
   return entityKey === 'AEZ' ? LOGO_AEZ_IMG : LOGO_EZ_IMG
 }
 
-/** The letterhead row: logo + ISO badges left, company identity right with the icon chips. */
+/** The letterhead: logo + ISO badge lines at the left, company identity and the two gray chips
+ *  at the right. Every piece is placed at the millimetre coordinate the source PDFs place it at
+ *  — measured off the originals at 300 DPI, the same figures pdfDocument.LH carries — so the
+ *  editor paper, the print window and the emailed PDF are the same letterhead. */
 export function letterheadHtml(entityKey, brandName) {
   const e = ENTITY[entityKey] || ENTITY.EZ
   return `
   <div class="lh">
-    <div class="lh-l">
-      ${logoSvg(entityKey, brandName)}
-      <div class="lh-iso">ISO 27001:2022<br/>ISO 9001:2015</div>
-    </div>
-    <div class="lh-r">
-      <div class="lh-row">
-        <div class="lh-txt">
-          <div class="lh-co">${esc(brandName || e.name)}</div>
-          <div class="lh-ad">${esc(e.addr)}</div>
-        </div>
-        ${PIN_CHIP}
-      </div>
-      <div class="lh-row">
-        <div class="lh-txt"><div class="lh-web">${esc(e.web)}</div></div>
-        ${GLOBE_CHIP}
-      </div>
-    </div>
+    ${logoSvg(entityKey, brandName)}
+    <div class="lh-iso lh-iso1">ISO 27001:2022</div>
+    <div class="lh-iso lh-iso2">ISO 9001:2015</div>
+    <div class="lh-co">${esc(brandName || e.name)}</div>
+    <div class="lh-ad">${esc(e.addr)}</div>
+    <div class="lh-web">${esc(e.web)}</div>
+    ${PIN_CHIP}
+    ${GLOBE_CHIP}
   </div>`
 }
 
-/** The colored edge accents, one continuous mirrored element per side as the sources set them:
- *  LEFT  - small navy square at 30mm, thin rule hanging to 180mm, then maroon -> navy -> yellow
- *          bars filling to the page bottom;
- *  RIGHT - yellow -> navy -> maroon bars filling from the top, then a thin rule dropping to a
- *          small navy square near the page bottom. */
+/** The colored edge accents. Measured off the source pages at 300 DPI: 6.35mm bars in three
+ *  37.15mm bands, and a 0.25mm navy hairline that runs the artwork's full 218mm alongside them
+ *  to a 2.6mm square at the far end. The left side is the exact 180-degree mirror of the right. */
 export function accentsHtml() {
-  return `
-  <div class="acc" aria-hidden="true">
-    <span class="acc-bar" style="right:0;top:0;height:21.5mm;background:${C.yellow}"></span>
-    <span class="acc-bar" style="right:0;top:21.5mm;height:31.5mm;background:${C.navy}"></span>
-    <span class="acc-bar" style="right:0;top:53mm;height:31.5mm;background:${C.maroon}"></span>
-    <span class="acc-rule" style="right:5.75mm;top:84.5mm;height:130.5mm"></span>
-    <span class="acc-sq" style="right:4.6mm;top:215mm"></span>
-    <span class="acc-sq" style="left:4.6mm;top:79.4mm"></span>
-    <span class="acc-rule" style="left:5.85mm;top:82mm;height:130.5mm"></span>
-    <span class="acc-bar" style="left:0;top:212.5mm;height:31.5mm;background:${C.maroon}"></span>
-    <span class="acc-bar" style="left:0;top:244mm;height:31.5mm;background:${C.navy}"></span>
-    <span class="acc-bar" style="left:0;top:275.5mm;height:21.5mm;background:${C.yellow}"></span>
-  </div>`
+  const bar = 6.35, band = 37.15, ruleX = 6.58, sqX = 5.35
+  const side = (s) => `
+    <span class="acc-bar" style="${s}:0;top:${s === 'right' ? 0 : 181.8}mm;height:${band}mm;background:${s === 'right' ? C.yellow : C.maroon};width:${bar}mm"></span>
+    <span class="acc-bar" style="${s}:0;top:${(s === 'right' ? 0 : 181.8) + band}mm;height:${band}mm;background:${C.navy};width:${bar}mm"></span>
+    <span class="acc-bar" style="${s}:0;top:${(s === 'right' ? 0 : 181.8) + band * 2}mm;height:${band}mm;background:${s === 'right' ? C.maroon : C.yellow};width:${bar}mm"></span>
+    <span class="acc-rule" style="${s}:${ruleX}mm;top:${s === 'right' ? 0.4 : 77}mm;height:215.7mm"></span>
+    <span class="acc-sq" style="${s}:${sqX}mm;top:${s === 'right' ? 216.1 : 74.5}mm"></span>`
+  return `<div class="acc" aria-hidden="true">${side('right')}${side('left')}</div>`
 }
 
 /** Chrome CSS. mode 'print' pins the letterhead + accents with position:fixed so they repeat on
@@ -115,20 +103,19 @@ export function accentsHtml() {
 export function chromeCss(mode) {
   const pos = mode === 'print' ? 'fixed' : 'absolute'
   return `
-  .lh{ position:${pos}; top:0; left:0; right:0; height:27mm; padding:5mm 6mm 0 8mm;
-       display:flex; justify-content:space-between; align-items:flex-start; }
-  .lh-l{ display:flex; flex-direction:column; gap:1.2mm; }
-  .lh-iso{ font-family:Exo2, Arial, sans-serif; font-weight:600; font-size:7.5px;
-           letter-spacing:2.2px; color:#374151; line-height:1.65; }
-  .lh-r{ display:flex; flex-direction:column; align-items:flex-end; gap:1.4mm; padding-top:1mm; }
-  .lh-row{ display:flex; align-items:center; gap:2mm; }
-  .lh-txt{ text-align:right; }
-  .lh-co{ font-family:Exo2, Arial, sans-serif; font-weight:600; font-size:10.5px; color:${C.ink}; }
-  .lh-ad{ font-family:Exo2, Arial, sans-serif; font-size:7.5px; color:#4B5563; margin-top:0.8mm; }
-  .lh-web{ font-family:Exo2, Arial, sans-serif; font-weight:600; font-size:8px; color:${C.ink}; }
-  .lh-chip{ display:inline-flex; align-items:center; justify-content:center; width:9mm; height:5.5mm;
-            background:${C.chip}; border-radius:3mm 0 0 3mm; margin-right:-6mm; }
-  .acc-bar{ position:${pos}; width:6mm; display:block; }
-  .acc-sq{ position:${pos}; width:2.6mm; height:2.6mm; background:${C.navy}; display:block; }
-  .acc-rule{ position:${pos}; width:0.15mm; background:${C.navy}; display:block; }`
+  .lh{ position:${pos}; top:0; left:0; right:0; height:30mm;
+       font-family:Exo2, Arial, sans-serif; color:#000; }
+  .lh > *{ position:${pos}; }
+  .lh img{ left:12.70mm; top:6.28mm; height:9.45mm; width:auto; }
+  .lh-iso{ left:12.70mm; font-size:9.7pt; line-height:1; }
+  .lh-iso1{ top:17.06mm; }  .lh-iso2{ top:22.36mm; }
+  .lh-co{ right:18.84mm; top:6.53mm; font-size:8.97pt; font-weight:700; line-height:1; }
+  .lh-ad{ right:18.59mm; top:10.90mm; font-size:9.07pt; line-height:1; }
+  .lh-web{ right:18.42mm; top:18.10mm; font-size:9.76pt; font-weight:700; line-height:1; }
+  .lh-chip{ right:7.06mm; width:9.53mm; background:${C.chip};
+            border-radius:3.6mm 0 0 3.6mm; display:flex; align-items:center; padding-left:2.2mm; }
+  .lh-chip1{ top:6.60mm; height:7.20mm; }  .lh-chip2{ top:16.26mm; height:6.95mm; }
+  .acc-bar{ position:${pos}; display:block; }
+  .acc-sq{ position:${pos}; width:2.6mm; height:2.5mm; background:${C.navy}; display:block; }
+  .acc-rule{ position:${pos}; width:0.25mm; background:${C.navy}; display:block; }`
 }
