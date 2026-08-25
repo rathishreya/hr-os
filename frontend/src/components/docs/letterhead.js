@@ -110,10 +110,10 @@ export function accentsHtml() {
     <span class="acc-bar" style="right:0;top:0;height:29mm;background:${C.yellow}"></span>
     <span class="acc-bar" style="right:0;top:29mm;height:47mm;background:${C.navy}"></span>
     <span class="acc-bar" style="right:0;top:76mm;height:39mm;background:${C.maroon}"></span>
-    <span class="acc-rule" style="right:5.75mm;top:29mm;height:235.4mm"></span>
+    <span class="acc-rule" style="right:5.75mm;top:115mm;height:149.4mm"></span>
     <span class="acc-sq" style="right:4.6mm;top:264.4mm"></span>
     <span class="acc-sq" style="left:4.6mm;top:30mm"></span>
-    <span class="acc-rule" style="left:5.85mm;top:32.6mm;height:235.4mm"></span>
+    <span class="acc-rule" style="left:5.85mm;top:32.6mm;height:149.4mm"></span>
     <span class="acc-bar" style="left:0;top:182mm;height:39mm;background:${C.maroon}"></span>
     <span class="acc-bar" style="left:0;top:221mm;height:47mm;background:${C.navy}"></span>
     <span class="acc-bar" style="left:0;top:268mm;height:29mm;background:${C.yellow}"></span>

@@ -279,11 +279,11 @@ function pageBackground() {
       bar(R, 0, 29, C.yellow),
       bar(R, 29, 47, C.navy),
       bar(R, 76, 39, C.maroon),
-      { type: 'rect', x: axisR, y: 29 * MM, w: 0.15 * MM, h: 235.4 * MM, color: C.navy },
+      { type: 'rect', x: axisR, y: 115 * MM, w: 0.15 * MM, h: 149.4 * MM, color: C.navy },
       { type: 'rect', x: axisR - 1.175 * MM, y: 264.4 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
       // Left: square, rule, gap, bars to the page bottom.
       { type: 'rect', x: axisL - 1.425 * MM, y: 30 * MM, w: 2.6 * MM, h: 2.6 * MM, color: C.navy },
-      { type: 'rect', x: axisL - 0.15 * MM, y: 32.6 * MM, w: 0.15 * MM, h: 235.4 * MM, color: C.navy },
+      { type: 'rect', x: axisL - 0.15 * MM, y: 32.6 * MM, w: 0.15 * MM, h: 149.4 * MM, color: C.navy },
       bar(0, 182, 39, C.maroon),
       bar(0, 221, 47, C.navy),
       bar(0, 268, 29, C.yellow),
