@@ -100,7 +100,7 @@ export default function DocumentPaper({ doc, editable = false, editorRef }) {
   // contentEditable body (a PDF cannot be edited in place).
   if (!editable) return <PdfPreview doc={doc} />
   return (
-    <div className="doc-paper relative mx-auto w-[210mm] max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className={`doc-paper relative mx-auto w-[210mm] max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${doc.entity === 'AEZ' ? '' : 'doc-font-ez'}`}>
       <style>{'.doc-paper{ min-height:120mm; }' + chromeCss('screen').replaceAll('\n  .', '\n  .doc-paper .')}</style>
       <div aria-hidden="true" dangerouslySetInnerHTML={{ __html: letterheadHtml(doc.entity, doc.brandName) + accentsHtml() }} />
       <div className="relative px-[18mm] pb-[14mm] pt-[30mm]">

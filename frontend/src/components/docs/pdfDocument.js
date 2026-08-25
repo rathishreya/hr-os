@@ -17,7 +17,11 @@ import { ENTITY, C, logoSvg } from './letterhead'
 let poppinsVfs = null
 async function loadPoppins() {
   if (poppinsVfs) return poppinsVfs
-  const files = ['Poppins-Regular', 'Poppins-SemiBold', 'Poppins-Italic', 'Poppins-SemiBoldItalic', 'GreatVibes-Regular']
+  const files = [
+    'Poppins-Regular', 'Poppins-SemiBold', 'Poppins-Italic', 'Poppins-SemiBoldItalic',
+    'Arimo-Regular', 'Arimo-Bold', 'Arimo-Italic', 'Arimo-BoldItalic',
+    'GreatVibes-Regular',
+  ]
   const entries = await Promise.all(files.map(async (n) => {
     const res = await fetch(`/fonts/${n}.ttf`)
     if (!res.ok) throw new Error(`font ${n}: HTTP ${res.status}`)
@@ -118,7 +122,7 @@ function blockToPdf(b) {
         margin: [0, 4, 0, 8],
       }
     case 'comp': {
-      const cell = (text, opts = {}) => ({ text, fontSize: 9, margin: [4, 2, 4, 2], ...opts })
+      const cell = (text, opts = {}) => ({ text, fontSize: 9.5, margin: [4, 1.5, 4, 1.5], ...opts })
       const body = [
         [
           cell('Component', { bold: true, fillColor: '#e9eef5' }),
@@ -133,12 +137,17 @@ function blockToPdf(b) {
       if ((b.notes || []).length) {
         body.push([{ ...cell('Important Points', { bold: true, decoration: 'underline' }), colSpan: 2 }, {}])
         for (const n of b.notes) {
-          body.push([{ ...cell(n, { italics: true, fontSize: 8 }), colSpan: 2 }, {}])
+          body.push([{ ...cell(n, { italics: true, fontSize: 8.5 }), colSpan: 2 }, {}])
         }
       }
       return {
         table: { widths: ['*', 90], headerRows: 1, body },
-        layout: { hLineColor: () => RULE, vLineColor: () => RULE, hLineWidth: () => 0.5, vLineWidth: () => 0.5 },
+        layout: {
+          hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 1 : 0.5),
+          vLineWidth: (i, node) => (i === 0 || i === node.table.widths.length ? 1 : 0.5),
+          hLineColor: (i, node) => (i === 0 || i === node.table.body.length ? '#333333' : '#b3b3b3'),
+          vLineColor: (i, node) => (i === 0 || i === node.table.widths.length ? '#333333' : '#b3b3b3'),
+        },
         margin: [0, 4, 0, 8],
       }
     }
@@ -308,6 +317,12 @@ async function makePdf(doc) {
           normal: 'Poppins-Regular.ttf', bold: 'Poppins-SemiBold.ttf',
           italics: 'Poppins-Italic.ttf', bolditalics: 'Poppins-SemiBoldItalic.ttf',
         },
+        // Arimo is metrically identical to Arial -- the face the EZ Lab source documents are
+        // actually set in (the ArabEasy sources are the Poppins ones).
+        Arimo: {
+          normal: 'Arimo-Regular.ttf', bold: 'Arimo-Bold.ttf',
+          italics: 'Arimo-Italic.ttf', bolditalics: 'Arimo-BoldItalic.ttf',
+        },
         GreatVibes: {
           normal: 'GreatVibes-Regular.ttf', bold: 'GreatVibes-Regular.ttf',
           italics: 'GreatVibes-Regular.ttf', bolditalics: 'GreatVibes-Regular.ttf',
@@ -319,6 +334,7 @@ async function makePdf(doc) {
       pdfMake.addFonts({
         Roboto: ROBOTO,
         Poppins: ROBOTO,
+        Arimo: ROBOTO,
         GreatVibes: {
           normal: 'Roboto-Italic.ttf', bold: 'Roboto-Italic.ttf',
           italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-Italic.ttf',
@@ -327,8 +343,9 @@ async function makePdf(doc) {
     }
     fontsRegistered = true
   }
-  if (poppinsVfs) bodyFont = 'Poppins'
-  else bodyFont = 'Poppins' // Poppins maps to Roboto in the fallback set, so the name is safe
+  // The EZ Lab sources are set in Arial (Arimo carries its exact metrics); the ArabEasy sources
+  // in Poppins. In the fallback set both names map to Roboto, so either is safe unloaded.
+  bodyFont = doc.entity === 'AEZ' ? 'Poppins' : 'Arimo'
 
   return pdfMake.createPdf(await buildDefinition(doc, bodyFont))
 }

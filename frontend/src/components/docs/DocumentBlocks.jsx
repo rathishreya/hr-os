@@ -81,12 +81,12 @@ function TermsTable({ block }) {
   )
 }
 
-const CELL = 'border border-[#333] px-2 py-[3px]'
+const CELL = 'border border-[#b3b3b3] px-2 py-[2px]'
 
 function CompTable({ block }) {
   return (
     <div>
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full border-collapse border-[1.5px] border-[#333] text-sm">
         <thead>
           <tr>
             <th className={`${CELL} bg-[#e9eef5] text-left font-semibold text-slate-800`}>Component</th>

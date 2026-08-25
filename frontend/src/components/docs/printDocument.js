@@ -24,7 +24,7 @@ export function printDocument(doc) {
   ${fonts}
   @page { size: A4; margin: 31mm 19mm 17mm 19mm; }
   *{ box-sizing:border-box; }
-  body{ font-family:Poppins,'Segoe UI',Arial,sans-serif; color:#1f2430; font-size:10.5pt; line-height:1.5; margin:0; }
+  body{ font-family:${doc.entity === 'AEZ' ? "Poppins,'Segoe UI',Arial,sans-serif" : "Arial,'Arimo','Helvetica Neue',sans-serif"}; color:#1f2430; font-size:10.5pt; line-height:1.5; margin:0; }
   ${chromeCss('print')}
 
   h1{ font-size:11.5pt; font-weight:600; text-align:center; text-transform:uppercase; letter-spacing:.6px; margin:14px 0 8px; }
@@ -47,8 +47,9 @@ export function printDocument(doc) {
   table.grid th{ background:#e9eef5; font-weight:600; }
   table.grid th,table.grid td{ border:0.5pt solid #333; padding:4px 7px; vertical-align:top; text-align:left; }
   table.grid .r{ text-align:right; } table.grid .c{ text-align:center; }
+  table.comp{ border:1.2pt solid #333; }
   table.comp th{ background:#e9eef5; font-weight:600; }
-  table.comp th,table.comp td{ border:0.5pt solid #333; padding:2.5px 7px; }
+  table.comp th,table.comp td{ border:0.5pt solid #b3b3b3; padding:2px 7px; }
   table.comp .r{ text-align:right; } table.comp tr.em{ font-weight:600; background:#f4f6f9; }
   table.comp tr.ni td{ font-style:italic; font-size:8.5pt; }
 
