@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { FileText, Check, Copy, Eye, FilePlus2, RefreshCw, Printer, Upload, ArrowRightCircle, ChevronRight, Rocket, Lock, PenLine, RotateCcw, Mail, MailCheck } from 'lucide-react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { FileText, Check, Copy, Eye, FilePlus2, RefreshCw, Printer, Upload, ArrowRightCircle, ChevronRight, Rocket, Lock, PenLine, RotateCcw, Mail, MoreHorizontal } from 'lucide-react'
 import { api } from '../api'
 import { Card, Badge, Button, Spinner, EmptyState, PageHeader, Modal, Field, inputClass, cx, focusRing } from '../ui'
 import { useToast } from '../components/Toast'
@@ -97,7 +98,7 @@ function groupNext(g) {
 // the action buttons line up into readable columns down the panel.
 const PANEL_GRID =
   'grid grid-cols-1 items-start gap-x-4 gap-y-2 ' +
-  'lg:grid-cols-[minmax(11rem,1.3fr)_15.5rem_minmax(0,1fr)_10rem_8.75rem]'
+  'lg:grid-cols-[minmax(11rem,1.3fr)_15.5rem_minmax(0,1fr)_10rem_6.5rem]'
 
 // The one named action per row. Tinted rather than solid: five solid violet buttons stacked would
 // be the loudest thing on the page, and the solid fill is reserved for "Add document".
@@ -388,7 +389,7 @@ function InlineEntity({ doc, value, onSaved, locked }) {
 // Filing the signed & countersigned copy back. The single upload_* slot on the model holds the
 // executed PDF (uploading again replaces it). The same control renders either as the row's named
 // next step or as one of the fixed tool slots, so the file input is never duplicated.
-function UploadControl({ doc, name, onUploaded, primary }) {
+function UploadControl({ doc, name, onUploaded, primary, menu }) {
   const { toast } = useToast()
   const [busy, setBusy] = useState(false)
   async function onFile(e) {
@@ -411,6 +412,15 @@ function UploadControl({ doc, name, onUploaded, primary }) {
   // sr-only rather than hidden: a hidden input cannot take keyboard focus, which made this the
   // one control on the row a keyboard user could not reach.
   const input = <input type="file" accept="application/pdf,.pdf" className="sr-only" onChange={onFile} disabled={busy} />
+  if (menu) {
+    return (
+      <label className={cx('flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50', busy && 'pointer-events-none opacity-60')}>
+        {busy ? <Spinner /> : <Upload className="h-3.5 w-3.5 text-slate-400" />}
+        {busy ? 'Uploading…' : `${verb === 'Upload signed' ? 'Upload' : 'Replace'} signed copy`}
+        {input}
+      </label>
+    )
+  }
   if (primary) {
     return (
       <label className={cx(PRIMARY, 'cursor-pointer focus-within:ring-2 focus-within:ring-brand-500/50', busy && 'pointer-events-none opacity-60')}>
@@ -515,6 +525,103 @@ function SendToOnboarding({ group, anyMoved, onMoved }) {
   )
 }
 
+// The out-of-sequence paths for one document: approving something already sent, emailing a draft,
+// filing a signed copy that never went out by mail. Real, but not what a row is usually for — so
+// they live behind one control instead of five icons repeated down the panel.
+// Portal + fixed positioning, following ColumnFilter, so a table's overflow can never clip it.
+function RowMenu({ items, label }) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef(null)
+  const popRef = useRef(null)
+  const [pos, setPos] = useState(null)
+
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return
+    const r = btnRef.current.getBoundingClientRect()
+    const W = 224
+    setPos({
+      top: Math.min(r.bottom + 6, window.innerHeight - (items.length * 34 + 24)),
+      left: Math.min(Math.max(8, r.right - W), window.innerWidth - W - 8),
+      width: W,
+    })
+  }, [open, items.length])
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e) => {
+      if (popRef.current?.contains(e.target) || btnRef.current?.contains(e.target)) return
+      setOpen(false)
+    }
+    const onKey = (e) => { if (e.key === 'Escape') { setOpen(false); btnRef.current?.focus() } }
+    const onScroll = () => setOpen(false)
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [open])
+
+  if (!items.length) return <span className="h-8 w-8" aria-hidden />
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        onClick={() => setOpen((v) => !v)}
+        className={cx(ROW_ICON, open && 'bg-brand-50/60 text-brand-600 ring-brand-200')}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && pos && createPortal(
+        <div
+          ref={popRef}
+          role="menu"
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
+          className="menu-in z-[120] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl"
+        >
+          {items.map((it) => (
+            it.href ? (
+              <a
+                key={it.label}
+                role="menuitem"
+                href={it.href}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50"
+              >
+                {it.icon}{it.label}
+              </a>
+            ) : it.render ? (
+              <div key={it.label} onClick={() => setOpen(false)}>{it.render}</div>
+            ) : (
+              <button
+                key={it.label}
+                role="menuitem"
+                type="button"
+                onClick={() => { setOpen(false); it.onClick() }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50"
+              >
+                {it.icon}{it.label}
+              </button>
+            )
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
+
 // One document on the shared panel grid: what it is, where it has got to, the fine print, its
 // single named next step, and the fixed tool slots.
 function DocRow({ doc: d, templates, onMerge, onPreview, onEditLetter, onEmail, onDetails, onApprove }) {
@@ -531,11 +638,28 @@ function DocRow({ doc: d, templates, onMerge, onPreview, onEditLetter, onEmail, 
     try { await onApprove(d) } finally { setApproving(false) }
   }
 
-  // A tool slot renders EMPTY when its action is currently the row's named next step: no action is
-  // ever offered twice, and the icons keep their x-positions all the way down the panel.
-  const slot = (show, node) => (show ? node : <span className="h-8 w-8" aria-hidden />)
 
   const sentTo = d.personal_email || d.email
+
+  // Everything the row is not currently asking for, but that must stay reachable.
+  const menuItems = [
+    !locked && isDraft && templateBacked && {
+      label: 'Details & template…', icon: <RefreshCw className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onDetails(d),
+    },
+    !locked && isDraft && step !== 'approve' && {
+      label: 'Approve now', icon: <Check className="h-3.5 w-3.5 text-slate-400" />, onClick: approve,
+    },
+    !locked && step !== 'send' && {
+      label: d.email_sent_at ? 'Email again…' : 'Email now…', icon: <Mail className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onEmail(d),
+    },
+    !locked && step !== 'upload' && {
+      label: d.has_upload ? 'Replace signed copy' : 'Upload signed copy',
+      render: <UploadControl doc={d} name={name} onUploaded={onMerge} menu />,
+    },
+    d.has_upload && {
+      label: 'View signed copy', icon: <FileText className="h-3.5 w-3.5 text-slate-400" />, href: api.documentUploadUrl(d.id),
+    },
+  ].filter(Boolean)
   return (
     <div className={cx(PANEL_GRID, 'px-4 py-2.5 transition-colors duration-150 ease-snappy hover:bg-slate-50')}>
       {/* 1 - identity. Three same-named letters are told apart on three aligned axes: the
@@ -627,33 +751,18 @@ function DocRow({ doc: d, templates, onMerge, onPreview, onEditLetter, onEmail, 
         )}
       </div>
 
-      {/* 5 - fixed tool slots, same x-positions on every row */}
+      {/* 5 - what this row's stage actually calls for. Anything out of sequence is one click
+             deeper rather than a sixth icon repeated down the panel. */}
       <div className="flex items-center gap-1">
         <button type="button" onClick={() => onPreview(d)} title={`Preview the ${name}`} aria-label={`Preview the ${name}`} className={ROW_ICON}>
           <Eye className="h-4 w-4" />
         </button>
-        {slot(!locked && isDraft && templateBacked, (
-          <button type="button" onClick={() => onDetails(d)} title={`Change the details or template behind the ${name} and re-render it`} aria-label={`Details and template for the ${name}`} className={ROW_ICON}>
-            <RefreshCw className="h-4 w-4" />
-          </button>
-        ))}
-        {slot(!locked && isDraft, (
+        {!locked && isDraft && (
           <button type="button" onClick={() => onEditLetter(d)} title={`Type directly on the ${name}`} aria-label={`Edit the wording of the ${name}`} className={ROW_ICON}>
             <PenLine className="h-4 w-4" />
           </button>
-        ))}
-        {slot(!locked && step !== 'send', (
-          <button
-            type="button"
-            onClick={() => onEmail(d)}
-            title={d.email_sent_at ? `Emailed ${fmtShort(d.email_sent_at)} - review and send the ${name} again` : `Review and email the ${name}`}
-            aria-label={d.email_sent_at ? `Email the ${name} again` : `Email the ${name}`}
-            className={cx(ROW_ICON, d.email_sent_at && 'text-emerald-600 ring-emerald-200')}
-          >
-            {d.email_sent_at ? <MailCheck className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
-          </button>
-        ))}
-        {slot(!locked && step !== 'upload', <UploadControl doc={d} name={name} onUploaded={onMerge} />)}
+        )}
+        <RowMenu label={`More for the ${name}`} items={menuItems} />
       </div>
     </div>
   )
