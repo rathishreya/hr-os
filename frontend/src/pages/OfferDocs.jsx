@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { FileText, Check, Copy, Eye, FilePlus2, RefreshCw, Printer, Upload, ArrowRightCircle, ChevronRight, Rocket, Lock, PenLine, RotateCcw, Mail, MailCheck } from 'lucide-react'
 import { api } from '../api'
-import { Card, Badge, Button, Spinner, EmptyState, PageHeader, Modal, Field, inputClass, cx } from '../ui'
+import { Card, Badge, Button, Spinner, EmptyState, PageHeader, Modal, Field, inputClass, cx, focusRing } from '../ui'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useColumnFilters, ColumnFilter, distinctValues } from '../components/tableFilters'
@@ -10,7 +10,9 @@ import { documentToPdfBlobUrl } from '../components/docs/pdfDocument'
 import { sanitizeHtml } from '../components/docs/docHtml'
 import EmailDocumentModal from '../components/docs/EmailDocumentModal'
 
-// doc_type -> label for the documents table. Keys match registry.DOC_TYPES.
+// doc_type -> label for the documents table. Keys match registry.DOC_TYPES. This is the fallback:
+// a document drafted from a template shows the TEMPLATE's name instead, because doc_type alone
+// cannot tell an Offer Letter from a Traineeship Offer Letter — three such rows read as duplicates.
 const DOC_LABEL = {
   offer: 'Offer letter',
   contract: 'Contract',
@@ -19,6 +21,89 @@ const DOC_LABEL = {
   employment_agreement: 'Employment agreement',
   contractor_agreement: 'Contractor agreement',
 }
+
+/** What this document actually is, as specifically as we can name it. */
+function docName(doc, templates) {
+  const t = templates?.find((x) => x.key === doc.template_key)
+  return t?.label || DOC_LABEL[doc.doc_type] || doc.doc_type
+}
+
+// ── Where a document sits in the issuance pipeline ──────────────────────────────────────────
+// Four facts read INDEPENDENTLY off the record — progress is not guaranteed to be monotonic,
+// because /send-email is not gated on status, so "emailed but never approved" is a real row.
+const STAGES = ['Drafted', 'Approved', 'Sent', 'Signed']
+const stageFlags = (d) => [true, d.status === 'approved', !!d.email_sent_at, !!d.has_upload]
+
+/** The single next step this document is waiting on. Every other action stays reachable. */
+function nextStep(d) {
+  if (d.move_to_onboarding) return 'locked'
+  if (d.has_upload) return 'done'
+  if (d.email_sent_at) return 'upload'
+  if (d.status === 'approved') return 'send'
+  return 'approve'
+}
+
+// Whose move it is — the one thing the master row needs to say.
+const TURN = { approve: 'ours', send: 'ours', upload: 'theirs', done: 'done', locked: 'locked' }
+const TURN_DOT = { ours: 'bg-amber-600', theirs: 'bg-sky-600', done: 'bg-emerald-600', locked: 'bg-slate-400' }
+
+// An earlier stage left undone while a later one is done — worth flagging, never guessed.
+const skippedAt = (d) => {
+  const f = stageFlags(d)
+  return f.map((v, i) => !v && f.slice(i + 1).some(Boolean))
+}
+
+const daysSince = (iso) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 864e5) : null)
+// How long the candidate has been sitting on it. Only meaningful while we're waiting on them.
+const ageOf = (d) => (nextStep(d) === 'upload' ? daysSince(d.email_sent_at) : null)
+const ageClass = (n) => (n >= 14 ? 'font-medium text-rose-700' : n >= 7 ? 'font-medium text-amber-700' : 'text-slate-500')
+
+// created_at / email_sent_at are ISO. joining_date is FREE TEXT ("1 July 2026") — never parse it.
+const fmtShort = (iso) => {
+  if (!iso) return ''
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return ''
+  const s = dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return dt.getFullYear() === new Date().getFullYear() ? s : `${s} ${String(dt.getFullYear()).slice(2)}`
+}
+const fmtLong = (iso) => {
+  if (!iso) return ''
+  const dt = new Date(iso)
+  return Number.isNaN(dt.getTime()) ? '' : dt.toLocaleString()
+}
+
+const ENTITY_LEGAL = { EZ: 'EZ Lab Private Limited', AEZ: 'ArabEasy LLC' }
+
+// Offer-admin gaps. Informational only — the server falls back to the work email, so a blank
+// personal email must never block sending.
+const missingDetails = (d) => !d.move_to_onboarding && (!d.personal_email || !d.joining_date)
+
+/** The candidate's next action: the first pipeline blocker wins. Missing details are reported
+ *  separately so they can never outrank a document that is genuinely ready to send. */
+function groupNext(g) {
+  const live = g.docs.filter((d) => !d.move_to_onboarding)
+  if (!live.length) return { text: 'In onboarding', turn: 'locked' }
+  const count = (s) => live.filter((d) => nextStep(d) === s).length
+  if (count('approve')) return { text: `${count('approve')} to approve`, turn: 'ours' }
+  if (count('send')) return { text: `${count('send')} ready to send`, turn: 'ours' }
+  if (count('upload')) {
+    const ages = live.filter((d) => nextStep(d) === 'upload').map((d) => ageOf(d) ?? 0)
+    return { text: `${count('upload')} awaiting signature`, turn: 'theirs', age: Math.max(...ages) }
+  }
+  return { text: 'All signed — ready for onboarding', turn: 'done' }
+}
+
+// The panel's column geometry, shared by the axis legend and every document row so the rails and
+// the action buttons line up into readable columns down the panel.
+const PANEL_GRID =
+  'grid grid-cols-1 items-start gap-x-4 gap-y-2 ' +
+  'lg:grid-cols-[minmax(11rem,1.3fr)_15.5rem_minmax(0,1fr)_10rem_8.75rem]'
+
+// The one named action per row. Tinted rather than solid: five solid violet buttons stacked would
+// be the loudest thing on the page, and the solid fill is reserved for "Add document".
+const PRIMARY =
+  'inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 text-xs font-medium text-brand-700 transition duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-100 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-50'
+const PRIMARY_STATIC = 'inline-flex h-8 w-full items-center justify-center gap-1.5 px-1 text-xs font-medium'
 
 // Simple text term fields shown in the generate/edit form; keys match the backend template context.
 const TERM_FIELDS = [
@@ -207,66 +292,61 @@ function groupByCandidate(docs) {
 
 // Uniform 32px icon-button styles so every row action lines up and reads as one set.
 const ROW_ICON = 'inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 ring-1 ring-slate-200 transition duration-150 ease-snappy hover:bg-brand-50/60 hover:text-brand-600 hover:ring-brand-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-40'
-const ROW_ICON_GREEN = 'inline-flex h-8 w-8 items-center justify-center rounded-lg text-emerald-600 ring-1 ring-emerald-200 transition duration-150 ease-snappy hover:bg-emerald-50 active:scale-95'
 // Row actions are peers and all share ROW_ICON. The brand-filled variant is reserved for
 // candidate-level actions in the group header ("Add document"), where it is the only accent —
 // inside a document row it made two of five buttons shout for no reason.
 const ROW_ICON_BRAND = 'inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white transition duration-150 ease-snappy hover:bg-brand-700 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-40'
-// Label above an inline value in the document row. Replaces the nested table's own header row.
-const FIELD_LABEL = 'block text-[10px] font-medium uppercase tracking-wide text-slate-400'
-
-// A small offer-administration status, derived from the system state (no separate offer-lifecycle
-// column exists yet). Reflects the document's progress: Draft → Approved → Signed copy on file →
-// Onboarding.
-function docStatus(d) {
-  if (d.move_to_onboarding) return { label: 'In onboarding', tone: 'green' }
-  if (d.has_upload) return { label: 'Signed copy on file', tone: 'blue' }
-  if (d.status === 'approved') return { label: 'Approved', tone: 'green' }
-  return { label: 'Draft', tone: 'amber' }
-}
-
-// Inline, save-on-blur text cell for an offer-administration field (personal email / joining date).
-// Locked (read-only) once the candidate has moved to onboarding — the doc is effectively issued.
-function InlineText({ doc, field, value, type = 'text', placeholder, onSaved, locked }) {
+// Inline, save-on-blur editor for a fact that belongs to the CANDIDATE, not to one letter:
+// their personal email and their joining date are the same on every document they're issued.
+// The backend stores both per document, so a commit fans out across the candidate's unlocked
+// documents — reported honestly if only some of them save.
+// Locked (read-only) once the candidate has moved to onboarding; the server 409s on those anyway.
+function GroupField({ docs, field, type = 'text', placeholder, onSaved, className }) {
   const { toast } = useToast()
-  const [val, setVal] = useState(value || '')
+  const targets = docs.filter((d) => !d.move_to_onboarding)
+  const values = [...new Set(targets.map((d) => d[field] || ''))]
+  const shared = values.length <= 1 ? values[0] || '' : ''
+  const differs = values.length > 1
+
+  const [val, setVal] = useState(shared)
   const [busy, setBusy] = useState(false)
-  useEffect(() => { setVal(value || '') }, [value])
+  useEffect(() => { setVal(shared) }, [shared])
 
   async function commit() {
     const next = val.trim()
-    if (next === (value || '')) return
+    if (!differs && next === shared) return
+    if (!targets.length) return
     setBusy(true)
-    try {
-      const up = await api.updateDocumentFields(doc.id, { [field]: next })
-      onSaved(up)
-    } catch (e) {
-      setVal(value || '')
-      toast(e.message, 'error')
-    } finally {
-      setBusy(false)
-    }
+    const results = await Promise.allSettled(
+      targets.map((d) => api.updateDocumentFields(d.id, { [field]: next })),
+    )
+    results.forEach((r) => r.status === 'fulfilled' && onSaved(r.value))
+    const failed = results.filter((r) => r.status === 'rejected').length
+    if (failed) toast(`${failed} of ${targets.length} documents didn’t save — they still show the old value.`, 'error')
+    setBusy(false)
   }
 
-  if (locked) {
-    return <span className="inline-flex items-center gap-1 text-sm text-slate-500">{value || '—'}<Lock className="h-3 w-3 text-slate-300" /></span>
+  if (!targets.length) {
+    return <span className="inline-flex items-center gap-1 text-sm text-slate-600">{docs[0]?.[field] || '—'}<Lock className="h-3 w-3 text-slate-400" /></span>
   }
-  // Reads as text until you touch it. A grid of permanently-bordered inputs turned the document
-  // list into a form; the value is the content, the box is only an editing affordance.
+  // Reads as text until you touch it — a grid of permanently-bordered inputs turns a document
+  // list into a form. An empty required field shows a dashed outline: a visible gap to fill,
+  // rather than grey italics that look like a value.
   return (
     <input
       type={type}
       value={val}
-      placeholder={placeholder}
+      placeholder={differs ? 'Several values' : placeholder}
       disabled={busy}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => setVal(e.target.value)}
       onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setVal(shared); e.currentTarget.blur() } }}
       className={cx(
-        'w-full min-w-[9rem] rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm text-slate-700 outline-none transition-colors duration-150 ease-snappy',
-        'placeholder:text-slate-400 placeholder:italic hover:border-slate-200 hover:bg-white',
-        'focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50',
+        className,
+        'rounded-md border bg-transparent px-1.5 py-1 text-sm text-slate-800 outline-none transition-colors duration-150 ease-snappy',
+        'placeholder:text-slate-500 hover:bg-white focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/20 disabled:opacity-60',
+        val || differs ? 'border-transparent hover:border-slate-200' : 'border-dashed border-slate-300',
       )}
     />
   )
@@ -305,12 +385,11 @@ function InlineEntity({ doc, value, onSaved, locked }) {
   )
 }
 
-// Upload / preview the signed & countersigned copy of this document. The single upload_* slot on
-// the model holds the executed PDF (uploading a new one replaces it). has_upload drives the green
-// "view" link so HR can see at a glance which documents have a signed copy on file.
-function UploadCell({ doc, onUploaded }) {
+// Filing the signed & countersigned copy back. The single upload_* slot on the model holds the
+// executed PDF (uploading again replaces it). The same control renders either as the row's named
+// next step or as one of the fixed tool slots, so the file input is never duplicated.
+function UploadControl({ doc, name, onUploaded, primary }) {
   const { toast } = useToast()
-  const ref = useRef(null)
   const [busy, setBusy] = useState(false)
   async function onFile(e) {
     const file = e.target.files?.[0]
@@ -319,47 +398,81 @@ function UploadCell({ doc, onUploaded }) {
     try {
       const fd = new FormData()
       fd.append('file', file)
-      const up = await api.uploadDocumentFile(doc.id, fd)
-      toast('Countersigned copy uploaded')
-      onUploaded(up)
+      onUploaded(await api.uploadDocumentFile(doc.id, fd))
+      toast('Countersigned copy filed')
     } catch (err) {
       toast(err.message, 'error')
     } finally {
       setBusy(false)
-      if (ref.current) ref.current.value = ''
+      e.target.value = ''
     }
   }
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      {doc.has_upload && (
-        <a
-          href={api.documentUploadUrl(doc.id)}
-          target="_blank"
-          rel="noreferrer"
-          title={`View countersigned copy (${doc.upload_filename || 'uploaded file'})`}
-          aria-label="View countersigned copy"
-          className={ROW_ICON_GREEN}
-        >
-          <FileText className="h-4 w-4" />
-        </a>
-      )}
-      {/* Always-visible per-row upload affordance for the signed / countersigned copy. Reads as a
-          pill with a label when empty, and as a compact "Replace" control once a copy is on file. */}
-      <label
-        title={doc.has_upload ? 'Replace countersigned copy (signed PDF)' : 'Upload the signed / countersigned copy (PDF)'}
-        className={cx(
-          'inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium ring-1 transition duration-150 ease-snappy active:scale-95 focus-within:ring-2 focus-within:ring-brand-500/50',
-          doc.has_upload
-            ? 'text-slate-500 ring-slate-200 hover:bg-slate-50 hover:text-slate-700'
-            : 'text-brand-700 ring-brand-200 hover:bg-brand-50',
-          busy && 'pointer-events-none opacity-60',
-        )}
-      >
+  const verb = doc.has_upload ? 'Replace' : 'Upload signed'
+  // sr-only rather than hidden: a hidden input cannot take keyboard focus, which made this the
+  // one control on the row a keyboard user could not reach.
+  const input = <input type="file" accept="application/pdf,.pdf" className="sr-only" onChange={onFile} disabled={busy} />
+  if (primary) {
+    return (
+      <label className={cx(PRIMARY, 'cursor-pointer focus-within:ring-2 focus-within:ring-brand-500/50', busy && 'pointer-events-none opacity-60')}>
         {busy ? <Spinner /> : <Upload className="h-3.5 w-3.5" />}
-        {doc.has_upload ? 'Replace' : 'Upload signed'}
-        <input ref={ref} type="file" accept="application/pdf,.pdf" className="hidden" onChange={onFile} disabled={busy} />
+        {busy ? 'Uploading…' : verb}
+        {input}
       </label>
-    </span>
+    )
+  }
+  return (
+    <label
+      title={`${verb} — the countersigned ${name}`}
+      className={cx(ROW_ICON, 'cursor-pointer focus-within:ring-2 focus-within:ring-brand-500/50', busy && 'pointer-events-none opacity-60')}
+    >
+      {busy ? <Spinner /> : <Upload className="h-4 w-4" />}
+      <span className="sr-only">{verb} — the countersigned {name}</span>
+      {input}
+    </label>
+  )
+}
+
+// Where this document has got to, as four dots on a shared axis. Rows line up down the panel, so
+// a candidate's progress reads as a staircase instead of five identical badges.
+function StageRail({ doc }) {
+  const flags = stageFlags(doc)
+  const skipped = skippedAt(doc)
+  const step = nextStep(doc)
+  const turn = TURN[step]
+  const current = flags.lastIndexOf(true) + 1   // the first stage still to happen
+  const age = ageOf(doc)
+
+  const dotClass = (i) => {
+    if (flags[i]) return 'bg-emerald-600'
+    if (skipped[i]) return 'bg-white ring-2 ring-inset ring-amber-600'
+    if (i === current && turn === 'ours') return 'bg-amber-600'
+    if (i === current && turn === 'theirs') return 'bg-sky-600'
+    return 'bg-slate-300'
+  }
+  const reached = flags.lastIndexOf(true)
+  const caption = doc.move_to_onboarding ? 'In onboarding'
+    : reached === 3 ? 'Signed'
+    : reached === 2 ? `Sent ${fmtShort(doc.email_sent_at)}`
+    : reached === 1 ? `Approved ${fmtShort(doc.approved_at)}`
+    : `Drafted ${fmtShort(doc.created_at)}`
+  const spoken = STAGES.map((s, i) => `${s}, ${flags[i] ? 'done' : 'not yet'}.`).join(' ')
+
+  return (
+    <div className="max-w-[15.5rem]">
+      <div className="grid grid-cols-4" aria-hidden="true">
+        {STAGES.map((s, i) => (
+          <div key={s} className="relative flex h-2.5 items-center">
+            {i < 3 && <span className={cx('absolute left-2.5 right-0 top-1/2 h-px -translate-y-1/2', flags[i] && flags[i + 1] ? 'bg-emerald-300' : 'bg-slate-200')} />}
+            <span className={cx('relative z-10 h-2.5 w-2.5 shrink-0 rounded-full', dotClass(i))} />
+          </div>
+        ))}
+      </div>
+      <p className="mt-1.5 text-xs" aria-hidden="true">
+        <span className="text-slate-600">{caption}</span>
+        {age != null && age >= 1 && <span className={cx('tabular-nums', ageClass(age))}> · {age}d</span>}
+      </p>
+      <span className="sr-only">{spoken}</span>
+    </div>
   )
 }
 
@@ -391,13 +504,221 @@ function SendToOnboarding({ group, anyMoved, onMoved }) {
   return (
     <Button
       variant="ghost"
+      size="sm"
       onClick={send}
       disabled={busy}
-      className="px-2.5 py-1 text-xs"
+      className="whitespace-nowrap"
       title="Create this candidate's onboarding tracker"
     >
       {busy ? <Spinner /> : <ArrowRightCircle className="h-3.5 w-3.5" />} Send to onboarding
     </Button>
+  )
+}
+
+// One document on the shared panel grid: what it is, where it has got to, the fine print, its
+// single named next step, and the fixed tool slots.
+function DocRow({ doc: d, templates, onMerge, onPreview, onEditLetter, onEmail, onDetails, onApprove }) {
+  const name = docName(d, templates)
+  const locked = !!d.move_to_onboarding
+  const step = nextStep(d)
+  const skipped = skippedAt(d)
+  const templateBacked = templates.some((t) => t.key === d.template_key)
+  const isDraft = d.status !== 'approved'
+  const [approving, setApproving] = useState(false)
+
+  async function approve() {
+    setApproving(true)
+    try { await onApprove(d) } finally { setApproving(false) }
+  }
+
+  // A tool slot renders EMPTY when its action is currently the row's named next step: no action is
+  // ever offered twice, and the icons keep their x-positions all the way down the panel.
+  const slot = (show, node) => (show ? node : <span className="h-8 w-8" aria-hidden />)
+
+  const sentTo = d.personal_email || d.email
+  return (
+    <div className={cx(PANEL_GRID, 'px-4 py-2.5 transition-colors duration-150 ease-snappy hover:bg-slate-50')}>
+      {/* 1 - identity. Three same-named letters are told apart on three aligned axes: the
+             template's own name, the operating entity, and when it was drafted. */}
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          {locked && <><Lock className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden /><span className="sr-only">Locked.</span></>}
+          <button
+            type="button"
+            onClick={() => onPreview(d)}
+            className={cx('truncate rounded text-left text-sm font-semibold text-slate-900 underline-offset-2 hover:text-brand-700 hover:underline', focusRing)}
+          >
+            {name}
+          </button>
+          {d.content_html && <Badge size="sm" tone="violet"><PenLine className="mr-1 h-3 w-3" />Edited</Badge>}
+        </div>
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
+          {templateBacked ? (
+            <span
+              title={`${ENTITY_LEGAL[d.entity] || d.entity} - set by the ${name} template`}
+              className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-px text-xs font-medium text-slate-600"
+            >
+              {d.entity}
+            </span>
+          ) : (
+            <InlineEntity doc={d} value={d.entity} locked={locked} onSaved={onMerge} />
+          )}
+          {d.created_at && (
+            <>
+              <span aria-hidden>·</span>
+              <time dateTime={d.created_at} title={fmtLong(d.created_at)} className="tabular-nums">{fmtShort(d.created_at)}</time>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* 2 - the pipeline */}
+      <StageRail doc={d} />
+
+      {/* 3 - fine print, rendered only when there is something true to say, so a clean row goes
+             quiet instead of repeating empty labels. */}
+      <div className="min-w-0 space-y-0.5 text-xs">
+        {d.has_upload && (
+          <a
+            href={api.documentUploadUrl(d.id)}
+            target="_blank"
+            rel="noreferrer"
+            className={cx('block truncate rounded font-medium text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:decoration-emerald-600', focusRing)}
+          >
+            {d.upload_filename || 'Signed copy'}
+          </a>
+        )}
+        {d.email_sent_at && (
+          <p className="truncate text-slate-600">
+            To {sentTo || '—'}{!d.personal_email && sentTo ? ' (work email)' : ''}
+          </p>
+        )}
+        {!d.email_sent_at && d.status === 'approved' && d.approved_by && (
+          <p className="truncate text-slate-600">Approved by {d.approved_by}</p>
+        )}
+        {skipped[1] && !locked && (
+          <p className="flex items-center gap-1.5 text-amber-700">
+            Sent without approval
+            <button type="button" onClick={approve} disabled={approving} className={cx('rounded font-medium underline underline-offset-2 hover:text-amber-800', focusRing)}>
+              {approving ? 'Approving…' : 'Approve now'}
+            </button>
+          </p>
+        )}
+      </div>
+
+      {/* 4 - the one thing to do next */}
+      <div className="max-w-[10rem]">
+        {step === 'approve' && (
+          <button type="button" onClick={approve} disabled={approving} className={PRIMARY}>
+            {approving ? <Spinner /> : <Check className="h-3.5 w-3.5" />} {approving ? 'Approving…' : 'Approve'}
+          </button>
+        )}
+        {step === 'send' && (
+          <button type="button" onClick={() => onEmail(d)} className={PRIMARY}>
+            <Mail className="h-3.5 w-3.5" /> Send email
+          </button>
+        )}
+        {step === 'upload' && <UploadControl doc={d} name={name} onUploaded={onMerge} primary />}
+        {step === 'done' && (
+          <span className={cx(PRIMARY_STATIC, 'text-emerald-700')}><Check className="h-3.5 w-3.5" /> Signed</span>
+        )}
+        {step === 'locked' && (
+          <span className={cx(PRIMARY_STATIC, 'text-slate-500')}><Lock className="h-3.5 w-3.5" /> Locked</span>
+        )}
+      </div>
+
+      {/* 5 - fixed tool slots, same x-positions on every row */}
+      <div className="flex items-center gap-1">
+        <button type="button" onClick={() => onPreview(d)} title={`Preview the ${name}`} aria-label={`Preview the ${name}`} className={ROW_ICON}>
+          <Eye className="h-4 w-4" />
+        </button>
+        {slot(!locked && isDraft && templateBacked, (
+          <button type="button" onClick={() => onDetails(d)} title={`Change the details or template behind the ${name} and re-render it`} aria-label={`Details and template for the ${name}`} className={ROW_ICON}>
+            <RefreshCw className="h-4 w-4" />
+          </button>
+        ))}
+        {slot(!locked && isDraft, (
+          <button type="button" onClick={() => onEditLetter(d)} title={`Type directly on the ${name}`} aria-label={`Edit the wording of the ${name}`} className={ROW_ICON}>
+            <PenLine className="h-4 w-4" />
+          </button>
+        ))}
+        {slot(!locked && step !== 'send', (
+          <button
+            type="button"
+            onClick={() => onEmail(d)}
+            title={d.email_sent_at ? `Emailed ${fmtShort(d.email_sent_at)} - review and send the ${name} again` : `Review and email the ${name}`}
+            aria-label={d.email_sent_at ? `Email the ${name} again` : `Email the ${name}`}
+            className={cx(ROW_ICON, d.email_sent_at && 'text-emerald-600 ring-emerald-200')}
+          >
+            {d.email_sent_at ? <MailCheck className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
+          </button>
+        ))}
+        {slot(!locked && step !== 'upload', <UploadControl doc={d} name={name} onUploaded={onMerge} />)}
+      </div>
+    </div>
+  )
+}
+
+// The candidate's case file: the facts that belong to the person, their documents on one shared
+// grid, and the consequence of the irreversible action that sits on the master row.
+function CandidatePanel({ group: g, panelId, templates, onMerge, onPreview, onEditLetter, onEmail, onDetails, onApprove }) {
+  const live = g.docs.filter((d) => !d.move_to_onboarding)
+  const differs = (field) => new Set(live.map((d) => d[field] || '')).size > 1
+  const unsigned = live.filter((d) => !d.has_upload).length
+  const footer = !live.length
+    ? 'In onboarding - these documents are read-only.'
+    : unsigned
+      ? `${unsigned} of ${g.docs.length} documents aren’t signed yet - sending to onboarding locks every document.`
+      : 'All documents signed. Ready for onboarding.'
+
+  return (
+    <div id={panelId} className="panel-in overflow-hidden rounded-xl border border-slate-200 bg-white">
+      {/* Facts that belong to the candidate, edited once here rather than repeated on every row. */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-200 bg-slate-50/70 px-4 py-3">
+        <label className="flex items-center gap-2">
+          <span className="shrink-0 text-xs font-medium text-slate-500">Personal email</span>
+          <GroupField docs={g.docs} field="personal_email" type="email" placeholder="name@gmail.com" onSaved={onMerge} className="w-52" />
+        </label>
+        <label className="flex items-center gap-2">
+          <span className="shrink-0 text-xs font-medium text-slate-500">Joining date</span>
+          <GroupField docs={g.docs} field="joining_date" placeholder="1 July 2026" onSaved={onMerge} className="w-40" />
+        </label>
+        <span className="ml-auto text-xs text-slate-500">
+          {differs('personal_email') || differs('joining_date')
+            ? 'Documents currently differ - typing here sets all of them'
+            : `Applies to all ${g.docs.length} document${g.docs.length === 1 ? '' : 's'}`}
+        </span>
+      </div>
+
+      {/* The axis the rails are read against - once per panel, not once per row. */}
+      <div className={cx(PANEL_GRID, 'hidden border-b border-slate-100 px-4 py-1.5 lg:grid')} aria-hidden="true">
+        <span />
+        <div className="grid max-w-[15.5rem] grid-cols-4 text-xs font-medium text-slate-500">
+          {STAGES.map((s) => <span key={s}>{s}</span>)}
+        </div>
+        <span /><span /><span />
+      </div>
+
+      <div className="divide-y divide-slate-100">
+        {g.docs.map((d) => (
+          <DocRow
+            key={d.id}
+            doc={d}
+            templates={templates}
+            onMerge={onMerge}
+            onPreview={onPreview}
+            onEditLetter={onEditLetter}
+            onEmail={onEmail}
+            onDetails={onDetails}
+            onApprove={onApprove}
+          />
+        ))}
+      </div>
+
+      <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-2">
+        <p className={cx('text-xs', unsigned || !live.length ? 'text-slate-500' : 'text-emerald-700')}>{footer}</p>
+      </div>
+    </div>
   )
 }
 
@@ -517,52 +838,60 @@ export default function OfferDocs() {
               <tbody>
                 {groups.map((g) => {
                   const isOpen = expanded.has(g.key)
-                  const drafts = g.docs.filter((d) => d.status !== 'approved').length
-                  const approved = g.docs.length - drafts
+                  const panelId = `docs-${g.key}`
                   const anyMoved = g.docs.some((d) => d.move_to_onboarding)
-                  const signed = g.docs.filter((d) => d.has_upload).length
-                  // Offer-admin gaps surfaced on the master row so HR doesn't have to open each row to
-                  // notice a candidate is missing the editable personal email / joining date.
-                  const needsAdmin = !anyMoved && g.docs.some((d) => !d.personal_email || !d.joining_date)
+                  const next = groupNext(g)
                   return (
                     <Fragment key={g.key}>
-                      <tr onClick={() => toggleExpand(g.key)} className="cursor-pointer border-b border-slate-100 transition-colors duration-150 ease-snappy hover:bg-brand-50/40">
-                        <td className="px-3 py-3 align-middle text-slate-400">
-                          <ChevronRight className={cx('h-4 w-4 transition-transform duration-150 ease-snappy', isOpen && 'rotate-90 text-brand-600')} />
+                      <tr
+                        onClick={() => toggleExpand(g.key)}
+                        className={cx(
+                          'border-b border-slate-100 transition-colors duration-150 ease-snappy',
+                          isOpen ? 'bg-brand-50/40' : 'cursor-pointer hover:bg-slate-50',
+                        )}
+                      >
+                        <td className="px-3 py-3 align-middle">
+                          <button
+                            type="button"
+                            aria-expanded={isOpen}
+                            aria-controls={panelId}
+                            aria-label={`${isOpen ? 'Hide' : 'Show'} ${g.name}’s documents`}
+                            onClick={(e) => { e.stopPropagation(); toggleExpand(g.key) }}
+                            className={cx('inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600', focusRing)}
+                          >
+                            <ChevronRight className={cx('h-4 w-4 transition-transform duration-150 ease-snappy', isOpen && 'rotate-90 text-brand-600')} />
+                          </button>
                         </td>
                         <td className="px-3 py-3 align-middle">
-                          <span className="flex items-center gap-2">
-                            <FileText className="h-4 w-4 shrink-0 text-brand-500" />
-                            <span className="min-w-0">
-                              <span className="block font-medium text-slate-800">{g.name}</span>
-                              <span className="block text-xs text-slate-400">{g.email || '—'}</span>
-                            </span>
-                          </span>
+                          <span className="block text-sm font-medium text-slate-800">{g.name}</span>
+                          <span className="block text-xs text-slate-500">{g.email || '—'}</span>
                         </td>
-                        <td className="px-3 py-3 align-middle text-slate-500">{g.contact || '—'}</td>
+                        <td className="px-3 py-3 align-middle text-sm text-slate-600 tabular-nums">{g.contact || '—'}</td>
                         <td className="px-3 py-3 align-middle">
                           <span className="flex flex-wrap items-center gap-1">
-                            {g.docs.slice(0, 4).map((d) => (
+                            {g.docs.slice(0, 3).map((d) => (
                               <button
                                 key={d.id}
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); openView(d) }}
-                                title={`Preview ${DOC_LABEL[d.doc_type] || d.doc_type}`}
-                                className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-600 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+                                title={`Preview the ${docName(d, templates)} (${d.entity})`}
+                                className={cx('inline-flex max-w-[10rem] items-center truncate rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs text-slate-600 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700', focusRing)}
                               >
-                                {DOC_LABEL[d.doc_type] || d.doc_type}
+                                {docName(d, templates)}
                               </button>
                             ))}
-                            {g.docs.length > 4 && <span className="text-[11px] text-slate-400">+{g.docs.length - 4}</span>}
-                            <span className="ml-0.5 text-[11px] tabular-nums text-slate-400">({g.docs.length})</span>
+                            {g.docs.length > 3 && <span className="text-xs text-slate-500">+{g.docs.length - 3}</span>}
+                            <span className="ml-0.5 text-xs tabular-nums text-slate-500">({g.docs.length})</span>
                           </span>
                         </td>
+                        {/* One sentence about what to do next, instead of four badges that had to
+                            be added up: "2 approved" + "3 draft" + "1 signed" + "Needs details". */}
                         <td className="px-3 py-3 align-middle">
-                          <span className="flex flex-wrap gap-1">
-                            {approved > 0 && <Badge tone="green">{approved} approved</Badge>}
-                            {drafts > 0 && <Badge tone="amber">{drafts} draft</Badge>}
-                            {signed > 0 && <Badge tone="blue"><FileText className="mr-1 h-3 w-3" />{signed} signed</Badge>}
-                            {needsAdmin && <span title="A personal email and/or joining date is still blank — fill it in the row below"><Badge tone="amber">Needs details</Badge></span>}
+                          <span className="inline-flex flex-wrap items-center gap-1.5">
+                            <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full', TURN_DOT[next.turn])} />
+                            <span className="text-xs text-slate-700">{next.text}</span>
+                            {next.age >= 7 && <span className={cx('text-xs tabular-nums', ageClass(next.age))}>· oldest {next.age}d</span>}
+                            {g.docs.some(missingDetails) && <Badge size="sm" tone="amber">Add details</Badge>}
                           </span>
                         </td>
                         <td className="px-3 py-3 align-middle">
@@ -572,7 +901,7 @@ export default function OfferDocs() {
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); setForm({ doc: g.docs[0], mode: 'new' }) }}
                                 title={`Add another document for ${g.name}`}
-                                className={ROW_ICON_BRAND}
+                                className={cx(ROW_ICON_BRAND, 'whitespace-nowrap')}
                               >
                                 <FilePlus2 className="h-3.5 w-3.5" /> Add document
                               </button>
@@ -584,71 +913,17 @@ export default function OfferDocs() {
                       {isOpen && (
                         <tr className="border-b border-slate-100 bg-slate-50/60">
                           <td colSpan={6} className="px-3 pb-3 pt-0">
-                            {/* Documents render as a single list, not a table inside a table. The
-                                nested <thead> duplicated the parent's column language and was the
-                                main reason this area read as a different screen. */}
-                            <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
-                              {g.docs.map((d) => {
-                                const st = docStatus(d)
-                                const locked = !!d.move_to_onboarding
-                                return (
-                                  <div key={d.id} className="flex flex-col gap-3 p-3 transition-colors duration-150 ease-snappy hover:bg-slate-50/70 sm:flex-row sm:items-start sm:justify-between">
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <span className="font-medium text-slate-800">{DOC_LABEL[d.doc_type] || d.doc_type}</span>
-                                        <Badge tone={st.tone}>{st.label}</Badge>
-                                        {d.email_sent_at && (
-                                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600">
-                                            <MailCheck className="h-3 w-3" /> Emailed
-                                          </span>
-                                        )}
-                                      </div>
-                                      <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-3">
-                                        <div className="min-w-0">
-                                          <dt className={FIELD_LABEL}>Personal email</dt>
-                                          <dd className="mt-0.5">
-                                            <InlineText doc={d} field="personal_email" type="email" value={d.personal_email}
-                                              placeholder="Add personal email" locked={locked} onSaved={mergeDoc} />
-                                          </dd>
-                                        </div>
-                                        <div className="min-w-0">
-                                          <dt className={FIELD_LABEL}>Joining date</dt>
-                                          <dd className="mt-0.5">
-                                            <InlineText doc={d} field="joining_date" value={d.joining_date}
-                                              placeholder="Add joining date" locked={locked} onSaved={mergeDoc} />
-                                          </dd>
-                                        </div>
-                                        <div className="min-w-0">
-                                          <dt className={FIELD_LABEL}>Entity</dt>
-                                          <dd className="mt-0.5">
-                                            <InlineEntity doc={d} value={d.entity} locked={locked} onSaved={mergeDoc} />
-                                          </dd>
-                                        </div>
-                                      </dl>
-                                    </div>
-                                    {/* Five peers, one visual weight. The set reads left-to-right in
-                                        the order the work actually happens: read it, edit it, mail
-                                        it, file the signed copy back. */}
-                                    <div className="flex shrink-0 items-center gap-1.5 sm:pl-4">
-                                      <button type="button" onClick={() => openView(d)} title="Preview" aria-label="Preview document" className={ROW_ICON}><Eye className="h-4 w-4" /></button>
-                                      {d.status !== 'approved' && !d.move_to_onboarding && (
-                                        <button type="button" onClick={() => openEditor(d)} title="Edit the letter directly" aria-label="Edit the letter" className={ROW_ICON}><PenLine className="h-4 w-4" /></button>
-                                      )}
-                                      <button
-                                        type="button"
-                                        onClick={() => setEmailing(d)}
-                                        title={d.email_sent_at ? 'Already emailed — review and send again' : 'Review & email this document to the candidate'}
-                                        aria-label="Email this document"
-                                        className={cx(ROW_ICON, d.email_sent_at && 'text-emerald-600 ring-emerald-200')}
-                                      >
-                                        {d.email_sent_at ? <MailCheck className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
-                                      </button>
-                                      <UploadCell doc={d} onUploaded={mergeDoc} />
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
+                            <CandidatePanel
+                              group={g}
+                              panelId={panelId}
+                              templates={templates}
+                              onMerge={mergeDoc}
+                              onPreview={openView}
+                              onEditLetter={openEditor}
+                              onEmail={setEmailing}
+                              onDetails={(d) => setForm({ doc: d, mode: 'edit' })}
+                              onApprove={approve}
+                            />
                           </td>
                         </tr>
                       )}

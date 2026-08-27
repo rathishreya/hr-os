@@ -3,6 +3,10 @@ import { X } from 'lucide-react'
 
 export const cx = (...c) => c.filter(Boolean).join(' ')
 
+// The single keyboard-focus treatment, for controls built outside the Button primitive.
+export const focusRing =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50'
+
 export function Card({ className = '', hover = false, children }) {
   return (
     <div
@@ -18,7 +22,12 @@ export function Card({ className = '', hover = false, children }) {
   )
 }
 
-export function Button({ variant = 'primary', className = '', ...props }) {
+const BTN_SIZES = {
+  sm: 'gap-1.5 rounded-lg px-2.5 py-1.5 text-xs',
+  md: 'gap-2 rounded-xl px-4 py-2 text-sm',
+}
+
+export function Button({ variant = 'primary', size = 'md', className = '', ...props }) {
   const styles = {
     primary: 'bg-brand-600 hover:bg-brand-700 text-white shadow-sm shadow-brand-600/25 hover:shadow-md hover:shadow-brand-600/30',
     ghost: 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200',
@@ -29,7 +38,8 @@ export function Button({ variant = 'primary', className = '', ...props }) {
     <button
       className={cx(
         // Press feedback (scale on :active) + snappy ease-out so buttons feel responsive to touch.
-        'inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium',
+        'inline-flex items-center justify-center font-medium',
+        BTN_SIZES[size] || BTN_SIZES.md,
         'transition duration-150 ease-snappy active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100',
         // Visible keyboard focus (offset so it reads on the solid brand primary too).
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 focus-visible:ring-offset-2',
@@ -64,9 +74,11 @@ const TONES = {
   gray: 'bg-slate-100 text-slate-600 border-slate-200',
 }
 
-export function Badge({ tone = 'gray', className = '', children }) {
+const BADGE_SIZES = { sm: 'px-2 py-0', md: 'px-2.5 py-0.5' }
+
+export function Badge({ tone = 'gray', size = 'md', className = '', children }) {
   return (
-    <span className={cx('inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium', TONES[tone], className)}>
+    <span className={cx('inline-flex items-center rounded-full border text-xs font-medium', BADGE_SIZES[size] || BADGE_SIZES.md, TONES[tone], className)}>
       {children}
     </span>
   )
@@ -109,7 +121,7 @@ export function Field({ label, children, hint }) {
     <label className="block">
       <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-slate-400">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
     </label>
   )
 }
