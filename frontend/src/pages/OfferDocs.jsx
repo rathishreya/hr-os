@@ -1,11 +1,10 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { FileText, Check, Copy, Eye, FilePlus2, RefreshCw, Printer, Upload, ArrowRightCircle, ChevronRight, Rocket, Lock, PenLine, RotateCcw, Mail, MoreHorizontal } from 'lucide-react'
+import { FileText, Check, Copy, Eye, FilePlus2, RefreshCw, Printer, Upload, ArrowRightCircle, ChevronRight, Rocket, Lock, PenLine, RotateCcw, Mail, MoreHorizontal, Search } from 'lucide-react'
 import { api } from '../api'
-import { Card, Badge, Button, Spinner, EmptyState, PageHeader, Modal, Field, inputClass, cx, focusRing } from '../ui'
+import { Card, Badge, Button, Spinner, EmptyState, PageHeader, Modal, Field, Avatar, inputClass, cx, focusRing } from '../ui'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { useColumnFilters, ColumnFilter, distinctValues } from '../components/tableFilters'
 import DocumentPaper from '../components/docs/DocumentPaper'
 import { documentToPdfBlobUrl } from '../components/docs/pdfDocument'
 import { sanitizeHtml } from '../components/docs/docHtml'
@@ -46,7 +45,6 @@ function nextStep(d) {
 
 // Whose move it is — the one thing the master row needs to say.
 const TURN = { approve: 'ours', send: 'ours', upload: 'theirs', done: 'done', locked: 'locked' }
-const TURN_DOT = { ours: 'bg-amber-600', theirs: 'bg-sky-600', done: 'bg-emerald-600', locked: 'bg-slate-400' }
 
 // An earlier stage left undone while a later one is done — worth flagging, never guessed.
 const skippedAt = (d) => {
@@ -79,56 +77,11 @@ const fmtLong = (iso) => {
 
 const ENTITY_LEGAL = { EZ: 'EZ Lab Private Limited', AEZ: 'ArabEasy LLC' }
 
-// Offer-admin gaps. Informational only — the server falls back to the work email, so a blank
-// personal email must never block sending.
-const missingDetails = (d) => !d.move_to_onboarding && (!d.personal_email || !d.joining_date)
-
-/** The candidate's next action: the first pipeline blocker wins. Missing details are reported
- *  separately so they can never outrank a document that is genuinely ready to send. */
-function groupNext(g) {
-  const live = g.docs.filter((d) => !d.move_to_onboarding)
-  if (!live.length) return { text: 'In onboarding', turn: 'locked' }
-  const count = (s) => live.filter((d) => nextStep(d) === s).length
-  if (count('approve')) return { text: `${count('approve')} to approve`, turn: 'ours' }
-  if (count('send')) return { text: `${count('send')} ready to send`, turn: 'ours' }
-  if (count('upload')) {
-    const ages = live.filter((d) => nextStep(d) === 'upload').map((d) => ageOf(d) ?? 0)
-    return { text: `${count('upload')} awaiting signature`, turn: 'theirs', age: Math.max(...ages) }
-  }
-  return { text: 'All signed — ready for onboarding', turn: 'done' }
-}
-
-// How a candidate's documents are distributed across the pipeline. The collapsed row needs the
-// SHAPE of the work (mostly ours? mostly waiting on them? nearly done?); the next-action column
-// beside it says what to actually do. Same colours as the rails inside the panel.
-function WorkBar({ docs }) {
-  const by = { ours: 0, theirs: 0, done: 0, locked: 0 }
-  docs.forEach((d) => { by[TURN[nextStep(d)]] += 1 })
-  const parts = [
-    ['ours', 'with us', 'bg-amber-500'],
-    ['theirs', 'with the candidate', 'bg-sky-500'],
-    ['done', 'signed', 'bg-emerald-500'],
-    ['locked', 'in onboarding', 'bg-slate-400'],
-  ].filter(([k]) => by[k] > 0)
-  const said = parts.map(([k, w]) => `${by[k]} ${w}`).join(', ')
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className="flex h-1.5 w-24 overflow-hidden rounded-full bg-slate-200" aria-hidden>
-        {parts.map(([k, , color]) => (
-          <span key={k} className={color} style={{ width: `${(by[k] / docs.length) * 100}%` }} />
-        ))}
-      </span>
-      <span className="text-xs tabular-nums text-slate-600">{docs.length}</span>
-      <span className="sr-only">{docs.length} documents: {said}.</span>
-    </span>
-  )
-}
-
 // The panel's column geometry, shared by the axis legend and every document row so the rails and
 // the action buttons line up into readable columns down the panel.
 const PANEL_GRID =
   'grid grid-cols-1 items-start gap-x-4 gap-y-2 ' +
-  'lg:grid-cols-[minmax(11rem,1.3fr)_15.5rem_minmax(0,1fr)_10rem_6.5rem]'
+  'lg:grid-cols-[minmax(13rem,1.7fr)_15.5rem_minmax(0,1fr)_10rem_6.5rem]'
 
 // The one named action per row. Tinted rather than solid: five solid violet buttons stacked would
 // be the loudest thing on the page, and the solid fill is reserved for "Add document".
@@ -289,31 +242,6 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
     </Modal>
   )
 }
-
-function Th({ children, className }) {
-  return (
-    <th className={cx('whitespace-nowrap px-3 py-2.5', className)}>
-      <span className="inline-flex items-center gap-1">{children}</span>
-    </th>
-  )
-}
-
-// Filter accessors for the grouped (one-row-per-candidate) view. Per-document fields like
-// compensation/location/manager live in the expandable detail, not as filterable columns.
-// Filters read the same values the columns display, so "show me every NDA" or "everything
-// waiting on a candidate" is one click. Built per templates list because a document's real name
-// comes from its template.
-const STEP_LABEL = {
-  approve: 'To approve', send: 'Ready to send', upload: 'Awaiting signature',
-  done: 'Signed', locked: 'In onboarding',
-}
-const makeAccessors = (templates) => ({
-  name: (d) => `${d.candidate_name || ''} ${d.email || ''}`,
-  contact: (d) => d.contact || '',
-  document: (d) => docName(d, templates),
-  stage: (d) => STEP_LABEL[nextStep(d)],
-  onboarding: (d) => (d.move_to_onboarding ? 'Moved' : 'Not moved'),
-})
 
 // Group documents into one entry per candidate (so each person shows a single row).
 function groupByCandidate(docs) {
@@ -807,13 +735,19 @@ function DocRow({ doc: d, templates, twin, onMerge, onPreview, onEditLetter, onE
 
 // The candidate's case file: the facts that belong to the person, their documents on one shared
 // grid, and the consequence of the irreversible action that sits on the master row.
-function CandidatePanel({ group: g, panelId, templates, onMerge, onPreview, onEditLetter, onEmail, onDetails, onApprove }) {
+// One candidate's section: who they are, the facts shared by all their letters, the actions that
+// belong to the person rather than to a document — then their documents. Nothing is summarised
+// into a single cell, because five documents in five states do not compress into one.
+function CandidateGroup({ group: g, templates, collapsed, first, onToggle, onMerge, onPreview, onEditLetter, onEmail, onDetails, onApprove, onAdd }) {
   const { toast } = useToast()
   const [confirmBulk, setConfirmBulk] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
   const live = g.docs.filter((d) => !d.move_to_onboarding)
-  const differs = (field) => new Set(live.map((d) => d[field] || '')).size > 1
   const drafts = live.filter((d) => d.status !== 'approved')
+  const differs = (field) => new Set(live.map((d) => d[field] || '')).size > 1
+  const unsigned = live.filter((d) => !d.has_upload).length
+  const anyMoved = g.docs.some((d) => d.move_to_onboarding)
+  const panelId = `docs-${g.key}`
 
   // Two letters of the same template drafted on the same day are otherwise indistinguishable.
   const ident = (d) => `${docName(d, templates)}|${d.entity}|${fmtShort(d.created_at)}`
@@ -828,37 +762,60 @@ function CandidatePanel({ group: g, panelId, templates, onMerge, onPreview, onEd
     setBulkBusy(false)
     setConfirmBulk(false)
   }
-  const unsigned = live.filter((d) => !d.has_upload).length
-  const footer = !live.length
-    ? 'In onboarding - these documents are read-only.'
-    : unsigned
-      ? `${unsigned} of ${g.docs.length} documents aren’t signed yet - sending to onboarding locks every document.`
-      : 'All documents signed. Ready for onboarding.'
+
+  // Every document's state is visible in the rows below, so a running tally would just be noise.
+  // The exception is the one fact the rows cannot show: this candidate is finished.
+  const note = !live.length ? 'In onboarding — read-only' : unsigned ? '' : 'All signed — ready for onboarding'
 
   return (
-    <div id={panelId} className="panel-in overflow-hidden rounded-xl border border-slate-200 bg-white">
-      {/* Facts that belong to the candidate, edited once here rather than repeated on every row. */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-200 bg-slate-50/70 px-4 py-3">
-        <label className="flex items-center gap-2">
-          <span className="shrink-0 text-xs font-medium text-slate-500">Personal email</span>
-          <GroupField docs={g.docs} field="personal_email" type="email" placeholder="name@gmail.com" onSaved={onMerge} className="w-52" />
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="shrink-0 text-xs font-medium text-slate-500">Joining date</span>
-          <GroupField docs={g.docs} field="joining_date" placeholder="1 July 2026" onSaved={onMerge} className="w-40" />
-        </label>
-        <div className="ml-auto flex items-center gap-3">
-          <span className="text-xs text-slate-500">
-            {differs('personal_email') || differs('joining_date')
-              ? 'Documents differ - typing here sets all of them'
-              : `Applies to all ${g.docs.length} document${g.docs.length === 1 ? '' : 's'}`}
-          </span>
-          {drafts.length >= 2 && !confirmBulk && (
-            <Button variant="ghost" size="sm" onClick={() => setConfirmBulk(true)} className="whitespace-nowrap">
-              <Check className="h-3.5 w-3.5" /> Approve {drafts.length} drafts
-            </Button>
+    <section className="border-b border-slate-200 last:border-b-0">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-3 bg-slate-50/70 px-4 py-3">
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          aria-controls={panelId}
+          aria-label={`${collapsed ? 'Show' : 'Hide'} ${g.name}’s documents`}
+          onClick={onToggle}
+          className={cx('inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-600', focusRing)}
+        >
+          <ChevronRight className={cx('h-4 w-4 transition-transform duration-150 ease-snappy', !collapsed && 'rotate-90')} />
+        </button>
+        <Avatar name={g.name} className="h-9 w-9 text-xs" />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-900">{g.name}</p>
+          <p className="truncate text-xs text-slate-500">{g.email || '—'}{g.contact ? ` · ${g.contact}` : ''}</p>
+        </div>
+
+        {/* The facts that belong to the person, not to each letter: edited once, applied to all. */}
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 lg:ml-6">
+          <label className="flex items-center gap-2">
+            <span className="shrink-0 text-xs font-medium text-slate-500">Personal email</span>
+            <GroupField docs={g.docs} field="personal_email" type="email" placeholder="name@gmail.com" onSaved={onMerge} className="w-48" />
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="shrink-0 text-xs font-medium text-slate-500">Joining</span>
+            <GroupField docs={g.docs} field="joining_date" placeholder="1 July 2026" onSaved={onMerge} className="w-36" />
+          </label>
+          {(differs('personal_email') || differs('joining_date')) && (
+            <span className="text-xs text-amber-700">letters differ — typing sets all</span>
           )}
         </div>
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {note && <span className={cx('text-xs', live.length ? 'text-emerald-700' : 'text-slate-500')}>{note}</span>}
+          {drafts.length >= 2 && !confirmBulk && (
+            <Button variant="ghost" size="sm" onClick={() => setConfirmBulk(true)} className="whitespace-nowrap">
+              <Check className="h-3.5 w-3.5" /> Approve {drafts.length}
+            </Button>
+          )}
+          {g.docs[0]?.application_id && (
+            <button type="button" onClick={() => onAdd(g)} title={`Add another document for ${g.name}`} className={cx(ROW_ICON_BRAND, 'whitespace-nowrap')}>
+              <FilePlus2 className="h-3.5 w-3.5" /> Add document
+            </button>
+          )}
+          <SendToOnboarding group={g} anyMoved={anyMoved} onMoved={onMerge} />
+        </div>
+
         {/* The confirm lands on its own line, so a second fast click cannot hit it by accident. */}
         {confirmBulk && (
           <div role="status" className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -869,37 +826,78 @@ function CandidatePanel({ group: g, panelId, templates, onMerge, onPreview, onEd
             </Button>
           </div>
         )}
-      </div>
+      </header>
 
-      {/* The axis the rails are read against - once per panel, not once per row. */}
-      <div className={cx(PANEL_GRID, 'hidden border-b border-slate-100 px-4 py-1.5 lg:grid')} aria-hidden="true">
-        <span />
-        <div className="grid max-w-[15.5rem] grid-cols-4 text-xs font-medium text-slate-500">
-          {STAGES.map((s) => <span key={s}>{s}</span>)}
+      {!collapsed && (
+        <div id={panelId}>
+          {/* The axis the rails are read against — printed once for the page, not per candidate. */}
+          {first && <div className={cx(PANEL_GRID, 'hidden border-b border-slate-100 px-4 py-1.5 lg:grid')} aria-hidden="true">
+            <span />
+            <div className="grid max-w-[15.5rem] grid-cols-4 text-xs font-medium text-slate-500">
+              {STAGES.map((st) => <span key={st}>{st}</span>)}
+            </div>
+            <span /><span /><span />
+          </div>}
+          <div className="divide-y divide-slate-100">
+            {g.docs.map((d) => (
+              <DocRow
+                key={d.id}
+                doc={d}
+                templates={templates}
+                twin={seen[ident(d)] > 1}
+                onMerge={onMerge}
+                onPreview={onPreview}
+                onEditLetter={onEditLetter}
+                onEmail={onEmail}
+                onDetails={onDetails}
+                onApprove={onApprove}
+              />
+            ))}
+          </div>
         </div>
-        <span /><span /><span />
-      </div>
+      )}
+    </section>
+  )
+}
 
-      <div className="divide-y divide-slate-100">
-        {g.docs.map((d) => (
-          <DocRow
-            key={d.id}
-            doc={d}
-            templates={templates}
-            twin={seen[ident(d)] > 1}
-            onMerge={onMerge}
-            onPreview={onPreview}
-            onEditLetter={onEditLetter}
-            onEmail={onEmail}
-            onDetails={onDetails}
-            onApprove={onApprove}
-          />
-        ))}
-      </div>
+// What is waiting on you, across every candidate — the question the page never answered. Doubles
+// as the filter: the counts are the work, clicking one narrows the list to it.
+const STEP_CHIPS = [
+  { key: 'approve', label: 'To approve', dot: 'bg-amber-600' },
+  { key: 'send', label: 'Ready to send', dot: 'bg-amber-600' },
+  { key: 'upload', label: 'Awaiting signature', dot: 'bg-sky-600' },
+  { key: 'done', label: 'Signed', dot: 'bg-emerald-600' },
+  { key: 'locked', label: 'In onboarding', dot: 'bg-slate-400' },
+]
 
-      <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-2">
-        <p className={cx('text-xs', unsigned || !live.length ? 'text-slate-500' : 'text-emerald-700')}>{footer}</p>
-      </div>
+function Triage({ docs, active, onPick }) {
+  const counts = docs.reduce((m, d) => ({ ...m, [nextStep(d)]: (m[nextStep(d)] || 0) + 1 }), {})
+  const chip = (key, label, dot, n) => (
+    <button
+      key={key}
+      type="button"
+      aria-pressed={active === key}
+      disabled={!n && key !== null}
+      onClick={() => onPick(active === key ? null : key)}
+      className={cx(
+        'inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition duration-150 ease-snappy',
+        focusRing,
+        active === key
+          ? 'border-brand-300 bg-brand-50 text-brand-700'
+          : n
+            ? 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+            : 'cursor-default border-slate-200/70 bg-white text-slate-400',
+      )}
+    >
+      {dot && <span aria-hidden className={cx('h-1.5 w-1.5 rounded-full', n ? dot : 'bg-slate-300')} />}
+      {label}
+      <span className="tabular-nums">{n}</span>
+    </button>
+  )
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {chip(null, 'All', null, docs.length)}
+      {STEP_CHIPS.map((c) => chip(c.key, c.label, c.dot, counts[c.key] || 0))}
     </div>
   )
 }
@@ -915,7 +913,8 @@ export default function OfferDocs() {
   const [form, setForm] = useState(null) // { doc, mode }
   const [emailing, setEmailing] = useState(null) // the document whose covering mail is being reviewed
   const [busy, setBusy] = useState(false)
-  const filterCtl = useColumnFilters()
+  const [q, setQ] = useState('')
+  const [stage, setStage] = useState(null)   // one of nextStep()'s values, or null for everything
 
   const openView = (d) => { setEditing(false); setView(d) }        // preview only
   const openEditor = (d) => { setView(d); setEditing(true) }        // straight into the letter editor
@@ -930,21 +929,23 @@ export default function OfferDocs() {
     setView((v) => (v && v.id === up.id ? { ...v, ...up } : v))
   }
 
-  const accessors = useMemo(() => makeAccessors(templates), [templates])
-  const filteredDocs = docs ? filterCtl.apply(docs, accessors) : []
-  const distinct = useMemo(
-    () => Object.fromEntries(Object.entries(accessors).map(([k, acc]) => [k, distinctValues(docs || [], acc)])),
-    [docs, accessors],
-  )
-  const docFilter = (fkey) => (
-    <ColumnFilter label={fkey} values={distinct[fkey] || []} excluded={filterCtl.filters[fkey] || []} onChange={(arr) => filterCtl.setFilter(fkey, arr)} />
-  )
-  const groups = groupByCandidate(filteredDocs)
-  // Rows are COLLAPSED by default — the list stays clean (one row per candidate). Expanding shows
-  // the per-document admin controls; full editing lives in the document viewer (open a doc chip).
-  const [expanded, setExpanded] = useState(() => new Set())
-  const toggleExpand = (key) =>
-    setExpanded((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n })
+  // One search box over the things you'd actually search by, plus the stage chip.
+  const filteredDocs = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    return (docs || []).filter((d) => {
+      if (stage && nextStep(d) !== stage) return false
+      if (!needle) return true
+      return [d.candidate_name, d.email, d.personal_email, docName(d, templates), d.entity]
+        .some((v) => String(v || '').toLowerCase().includes(needle))
+    })
+  }, [docs, templates, q, stage])
+  const groups = useMemo(() => groupByCandidate(filteredDocs), [filteredDocs])
+
+  // Candidates are OPEN by default: their documents are the work, and hiding them behind a click
+  // was what forced the old row to summarise five letters into one cell.
+  const [collapsed, setCollapsed] = useState(() => new Set())
+  const toggleCollapse = (key) =>
+    setCollapsed((c) => { const n = new Set(c); if (n.has(key)) n.delete(key); else n.add(key); return n })
 
   async function approve(d) {
     setBusy(true)
@@ -990,14 +991,14 @@ export default function OfferDocs() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title="Offer & Docs"
-        subtitle="Offer letters, contracts and NDAs for every candidate. Open a candidate to fill their details, preview the document, email it for signature, then file the signed copy back."
+        subtitle="Every letter you owe a candidate, and the one thing each is waiting on. Fill their details once, preview, email for signature, then file the signed copy back."
       />
 
       {docs === null ? (
-        <div className="flex items-center gap-2 text-sm text-slate-400"><Spinner /> Loading…</div>
+        <div className="flex items-center gap-2 text-sm text-slate-500"><Spinner /> Loading…</div>
       ) : docs.length === 0 ? (
         <EmptyState
           icon={FileText}
@@ -1005,105 +1006,49 @@ export default function OfferDocs() {
           description="Documents show up here once generated — automatically when a candidate is marked Hired, or from a candidate’s Offer tab."
         />
       ) : (
-        <Card className="overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="w-8 px-3 py-2.5" />
-                  <Th>Name {docFilter('name')}</Th>
-                  <Th>Contact {docFilter('contact')}</Th>
-                  <Th>Documents {docFilter('document')}</Th>
-                  <Th>Next action {docFilter('stage')}</Th>
-                  <Th className="text-right">Actions {docFilter('onboarding')}</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {groups.map((g) => {
-                  const isOpen = expanded.has(g.key)
-                  const panelId = `docs-${g.key}`
-                  const anyMoved = g.docs.some((d) => d.move_to_onboarding)
-                  const next = groupNext(g)
-                  return (
-                    <Fragment key={g.key}>
-                      <tr
-                        onClick={() => toggleExpand(g.key)}
-                        className={cx(
-                          'border-b border-slate-100 transition-colors duration-150 ease-snappy',
-                          isOpen ? 'bg-brand-50/40' : 'cursor-pointer hover:bg-slate-50',
-                        )}
-                      >
-                        <td className="px-3 py-3 align-middle">
-                          <button
-                            type="button"
-                            aria-expanded={isOpen}
-                            aria-controls={panelId}
-                            aria-label={`${isOpen ? 'Hide' : 'Show'} ${g.name}’s documents`}
-                            onClick={(e) => { e.stopPropagation(); toggleExpand(g.key) }}
-                            className={cx('inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600', focusRing)}
-                          >
-                            <ChevronRight className={cx('h-4 w-4 transition-transform duration-150 ease-snappy', isOpen && 'rotate-90 text-brand-600')} />
-                          </button>
-                        </td>
-                        <td className="px-3 py-3 align-middle">
-                          <span className="block text-sm font-medium text-slate-800">{g.name}</span>
-                          <span className="block text-xs text-slate-500">{g.email || '—'}</span>
-                        </td>
-                        <td className="px-3 py-3 align-middle text-sm text-slate-600 tabular-nums">{g.contact || '—'}</td>
-                        <td className="px-3 py-3 align-middle"><WorkBar docs={g.docs} /></td>
-                        {/* One sentence about what to do next, instead of four badges that had to
-                            be added up: "2 approved" + "3 draft" + "1 signed" + "Needs details". */}
-                        <td className="px-3 py-3 align-middle">
-                          <span className="inline-flex flex-wrap items-center gap-1.5">
-                            <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full', TURN_DOT[next.turn])} />
-                            <span className="text-xs text-slate-700">{next.text}</span>
-                            {next.age >= 7 && <span className={cx('text-xs tabular-nums', ageClass(next.age))}>· oldest {next.age}d</span>}
-                            {g.docs.some(missingDetails) && <Badge size="sm" tone="amber">Add details</Badge>}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 align-middle">
-                          <div className="flex items-center justify-end gap-2">
-                            {g.docs[0]?.application_id && (
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); setForm({ doc: g.docs[0], mode: 'new' }) }}
-                                title={`Add another document for ${g.name}`}
-                                className={cx(ROW_ICON_BRAND, 'whitespace-nowrap')}
-                              >
-                                <FilePlus2 className="h-3.5 w-3.5" /> Add document
-                              </button>
-                            )}
-                            <SendToOnboarding group={g} anyMoved={anyMoved} onMoved={mergeDoc} />
-                          </div>
-                        </td>
-                      </tr>
-                      {isOpen && (
-                        <tr className="border-b border-slate-100 bg-slate-50/60">
-                          <td colSpan={6} className="px-3 pb-3 pt-0">
-                            <CandidatePanel
-                              group={g}
-                              panelId={panelId}
-                              templates={templates}
-                              onMerge={mergeDoc}
-                              onPreview={openView}
-                              onEditLetter={openEditor}
-                              onEmail={setEmailing}
-                              onDetails={(d) => setForm({ doc: d, mode: 'edit' })}
-                              onApprove={approve}
-                            />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-                {!groups.length && (
-                  <tr><td colSpan={6} className="px-3 py-10 text-center text-sm text-slate-400">No documents match your filters.</td></tr>
-                )}
-              </tbody>
-            </table>
+        <>
+          {/* What is waiting on you, across everyone — and the way to narrow to just that. */}
+          <div className="flex flex-wrap items-center gap-3">
+            <Triage docs={docs} active={stage} onPick={setStage} />
+            <label className="relative ml-auto">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search candidate or document…"
+                aria-label="Search candidates and documents"
+                className={cx('w-64 rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs text-slate-800 outline-none transition-colors duration-150 ease-snappy placeholder:text-slate-500 hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20', focusRing)}
+              />
+            </label>
           </div>
-        </Card>
+
+          <Card className="overflow-hidden p-0">
+            {groups.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 px-3 py-12 text-center">
+                <p className="text-sm text-slate-500">Nothing matches that.</p>
+                <Button variant="ghost" size="sm" onClick={() => { setQ(''); setStage(null) }}>Clear filters</Button>
+              </div>
+            ) : (
+              groups.map((g, i) => (
+                <CandidateGroup
+                  key={g.key}
+                  group={g}
+                  first={i === 0}
+                  templates={templates}
+                  collapsed={collapsed.has(g.key)}
+                  onToggle={() => toggleCollapse(g.key)}
+                  onMerge={mergeDoc}
+                  onPreview={openView}
+                  onEditLetter={openEditor}
+                  onEmail={setEmailing}
+                  onDetails={(d) => setForm({ doc: d, mode: 'edit' })}
+                  onApprove={approve}
+                  onAdd={(grp) => setForm({ doc: grp.docs[0], mode: 'new' })}
+                />
+              ))
+            )}
+          </Card>
+        </>
       )}
 
       <Modal
