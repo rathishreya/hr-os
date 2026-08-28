@@ -67,6 +67,10 @@ const fmtShort = (iso) => {
   const s = dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   return dt.getFullYear() === new Date().getFullYear() ? s : `${s} ${String(dt.getFullYear()).slice(2)}`
 }
+const fmtTime = (iso) => {
+  const dt = new Date(iso)
+  return Number.isNaN(dt.getTime()) ? '' : dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
 const fmtLong = (iso) => {
   if (!iso) return ''
   const dt = new Date(iso)
@@ -92,6 +96,32 @@ function groupNext(g) {
     return { text: `${count('upload')} awaiting signature`, turn: 'theirs', age: Math.max(...ages) }
   }
   return { text: 'All signed — ready for onboarding', turn: 'done' }
+}
+
+// How a candidate's documents are distributed across the pipeline. The collapsed row needs the
+// SHAPE of the work (mostly ours? mostly waiting on them? nearly done?); the next-action column
+// beside it says what to actually do. Same colours as the rails inside the panel.
+function WorkBar({ docs }) {
+  const by = { ours: 0, theirs: 0, done: 0, locked: 0 }
+  docs.forEach((d) => { by[TURN[nextStep(d)]] += 1 })
+  const parts = [
+    ['ours', 'with us', 'bg-amber-500'],
+    ['theirs', 'with the candidate', 'bg-sky-500'],
+    ['done', 'signed', 'bg-emerald-500'],
+    ['locked', 'in onboarding', 'bg-slate-400'],
+  ].filter(([k]) => by[k] > 0)
+  const said = parts.map(([k, w]) => `${by[k]} ${w}`).join(', ')
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="flex h-1.5 w-24 overflow-hidden rounded-full bg-slate-200" aria-hidden>
+        {parts.map(([k, , color]) => (
+          <span key={k} className={color} style={{ width: `${(by[k] / docs.length) * 100}%` }} />
+        ))}
+      </span>
+      <span className="text-xs tabular-nums text-slate-600">{docs.length}</span>
+      <span className="sr-only">{docs.length} documents: {said}.</span>
+    </span>
+  )
 }
 
 // The panel's column geometry, shared by the axis legend and every document row so the rails and
@@ -270,13 +300,20 @@ function Th({ children, className }) {
 
 // Filter accessors for the grouped (one-row-per-candidate) view. Per-document fields like
 // compensation/location/manager live in the expandable detail, not as filterable columns.
-const OFFER_ACCESSORS = {
+// Filters read the same values the columns display, so "show me every NDA" or "everything
+// waiting on a candidate" is one click. Built per templates list because a document's real name
+// comes from its template.
+const STEP_LABEL = {
+  approve: 'To approve', send: 'Ready to send', upload: 'Awaiting signature',
+  done: 'Signed', locked: 'In onboarding',
+}
+const makeAccessors = (templates) => ({
   name: (d) => `${d.candidate_name || ''} ${d.email || ''}`,
   contact: (d) => d.contact || '',
-  document: (d) => DOC_LABEL[d.doc_type] || d.doc_type || '',
-  status: (d) => d.status || '',
+  document: (d) => docName(d, templates),
+  stage: (d) => STEP_LABEL[nextStep(d)],
   onboarding: (d) => (d.move_to_onboarding ? 'Moved' : 'Not moved'),
-}
+})
 
 // Group documents into one entry per candidate (so each person shows a single row).
 function groupByCandidate(docs) {
@@ -624,7 +661,7 @@ function RowMenu({ items, label }) {
 
 // One document on the shared panel grid: what it is, where it has got to, the fine print, its
 // single named next step, and the fixed tool slots.
-function DocRow({ doc: d, templates, onMerge, onPreview, onEditLetter, onEmail, onDetails, onApprove }) {
+function DocRow({ doc: d, templates, twin, onMerge, onPreview, onEditLetter, onEmail, onDetails, onApprove }) {
   const name = docName(d, templates)
   const locked = !!d.move_to_onboarding
   const step = nextStep(d)
@@ -643,6 +680,9 @@ function DocRow({ doc: d, templates, onMerge, onPreview, onEditLetter, onEmail, 
 
   // Everything the row is not currently asking for, but that must stay reachable.
   const menuItems = [
+    !locked && isDraft && {
+      label: 'Edit the wording…', icon: <PenLine className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onEditLetter(d),
+    },
     !locked && isDraft && templateBacked && {
       label: 'Details & template…', icon: <RefreshCw className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onDetails(d),
     },
@@ -690,7 +730,9 @@ function DocRow({ doc: d, templates, onMerge, onPreview, onEditLetter, onEmail, 
           {d.created_at && (
             <>
               <span aria-hidden>·</span>
-              <time dateTime={d.created_at} title={fmtLong(d.created_at)} className="tabular-nums">{fmtShort(d.created_at)}</time>
+              <time dateTime={d.created_at} title={fmtLong(d.created_at)} className="tabular-nums">
+                {fmtShort(d.created_at)}{twin ? `, ${fmtTime(d.created_at)}` : ''}
+              </time>
             </>
           )}
         </div>
@@ -757,11 +799,6 @@ function DocRow({ doc: d, templates, onMerge, onPreview, onEditLetter, onEmail, 
         <button type="button" onClick={() => onPreview(d)} title={`Preview the ${name}`} aria-label={`Preview the ${name}`} className={ROW_ICON}>
           <Eye className="h-4 w-4" />
         </button>
-        {!locked && isDraft && (
-          <button type="button" onClick={() => onEditLetter(d)} title={`Type directly on the ${name}`} aria-label={`Edit the wording of the ${name}`} className={ROW_ICON}>
-            <PenLine className="h-4 w-4" />
-          </button>
-        )}
         <RowMenu label={`More for the ${name}`} items={menuItems} />
       </div>
     </div>
@@ -771,8 +808,26 @@ function DocRow({ doc: d, templates, onMerge, onPreview, onEditLetter, onEmail, 
 // The candidate's case file: the facts that belong to the person, their documents on one shared
 // grid, and the consequence of the irreversible action that sits on the master row.
 function CandidatePanel({ group: g, panelId, templates, onMerge, onPreview, onEditLetter, onEmail, onDetails, onApprove }) {
+  const { toast } = useToast()
+  const [confirmBulk, setConfirmBulk] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
   const live = g.docs.filter((d) => !d.move_to_onboarding)
   const differs = (field) => new Set(live.map((d) => d[field] || '')).size > 1
+  const drafts = live.filter((d) => d.status !== 'approved')
+
+  // Two letters of the same template drafted on the same day are otherwise indistinguishable.
+  const ident = (d) => `${docName(d, templates)}|${d.entity}|${fmtShort(d.created_at)}`
+  const seen = g.docs.reduce((m, d) => ({ ...m, [ident(d)]: (m[ident(d)] || 0) + 1 }), {})
+
+  async function approveAll() {
+    setBulkBusy(true)
+    const res = await Promise.allSettled(drafts.map((d) => api.approveDocument(d.id)))
+    res.forEach((r) => r.status === 'fulfilled' && onMerge(r.value))
+    const failed = res.filter((r) => r.status === 'rejected').length
+    toast(failed ? `${drafts.length - failed} approved, ${failed} failed` : `${drafts.length} approved`, failed ? 'error' : undefined)
+    setBulkBusy(false)
+    setConfirmBulk(false)
+  }
   const unsigned = live.filter((d) => !d.has_upload).length
   const footer = !live.length
     ? 'In onboarding - these documents are read-only.'
@@ -792,11 +847,28 @@ function CandidatePanel({ group: g, panelId, templates, onMerge, onPreview, onEd
           <span className="shrink-0 text-xs font-medium text-slate-500">Joining date</span>
           <GroupField docs={g.docs} field="joining_date" placeholder="1 July 2026" onSaved={onMerge} className="w-40" />
         </label>
-        <span className="ml-auto text-xs text-slate-500">
-          {differs('personal_email') || differs('joining_date')
-            ? 'Documents currently differ - typing here sets all of them'
-            : `Applies to all ${g.docs.length} document${g.docs.length === 1 ? '' : 's'}`}
-        </span>
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-xs text-slate-500">
+            {differs('personal_email') || differs('joining_date')
+              ? 'Documents differ - typing here sets all of them'
+              : `Applies to all ${g.docs.length} document${g.docs.length === 1 ? '' : 's'}`}
+          </span>
+          {drafts.length >= 2 && !confirmBulk && (
+            <Button variant="ghost" size="sm" onClick={() => setConfirmBulk(true)} className="whitespace-nowrap">
+              <Check className="h-3.5 w-3.5" /> Approve {drafts.length} drafts
+            </Button>
+          )}
+        </div>
+        {/* The confirm lands on its own line, so a second fast click cannot hit it by accident. */}
+        {confirmBulk && (
+          <div role="status" className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Approve {drafts.length} drafts for {g.name} without opening them?
+            <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setConfirmBulk(false)} disabled={bulkBusy}>Cancel</Button>
+            <Button size="sm" onClick={approveAll} disabled={bulkBusy}>
+              {bulkBusy ? <Spinner /> : <Check className="h-3.5 w-3.5" />} Approve {drafts.length}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* The axis the rails are read against - once per panel, not once per row. */}
@@ -814,6 +886,7 @@ function CandidatePanel({ group: g, panelId, templates, onMerge, onPreview, onEd
             key={d.id}
             doc={d}
             templates={templates}
+            twin={seen[ident(d)] > 1}
             onMerge={onMerge}
             onPreview={onPreview}
             onEditLetter={onEditLetter}
@@ -857,10 +930,11 @@ export default function OfferDocs() {
     setView((v) => (v && v.id === up.id ? { ...v, ...up } : v))
   }
 
-  const filteredDocs = docs ? filterCtl.apply(docs, OFFER_ACCESSORS) : []
+  const accessors = useMemo(() => makeAccessors(templates), [templates])
+  const filteredDocs = docs ? filterCtl.apply(docs, accessors) : []
   const distinct = useMemo(
-    () => Object.fromEntries(Object.entries(OFFER_ACCESSORS).map(([k, acc]) => [k, distinctValues(docs || [], acc)])),
-    [docs],
+    () => Object.fromEntries(Object.entries(accessors).map(([k, acc]) => [k, distinctValues(docs || [], acc)])),
+    [docs, accessors],
   )
   const docFilter = (fkey) => (
     <ColumnFilter label={fkey} values={distinct[fkey] || []} excluded={filterCtl.filters[fkey] || []} onChange={(arr) => filterCtl.setFilter(fkey, arr)} />
@@ -940,7 +1014,7 @@ export default function OfferDocs() {
                   <Th>Name {docFilter('name')}</Th>
                   <Th>Contact {docFilter('contact')}</Th>
                   <Th>Documents {docFilter('document')}</Th>
-                  <Th>Status {docFilter('status')}</Th>
+                  <Th>Next action {docFilter('stage')}</Th>
                   <Th className="text-right">Actions {docFilter('onboarding')}</Th>
                 </tr>
               </thead>
@@ -976,23 +1050,7 @@ export default function OfferDocs() {
                           <span className="block text-xs text-slate-500">{g.email || '—'}</span>
                         </td>
                         <td className="px-3 py-3 align-middle text-sm text-slate-600 tabular-nums">{g.contact || '—'}</td>
-                        <td className="px-3 py-3 align-middle">
-                          <span className="flex flex-wrap items-center gap-1">
-                            {g.docs.slice(0, 3).map((d) => (
-                              <button
-                                key={d.id}
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); openView(d) }}
-                                title={`Preview the ${docName(d, templates)} (${d.entity})`}
-                                className={cx('inline-flex max-w-[10rem] items-center truncate rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs text-slate-600 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700', focusRing)}
-                              >
-                                {docName(d, templates)}
-                              </button>
-                            ))}
-                            {g.docs.length > 3 && <span className="text-xs text-slate-500">+{g.docs.length - 3}</span>}
-                            <span className="ml-0.5 text-xs tabular-nums text-slate-500">({g.docs.length})</span>
-                          </span>
-                        </td>
+                        <td className="px-3 py-3 align-middle"><WorkBar docs={g.docs} /></td>
                         {/* One sentence about what to do next, instead of four badges that had to
                             be added up: "2 approved" + "3 draft" + "1 signed" + "Needs details". */}
                         <td className="px-3 py-3 align-middle">
