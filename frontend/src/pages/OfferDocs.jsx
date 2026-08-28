@@ -77,12 +77,6 @@ const fmtLong = (iso) => {
 
 const ENTITY_LEGAL = { EZ: 'EZ Lab Private Limited', AEZ: 'ArabEasy LLC' }
 
-// The panel's column geometry, shared by the axis legend and every document row so the rails and
-// the action buttons line up into readable columns down the panel.
-const PANEL_GRID =
-  'grid grid-cols-1 items-start gap-x-4 gap-y-2 ' +
-  'lg:grid-cols-[minmax(13rem,1.7fr)_15.5rem_minmax(0,1fr)_10rem_6.5rem]'
-
 // The one named action per row. Tinted rather than solid: five solid violet buttons stacked would
 // be the loudest thing on the page, and the solid fill is reserved for "Add document".
 const PRIMARY =
@@ -629,10 +623,10 @@ function DocRow({ doc: d, templates, twin, onMerge, onPreview, onEditLetter, onE
     },
   ].filter(Boolean)
   return (
-    <div className={cx(PANEL_GRID, 'px-4 py-2.5 transition-colors duration-150 ease-snappy hover:bg-slate-50')}>
-      {/* 1 - identity. Three same-named letters are told apart on three aligned axes: the
+    <tr className="border-b border-slate-100 transition-colors duration-150 ease-snappy last:border-b-0 hover:bg-slate-50">
+      {/* 1 - what it is. Three same-named letters are told apart on three aligned axes: the
              template's own name, the operating entity, and when it was drafted. */}
-      <div className="min-w-0">
+      <td className="px-4 py-2.5 align-middle">
         <div className="flex items-center gap-1.5">
           {locked && <><Lock className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden /><span className="sr-only">Locked.</span></>}
           <button
@@ -664,44 +658,45 @@ function DocRow({ doc: d, templates, twin, onMerge, onPreview, onEditLetter, onE
             </>
           )}
         </div>
-      </div>
+      </td>
 
-      {/* 2 - the pipeline */}
-      <StageRail doc={d} />
+      {/* 2 - the pipeline, read against the axis printed in the table head */}
+      <td className="px-4 py-2.5 align-middle"><StageRail doc={d} /></td>
 
-      {/* 3 - fine print, rendered only when there is something true to say, so a clean row goes
-             quiet instead of repeating empty labels. */}
-      <div className="min-w-0 space-y-0.5 text-xs">
-        {d.has_upload && (
-          <a
-            href={api.documentUploadUrl(d.id)}
-            target="_blank"
-            rel="noreferrer"
-            className={cx('block truncate rounded font-medium text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:decoration-emerald-600', focusRing)}
-          >
-            {d.upload_filename || 'Signed copy'}
-          </a>
-        )}
-        {d.email_sent_at && (
-          <p className="truncate text-slate-600">
-            To {sentTo || '—'}{!d.personal_email && sentTo ? ' (work email)' : ''}
-          </p>
-        )}
-        {!d.email_sent_at && d.status === 'approved' && d.approved_by && (
-          <p className="truncate text-slate-600">Approved by {d.approved_by}</p>
-        )}
-        {skipped[1] && !locked && (
-          <p className="flex items-center gap-1.5 text-amber-700">
-            Sent without approval
-            <button type="button" onClick={approve} disabled={approving} className={cx('rounded font-medium underline underline-offset-2 hover:text-amber-800', focusRing)}>
-              {approving ? 'Approving…' : 'Approve now'}
-            </button>
-          </p>
-        )}
-      </div>
+      {/* 3 - only what is true, so a clean row stays quiet */}
+      <td className="px-4 py-2.5 align-middle">
+        <div className="min-w-0 space-y-0.5 text-xs">
+          {d.has_upload && (
+            <a
+              href={api.documentUploadUrl(d.id)}
+              target="_blank"
+              rel="noreferrer"
+              className={cx('block truncate rounded font-medium text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:decoration-emerald-600', focusRing)}
+            >
+              {d.upload_filename || 'Signed copy'}
+            </a>
+          )}
+          {d.email_sent_at && (
+            <p className="truncate text-slate-600">
+              To {sentTo || '—'}{!d.personal_email && sentTo ? ' (work email)' : ''}
+            </p>
+          )}
+          {!d.email_sent_at && d.status === 'approved' && d.approved_by && (
+            <p className="truncate text-slate-600">Approved by {d.approved_by}</p>
+          )}
+          {skipped[1] && !locked && (
+            <p className="flex items-center gap-1.5 text-amber-700">
+              Sent without approval
+              <button type="button" onClick={approve} disabled={approving} className={cx('rounded font-medium underline underline-offset-2 hover:text-amber-800', focusRing)}>
+                {approving ? 'Approving…' : 'Approve now'}
+              </button>
+            </p>
+          )}
+        </div>
+      </td>
 
       {/* 4 - the one thing to do next */}
-      <div className="max-w-[10rem]">
+      <td className="px-4 py-2.5 align-middle">
         {step === 'approve' && (
           <button type="button" onClick={approve} disabled={approving} className={PRIMARY}>
             {approving ? <Spinner /> : <Check className="h-3.5 w-3.5" />} {approving ? 'Approving…' : 'Approve'}
@@ -719,35 +714,33 @@ function DocRow({ doc: d, templates, twin, onMerge, onPreview, onEditLetter, onE
         {step === 'locked' && (
           <span className={cx(PRIMARY_STATIC, 'text-slate-500')}><Lock className="h-3.5 w-3.5" /> Locked</span>
         )}
-      </div>
+      </td>
 
-      {/* 5 - what this row's stage actually calls for. Anything out of sequence is one click
-             deeper rather than a sixth icon repeated down the panel. */}
-      <div className="flex items-center gap-1">
-        <button type="button" onClick={() => onPreview(d)} title={`Preview the ${name}`} aria-label={`Preview the ${name}`} className={ROW_ICON}>
-          <Eye className="h-4 w-4" />
-        </button>
-        <RowMenu label={`More for the ${name}`} items={menuItems} />
-      </div>
-    </div>
+      {/* 5 - preview stays out; everything out of sequence is one click deeper */}
+      <td className="px-4 py-2.5 align-middle">
+        <div className="flex items-center justify-end gap-1">
+          <button type="button" onClick={() => onPreview(d)} title={`Preview the ${name}`} aria-label={`Preview the ${name}`} className={ROW_ICON}>
+            <Eye className="h-4 w-4" />
+          </button>
+          <RowMenu label={`More for the ${name}`} items={menuItems} />
+        </div>
+      </td>
+    </tr>
   )
 }
 
-// The candidate's case file: the facts that belong to the person, their documents on one shared
-// grid, and the consequence of the irreversible action that sits on the master row.
-// One candidate's section: who they are, the facts shared by all their letters, the actions that
-// belong to the person rather than to a document — then their documents. Nothing is summarised
-// into a single cell, because five documents in five states do not compress into one.
-function CandidateGroup({ group: g, templates, collapsed, first, onToggle, onMerge, onPreview, onEditLetter, onEmail, onDetails, onApprove, onAdd }) {
+// A candidate's band across the table: who they are, the facts every one of their letters shares,
+// and the actions that belong to the person rather than to a document. Their documents follow as
+// ordinary rows, so the columns stay aligned the whole way down the page.
+function CandidateGroup({ group: g, templates, collapsed, onToggle, onMerge, onPreview, onEditLetter, onEmail, onDetails, onApprove, onAdd }) {
   const { toast } = useToast()
   const [confirmBulk, setConfirmBulk] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
   const live = g.docs.filter((d) => !d.move_to_onboarding)
   const drafts = live.filter((d) => d.status !== 'approved')
   const differs = (field) => new Set(live.map((d) => d[field] || '')).size > 1
-  const unsigned = live.filter((d) => !d.has_upload).length
   const anyMoved = g.docs.some((d) => d.move_to_onboarding)
-  const panelId = `docs-${g.key}`
+  const allSigned = live.length > 0 && live.every((d) => d.has_upload)
 
   // Two letters of the same template drafted on the same day are otherwise indistinguishable.
   const ident = (d) => `${docName(d, templates)}|${d.entity}|${fmtShort(d.created_at)}`
@@ -763,100 +756,84 @@ function CandidateGroup({ group: g, templates, collapsed, first, onToggle, onMer
     setConfirmBulk(false)
   }
 
-  // Every document's state is visible in the rows below, so a running tally would just be noise.
-  // The exception is the one fact the rows cannot show: this candidate is finished.
-  const note = !live.length ? 'In onboarding — read-only' : unsigned ? '' : 'All signed — ready for onboarding'
-
   return (
-    <section className="border-b border-slate-200 last:border-b-0">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-3 bg-slate-50/70 px-4 py-3">
-        <button
-          type="button"
-          aria-expanded={!collapsed}
-          aria-controls={panelId}
-          aria-label={`${collapsed ? 'Show' : 'Hide'} ${g.name}’s documents`}
-          onClick={onToggle}
-          className={cx('inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-600', focusRing)}
-        >
-          <ChevronRight className={cx('h-4 w-4 transition-transform duration-150 ease-snappy', !collapsed && 'rotate-90')} />
-        </button>
-        <Avatar name={g.name} className="h-9 w-9 text-xs" />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-slate-900">{g.name}</p>
-          <p className="truncate text-xs text-slate-500">{g.email || '—'}{g.contact ? ` · ${g.contact}` : ''}</p>
-        </div>
-
-        {/* The facts that belong to the person, not to each letter: edited once, applied to all. */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 lg:ml-6">
-          <label className="flex items-center gap-2">
-            <span className="shrink-0 text-xs font-medium text-slate-500">Personal email</span>
-            <GroupField docs={g.docs} field="personal_email" type="email" placeholder="name@gmail.com" onSaved={onMerge} className="w-48" />
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="shrink-0 text-xs font-medium text-slate-500">Joining</span>
-            <GroupField docs={g.docs} field="joining_date" placeholder="1 July 2026" onSaved={onMerge} className="w-36" />
-          </label>
-          {(differs('personal_email') || differs('joining_date')) && (
-            <span className="text-xs text-amber-700">letters differ — typing sets all</span>
-          )}
-        </div>
-
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          {note && <span className={cx('text-xs', live.length ? 'text-emerald-700' : 'text-slate-500')}>{note}</span>}
-          {drafts.length >= 2 && !confirmBulk && (
-            <Button variant="ghost" size="sm" onClick={() => setConfirmBulk(true)} className="whitespace-nowrap">
-              <Check className="h-3.5 w-3.5" /> Approve {drafts.length}
-            </Button>
-          )}
-          {g.docs[0]?.application_id && (
-            <button type="button" onClick={() => onAdd(g)} title={`Add another document for ${g.name}`} className={cx(ROW_ICON_BRAND, 'whitespace-nowrap')}>
-              <FilePlus2 className="h-3.5 w-3.5" /> Add document
+    <>
+      <tr className="border-y border-slate-200 bg-slate-50/70">
+        <td colSpan={5} className="px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+            <button
+              type="button"
+              aria-expanded={!collapsed}
+              aria-label={`${collapsed ? 'Show' : 'Hide'} ${g.name}’s documents`}
+              onClick={onToggle}
+              className={cx('inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-600', focusRing)}
+            >
+              <ChevronRight className={cx('h-4 w-4 transition-transform duration-150 ease-snappy', !collapsed && 'rotate-90')} />
             </button>
-          )}
-          <SendToOnboarding group={g} anyMoved={anyMoved} onMoved={onMerge} />
-        </div>
-
-        {/* The confirm lands on its own line, so a second fast click cannot hit it by accident. */}
-        {confirmBulk && (
-          <div role="status" className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            Approve {drafts.length} drafts for {g.name} without opening them?
-            <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setConfirmBulk(false)} disabled={bulkBusy}>Cancel</Button>
-            <Button size="sm" onClick={approveAll} disabled={bulkBusy}>
-              {bulkBusy ? <Spinner /> : <Check className="h-3.5 w-3.5" />} Approve {drafts.length}
-            </Button>
-          </div>
-        )}
-      </header>
-
-      {!collapsed && (
-        <div id={panelId}>
-          {/* The axis the rails are read against — printed once for the page, not per candidate. */}
-          {first && <div className={cx(PANEL_GRID, 'hidden border-b border-slate-100 px-4 py-1.5 lg:grid')} aria-hidden="true">
-            <span />
-            <div className="grid max-w-[15.5rem] grid-cols-4 text-xs font-medium text-slate-500">
-              {STAGES.map((st) => <span key={st}>{st}</span>)}
+            <Avatar name={g.name} className="h-9 w-9 text-xs" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">{g.name}</p>
+              <p className="truncate text-xs text-slate-500">{g.email || '—'}{g.contact ? ` · ${g.contact}` : ''}</p>
             </div>
-            <span /><span /><span />
-          </div>}
-          <div className="divide-y divide-slate-100">
-            {g.docs.map((d) => (
-              <DocRow
-                key={d.id}
-                doc={d}
-                templates={templates}
-                twin={seen[ident(d)] > 1}
-                onMerge={onMerge}
-                onPreview={onPreview}
-                onEditLetter={onEditLetter}
-                onEmail={onEmail}
-                onDetails={onDetails}
-                onApprove={onApprove}
-              />
-            ))}
+
+            {/* Facts that belong to the person, not to each letter: edited once, applied to all. */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 lg:ml-6">
+              <label className="flex items-center gap-2">
+                <span className="shrink-0 text-xs font-medium text-slate-500">Personal email</span>
+                <GroupField docs={g.docs} field="personal_email" type="email" placeholder="name@gmail.com" onSaved={onMerge} className="w-48" />
+              </label>
+              <label className="flex items-center gap-2">
+                <span className="shrink-0 text-xs font-medium text-slate-500">Joining</span>
+                <GroupField docs={g.docs} field="joining_date" placeholder="1 July 2026" onSaved={onMerge} className="w-36" />
+              </label>
+              {(differs('personal_email') || differs('joining_date')) && (
+                <span className="text-xs text-amber-700">letters differ — typing sets all</span>
+              )}
+            </div>
+
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {allSigned && <span className="text-xs text-emerald-700">All signed — ready for onboarding</span>}
+              {drafts.length >= 2 && !confirmBulk && (
+                <Button variant="ghost" size="sm" onClick={() => setConfirmBulk(true)} className="whitespace-nowrap">
+                  <Check className="h-3.5 w-3.5" /> Approve {drafts.length}
+                </Button>
+              )}
+              {g.docs[0]?.application_id && (
+                <button type="button" onClick={() => onAdd(g)} title={`Add another document for ${g.name}`} className={cx(ROW_ICON_BRAND, 'whitespace-nowrap')}>
+                  <FilePlus2 className="h-3.5 w-3.5" /> Add document
+                </button>
+              )}
+              <SendToOnboarding group={g} anyMoved={anyMoved} onMoved={onMerge} />
+            </div>
+
+            {/* The confirm lands on its own line, so a second fast click cannot hit it by accident. */}
+            {confirmBulk && (
+              <div role="status" className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Approve {drafts.length} drafts for {g.name} without opening them?
+                <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setConfirmBulk(false)} disabled={bulkBusy}>Cancel</Button>
+                <Button size="sm" onClick={approveAll} disabled={bulkBusy}>
+                  {bulkBusy ? <Spinner /> : <Check className="h-3.5 w-3.5" />} Approve {drafts.length}
+                </Button>
+              </div>
+            )}
           </div>
-        </div>
-      )}
-    </section>
+        </td>
+      </tr>
+      {!collapsed && g.docs.map((d) => (
+        <DocRow
+          key={d.id}
+          doc={d}
+          templates={templates}
+          twin={seen[ident(d)] > 1}
+          onMerge={onMerge}
+          onPreview={onPreview}
+          onEditLetter={onEditLetter}
+          onEmail={onEmail}
+          onDetails={onDetails}
+          onApprove={onApprove}
+        />
+      ))}
+    </>
   )
 }
 
@@ -1029,23 +1006,42 @@ export default function OfferDocs() {
                 <Button variant="ghost" size="sm" onClick={() => { setQ(''); setStage(null) }}>Clear filters</Button>
               </div>
             ) : (
-              groups.map((g, i) => (
-                <CandidateGroup
-                  key={g.key}
-                  group={g}
-                  first={i === 0}
-                  templates={templates}
-                  collapsed={collapsed.has(g.key)}
-                  onToggle={() => toggleCollapse(g.key)}
-                  onMerge={mergeDoc}
-                  onPreview={openView}
-                  onEditLetter={openEditor}
-                  onEmail={setEmailing}
-                  onDetails={(d) => setForm({ doc: d, mode: 'edit' })}
-                  onApprove={approve}
-                  onAdd={(grp) => setForm({ doc: grp.docs[0], mode: 'new' })}
-                />
-              ))
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1120px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-white text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <th className="px-4 py-2.5">Document</th>
+                      {/* The stage axis lives in the header, printed once for the whole page. */}
+                      <th className="w-[16.5rem] px-4 py-2.5">
+                        <span className="grid max-w-[15.5rem] grid-cols-4 font-medium normal-case tracking-normal">
+                          {STAGES.map((st) => <span key={st}>{st}</span>)}
+                        </span>
+                      </th>
+                      <th className="px-4 py-2.5">Notes</th>
+                      <th className="w-[11rem] px-4 py-2.5">Next action</th>
+                      <th className="w-[7.5rem] px-4 py-2.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groups.map((g) => (
+                      <CandidateGroup
+                        key={g.key}
+                        group={g}
+                        templates={templates}
+                        collapsed={collapsed.has(g.key)}
+                        onToggle={() => toggleCollapse(g.key)}
+                        onMerge={mergeDoc}
+                        onPreview={openView}
+                        onEditLetter={openEditor}
+                        onEmail={setEmailing}
+                        onDetails={(d) => setForm({ doc: d, mode: 'edit' })}
+                        onApprove={approve}
+                        onAdd={(grp) => setForm({ doc: grp.docs[0], mode: 'new' })}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </Card>
         </>
