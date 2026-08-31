@@ -1,7 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Bold, Underline, Heading2, Heading3, Pilcrow, List, ListOrdered, Eraser } from 'lucide-react'
 import { documentBodyHtml } from './docHtml'
-import { letterheadHtml, accentsHtml, chromeCss } from './letterhead'
 import { documentToPdfBlobUrl } from './pdfDocument'
 
 const exec = (cmd, val) => { try { document.execCommand(cmd, false, val) } catch { /* noop */ } }
@@ -115,58 +114,22 @@ function PdfPreview({ doc }) {
   )
 }
 
-// A4 at the CSS reference resolution — browsers resolve mm against 96dpi, so this is exact.
-const PAGE_PX = (297 * 96) / 25.4
-
 export default function DocumentPaper({ doc, editable = false, editorRef }) {
-  const paperRef = useRef(null)
-  const [pages, setPages] = useState(1)
-
-  // The editing surface is one continuous column — HTML cannot paginate a contentEditable — so
-  // draw the page chrome for as many A4 pages as the text currently fills. The edge bars live in
-  // the margins, so they repeat safely; the letterhead does not repeat, because it would land on
-  // top of the writing. Each boundary is ruled and numbered instead, and the issued PDF (Preview)
-  // is where the letterhead genuinely repeats.
-  useLayoutEffect(() => {
-    const el = paperRef.current
-    if (!editable || !el) return undefined
-    let raf = 0
-    const measure = () => {
-      cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(() => setPages(Math.max(1, Math.ceil(el.scrollHeight / PAGE_PX))))
-    }
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    const mo = new MutationObserver(measure)
-    mo.observe(el, { subtree: true, childList: true, characterData: true })
-    measure()
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); mo.disconnect() }
-  }, [editable, doc.id])
-
+  // Viewing is the real paginated PDF — discrete A4 pages, letterhead, ISO lines and the coloured
+  // edge pattern on every one of them, because it IS the issued document.
+  //
+  // Editing cannot be that. HTML does not paginate a contentEditable, so any page frame drawn
+  // around live text is a guess that the next keystroke invalidates, and a letterhead repeated
+  // down it would sit on top of what you are writing. So editing does not pretend to be a page:
+  // it is a plain writing surface, and Preview is one click away for the real thing.
   if (!editable) return <PdfPreview doc={doc} />
   return (
-    <div
-      ref={paperRef}
-      className={`doc-paper relative mx-auto w-[210mm] max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${doc.entity === 'AEZ' ? '' : 'doc-font-ez'}`}
-      style={{ minHeight: `${pages * 297}mm` }}
-    >
-      <style>{chromeCss('screen').replaceAll('\n  .', '\n  .doc-paper .')}</style>
-      {Array.from({ length: pages }).map((_, i) => (
-        <div
-          key={i}
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0"
-          style={{ top: `${i * 297}mm`, height: '297mm' }}
-        >
-          <div dangerouslySetInnerHTML={{ __html: (i === 0 ? letterheadHtml(doc.entity, doc.brandName) : '') + accentsHtml() }} />
-          {i > 0 && (
-            <div className="absolute inset-x-0 top-0 border-t border-dashed border-slate-300">
-              <span className="absolute right-[8mm] top-1 text-[9px] font-medium tabular-nums text-slate-400">Page {i + 1}</span>
-            </div>
-          )}
-        </div>
-      ))}
-      <div className="relative px-[18mm] pb-[14mm] pt-[30mm]">
+    <div className="mx-auto w-full max-w-[210mm]">
+      <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+        You are editing the wording only. The letterhead, the side pattern and the page breaks are
+        applied to every page when the letter is issued — close this and use <strong>Preview</strong> to see them.
+      </p>
+      <div className={`rounded-lg border border-slate-200 bg-white px-8 py-7 shadow-sm ${doc.entity === 'AEZ' ? '' : 'doc-font-ez'}`}>
         <EditableBody doc={doc} editorRef={editorRef} />
       </div>
     </div>

@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 're
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowRight, ArrowRightCircle, Building2, Check, ChevronDown, Copy, Eye, FilePlus2,
+  AlertTriangle, ArrowRight, ArrowRightCircle, Building2, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Eye, FilePlus2,
   FileText, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw, Rocket, RotateCcw, Search, Upload,
 } from 'lucide-react'
 import { api } from '../api'
@@ -759,6 +759,8 @@ export default function OfferDocs() {
   const [busy, setBusy] = useState(false)
   const [q, setQ] = useState('')
   const [sortKey, setSortKey] = useState('recent')
+  const [status, setStatus] = useState('')          // '' = every status
+  const [page, setPage] = useState(0)
   const [confirm, setConfirm] = useState(null)      // { p, body } — sending someone to onboarding
   const [barBusy, setBarBusy] = useState(false)
   const colFilters = useColumnFilters()
@@ -819,11 +821,14 @@ export default function OfferDocs() {
   const docValues = useMemo(() => distinctValues(docs || [], nameOf), [docs, nameOf])
   const faceted = useMemo(() => colFilters.apply(searched, { document: nameOf }), [searched, colFilters, nameOf])
 
-  const filteredDocs = faceted
+  const filteredDocs = useMemo(
+    () => (status ? faceted.filter((d) => statusOf(d) === status) : faceted),
+    [faceted, status],
+  )
 
   // Which documents to draw and in what order. The API returns newest-first GLOBALLY, so without
   // regrouping a candidate's letters are scattered and their name prints over and over.
-  const rows = useMemo(() => {
+  const groups = useMemo(() => {
     const blocks = new Map()
     for (const d of filteredDocs) {
       const k = personKey(d)
@@ -837,13 +842,34 @@ export default function OfferDocs() {
       name: (a, b) => a.p.name.localeCompare(b.p.name),
     }[sortKey]
     list.sort(cmp)
-    const out = []
-    for (const { p, shown } of list) {
-      const ordered = [...shown].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-      ordered.forEach((d, i) => out.push({ d, p, first: i === 0, last: i === ordered.length - 1 }))
-    }
-    return out
+    return list.map(({ p, shown }) => ({
+      p,
+      rows: [...shown].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
+    }))
   }, [filteredDocs, people, sortKey])
+
+  // A page holds whole candidates: splitting someone's letters across a page break would leave
+  // their name, joining date and email on one page and the rest of their documents on the next.
+  const PER_PAGE = 25
+  const pages = useMemo(() => {
+    const out = []
+    let cur = []
+    let n = 0
+    for (const g of groups) {
+      if (n && n + g.rows.length > PER_PAGE) { out.push(cur); cur = []; n = 0 }
+      cur.push(g)
+      n += g.rows.length
+    }
+    if (cur.length) out.push(cur)
+    return out.length ? out : [[]]
+  }, [groups])
+  const pageIdx = Math.min(page, pages.length - 1)
+  const rows = useMemo(() => pages[pageIdx].flatMap(
+    (g) => g.rows.map((d, i) => ({ d, p: g.p, first: i === 0, last: i === g.rows.length - 1 })),
+  ), [pages, pageIdx])
+  const total = groups.reduce((n, g) => n + g.rows.length, 0)
+  const from = pages.slice(0, pageIdx).reduce((n, gs) => n + gs.reduce((m, g) => m + g.rows.length, 0), 0)
+
 
   async function approveDoc(d) {
     try {
@@ -904,7 +930,7 @@ export default function OfferDocs() {
     load()
   }
 
-  const clearAll = () => { setQ(''); colFilters.clear() }
+  const clearAll = () => { setQ(''); setStatus(''); colFilters.clear(); setPage(0) }
   const TOOLBAR = cx('h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none',
     'transition-colors duration-150 ease-snappy hover:border-slate-300 focus:border-brand-500', focusRing)
 
@@ -943,19 +969,25 @@ export default function OfferDocs() {
         <>
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm text-slate-500">
-              <span className="font-medium tabular-nums text-slate-700">{rows.length}</span>
-              {rows.length === 1 ? ' document' : ' documents'}
+              <span className="font-medium tabular-nums text-slate-700">{total}</span>
+              {total === 1 ? ' document' : ' documents'}
+              {pages.length > 1 && <span className="tabular-nums"> · showing {from + 1}–{from + rows.length}</span>}
             </p>
             <div className="ml-auto flex items-center gap-2">
+              <label className="sr-only" htmlFor="od-status">Filter by status</label>
+              <select id="od-status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(0) }} className={TOOLBAR}>
+                <option value="">All statuses</option>
+                {STATUS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
               <label className="sr-only" htmlFor="od-sort">Sort candidates</label>
-              <select id="od-sort" value={sortKey} onChange={(e) => setSortKey(e.target.value)} className={TOOLBAR}>
+              <select id="od-sort" value={sortKey} onChange={(e) => { setSortKey(e.target.value); setPage(0) }} className={TOOLBAR}>
                 <option value="recent">Recent first</option>
                 <option value="waiting">Longest waiting</option>
                 <option value="name">Candidate A–Z</option>
               </select>
               <label className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden />
-                <input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search candidates and documents"
+                <input value={q} onChange={(e) => { setQ(e.target.value); setPage(0) }} aria-label="Search candidates and documents"
                   placeholder="Search candidate or document…" className={cx(TOOLBAR, 'w-56 pl-8')} />
               </label>
             </div>
@@ -992,7 +1024,7 @@ export default function OfferDocs() {
                           Document
                           <ColumnFilter label="Document" values={docValues}
                             excluded={colFilters.filters.document || []}
-                            onChange={(a) => colFilters.setFilter('document', a)} />
+                            onChange={(a) => { colFilters.setFilter('document', a); setPage(0) }} />
                         </span>
                       </th>
                       <th scope="col" className={TH}>Status</th>
@@ -1023,6 +1055,20 @@ export default function OfferDocs() {
                   </tbody>
                 </table>
               </div>
+
+              {pages.length > 1 && (
+                <div className="flex items-center justify-between gap-2 border-t border-slate-200 px-3 py-2">
+                  <p className="text-xs tabular-nums text-slate-500">Page {pageIdx + 1} of {pages.length}</p>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" disabled={pageIdx === 0} onClick={() => setPage(pageIdx - 1)}>
+                      <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                    </Button>
+                    <Button variant="ghost" size="sm" disabled={pageIdx >= pages.length - 1} onClick={() => setPage(pageIdx + 1)}>
+                      Next <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* The one confirm this page needs, in the Card's footer: showing it grows the card
                   downward and never shoves a row. */}
