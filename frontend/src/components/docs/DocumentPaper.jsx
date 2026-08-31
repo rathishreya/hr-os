@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Bold, Underline, Heading2, Heading3, Pilcrow, List, ListOrdered, Eraser } from 'lucide-react'
-import DocumentBlocks from './DocumentBlocks'
 import { documentBodyHtml } from './docHtml'
 import { letterheadHtml, accentsHtml, chromeCss } from './letterhead'
 import { documentToPdfBlobUrl } from './pdfDocument'
@@ -116,20 +115,59 @@ function PdfPreview({ doc }) {
   )
 }
 
+// A4 at the CSS reference resolution — browsers resolve mm against 96dpi, so this is exact.
+const PAGE_PX = (297 * 96) / 25.4
+
 export default function DocumentPaper({ doc, editable = false, editorRef }) {
-  // Viewing is the real paginated PDF; editing keeps the A4 letterhead sheet around a
-  // contentEditable body (a PDF cannot be edited in place).
+  const paperRef = useRef(null)
+  const [pages, setPages] = useState(1)
+
+  // The editing surface is one continuous column — HTML cannot paginate a contentEditable — so
+  // draw the page chrome for as many A4 pages as the text currently fills. The edge bars live in
+  // the margins, so they repeat safely; the letterhead does not repeat, because it would land on
+  // top of the writing. Each boundary is ruled and numbered instead, and the issued PDF (Preview)
+  // is where the letterhead genuinely repeats.
+  useLayoutEffect(() => {
+    const el = paperRef.current
+    if (!editable || !el) return undefined
+    let raf = 0
+    const measure = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => setPages(Math.max(1, Math.ceil(el.scrollHeight / PAGE_PX))))
+    }
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    const mo = new MutationObserver(measure)
+    mo.observe(el, { subtree: true, childList: true, characterData: true })
+    measure()
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); mo.disconnect() }
+  }, [editable, doc.id])
+
   if (!editable) return <PdfPreview doc={doc} />
   return (
-    <div className={`doc-paper relative mx-auto w-[210mm] max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${doc.entity === 'AEZ' ? '' : 'doc-font-ez'}`}>
-      <style>{'.doc-paper{ min-height:120mm; }' + chromeCss('screen').replaceAll('\n  .', '\n  .doc-paper .')}</style>
-      <div aria-hidden="true" dangerouslySetInnerHTML={{ __html: letterheadHtml(doc.entity, doc.brandName) + accentsHtml() }} />
+    <div
+      ref={paperRef}
+      className={`doc-paper relative mx-auto w-[210mm] max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${doc.entity === 'AEZ' ? '' : 'doc-font-ez'}`}
+      style={{ minHeight: `${pages * 297}mm` }}
+    >
+      <style>{chromeCss('screen').replaceAll('\n  .', '\n  .doc-paper .')}</style>
+      {Array.from({ length: pages }).map((_, i) => (
+        <div
+          key={i}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0"
+          style={{ top: `${i * 297}mm`, height: '297mm' }}
+        >
+          <div dangerouslySetInnerHTML={{ __html: (i === 0 ? letterheadHtml(doc.entity, doc.brandName) : '') + accentsHtml() }} />
+          {i > 0 && (
+            <div className="absolute inset-x-0 top-0 border-t border-dashed border-slate-300">
+              <span className="absolute right-[8mm] top-1 text-[9px] font-medium tabular-nums text-slate-400">Page {i + 1}</span>
+            </div>
+          )}
+        </div>
+      ))}
       <div className="relative px-[18mm] pb-[14mm] pt-[30mm]">
-        {editable
-          ? <EditableBody doc={doc} editorRef={editorRef} />
-          : doc.content_html
-            ? <div className="doc-html" dangerouslySetInnerHTML={{ __html: doc.content_html }} />
-            : <DocumentBlocks blocks={doc.blocks} content={doc.content} />}
+        <EditableBody doc={doc} editorRef={editorRef} />
       </div>
     </div>
   )
