@@ -103,9 +103,6 @@ export default function AppShell({ children }) {
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
 
   const isJobDetail = /^\/roles\/\d+/.test(location.pathname)
-  // Workspaces own their own scrolling: they fill the viewport and scroll inside their panes
-  // rather than letting the whole page scroll under them.
-  const isWorkspace = isJobDetail || location.pathname === '/offer-docs'
   const isWide = WIDE_ROUTES.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`))
   const pageLabel = NAV.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to)))?.label
     || (location.pathname.startsWith('/settings') ? 'Settings' : isJobDetail ? 'Job detail' : 'Page')
@@ -133,9 +130,9 @@ export default function AppShell({ children }) {
           <span className="text-sm font-semibold text-slate-800">{pageLabel}</span>
         </header>
 
-        <main className={isWorkspace ? 'flex flex-1 flex-col overflow-hidden px-2 py-2 sm:px-3 lg:px-4 lg:py-3' : 'flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 lg:py-8'}>
+        <main className={isJobDetail ? 'flex flex-1 flex-col overflow-hidden px-2 py-2 sm:px-3 lg:px-4 lg:py-3' : 'flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 lg:py-8'}>
           <div
-            className={isWorkspace
+            className={isJobDetail
               ? 'mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col'
               : cx('mx-auto w-full', isWide ? 'max-w-[1600px]' : 'max-w-6xl')}
           >

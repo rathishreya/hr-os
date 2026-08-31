@@ -116,17 +116,13 @@ function PdfPreview({ doc }) {
   )
 }
 
-export default function DocumentPaper({ doc, editable = false, editorRef, render = 'pdf' }) {
-  // Three ways to show the same letter: the real paginated PDF (what actually gets issued), the
-  // A4 letterhead sheet rendered synchronously from the stored blocks — instant, so it can be a
-  // page's hero rather than something behind a modal — and that same sheet made editable.
-  if (!editable && render === 'pdf') return <PdfPreview doc={doc} />
-  const sheet = render === 'sheet' && !editable
+export default function DocumentPaper({ doc, editable = false, editorRef }) {
+  // Viewing is the real paginated PDF; editing keeps the A4 letterhead sheet around a
+  // contentEditable body (a PDF cannot be edited in place).
+  if (!editable) return <PdfPreview doc={doc} />
   return (
-    <div className={`doc-paper relative mx-auto w-[210mm] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${sheet ? 'max-w-none min-h-[297mm]' : 'max-w-full'} ${doc.entity === 'AEZ' ? '' : 'doc-font-ez'}`}>
-      {/* max-w-none matters on the sheet: clamped below 794px the mm-absolute letterhead reflows
-          BEFORE the scale transform lands, which breaks the logo and the edge bars. */}
-      <style>{(sheet ? '' : '.doc-paper{ min-height:120mm; }') + chromeCss('screen').replaceAll('\n  .', '\n  .doc-paper .')}</style>
+    <div className={`doc-paper relative mx-auto w-[210mm] max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${doc.entity === 'AEZ' ? '' : 'doc-font-ez'}`}>
+      <style>{'.doc-paper{ min-height:120mm; }' + chromeCss('screen').replaceAll('\n  .', '\n  .doc-paper .')}</style>
       <div aria-hidden="true" dangerouslySetInnerHTML={{ __html: letterheadHtml(doc.entity, doc.brandName) + accentsHtml() }} />
       <div className="relative px-[18mm] pb-[14mm] pt-[30mm]">
         {editable
