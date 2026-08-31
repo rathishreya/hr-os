@@ -233,8 +233,8 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
 // One grid, declared once. Every cell obeys a two-band vertical rhythm and nothing else, which is
 // what keeps every row reading as the same shape all the way down the page.
 const TH = 'sticky top-0 z-10 h-9 border-b border-slate-200 bg-slate-50 px-3 text-left align-middle text-xs font-semibold uppercase tracking-wide text-slate-500'
-const B1 = 'flex h-7 min-w-0 items-center gap-1.5'                // band 1 — 28px, the height of Button size="sm"
-const B2 = 'mt-0.5 flex h-[18px] min-w-0 items-center gap-1.5'    // band 2 — 18px, the height of Badge size="sm"
+// Every cell is one 28px line. Nothing stacks, so a row is a row.
+const B1 = 'flex h-7 min-w-0 items-center gap-2'
 // A document's status is not a column anyone can write: each state is the trace of a real event
 // — approving it, emailing it, filing the signed copy back, moving the candidate to onboarding.
 // So the dropdown reads as a status and behaves as the control that performs the next event.
@@ -282,7 +282,7 @@ function StatusSelect({ doc: d, person: p, busy, onApprove, onEmail, onUpload, o
   }
 
   return (
-    <span className="relative inline-flex max-w-full items-center">
+    <span className="relative inline-flex min-w-0 max-w-[10.5rem] flex-1 items-center">
       <span aria-hidden className={cx('pointer-events-none absolute left-2.5 h-1.5 w-1.5 rounded-full', tone.dot)} />
       <select
         value={now}
@@ -290,7 +290,7 @@ function StatusSelect({ doc: d, person: p, busy, onApprove, onEmail, onUpload, o
         aria-label={`Status of this document for ${p.name}`}
         onChange={(e) => run[e.target.value]?.()}
         className={cx(
-          'h-7 max-w-full appearance-none truncate rounded-full border py-0 pl-6 pr-7 text-xs font-medium outline-none',
+          'h-7 w-full min-w-0 appearance-none truncate rounded-full border py-0 pl-6 pr-7 text-xs font-medium outline-none',
           'transition-colors duration-150 ease-snappy disabled:cursor-not-allowed disabled:opacity-80',
           focusRing, tone.chip,
         )}
@@ -311,8 +311,7 @@ function StatusSelect({ doc: d, person: p, busy, onApprove, onEmail, onUpload, o
 // A candidate's first row opens with a little more air and their last closes with a firmer rule,
 // so a person's letters read as one block without a tinted band drawing a box round them.
 const cellOf = (row, extra) => cx(
-  'align-top px-3',
-  row.first ? 'pt-3 pb-2' : 'pt-1.5 pb-2',
+  'px-3 py-1 align-middle',
   row.last ? 'border-b border-slate-200' : 'border-b border-slate-100',
   extra,
 )
@@ -523,8 +522,8 @@ function PersonField({ person, field, label, placeholder, note: extraNote, onSav
           : null
 
   return (
-    <>
-      <div className={B1}>
+    <div className={B1}>
+      <div className="min-w-0 flex-1">
         <input
           type="text"
           value={val}
@@ -551,15 +550,13 @@ function PersonField({ person, field, label, placeholder, note: extraNote, onSav
           )}
         />
       </div>
-      <div className={cx(B2, 'text-xs')}>
-        {note && (
-          <span id={noteId} className={cx('min-w-0 truncate', note.cls)}>
-            {note.text}
-            {differs && <span className="sr-only">. This candidate’s letters hold different values. Typing here sets all of them.</span>}
-          </span>
-        )}
-      </div>
-    </>
+      {note && (
+        <span id={noteId} title={note.text} aria-label={note.text}
+          className={cx('shrink-0 cursor-help text-sm font-semibold leading-none', note.cls)}>
+          *<span className="sr-only">{note.text}</span>
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -643,35 +640,33 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
   return (
     <tr
       onClick={(e) => { if (!e.target.closest('button,a,input,select,label,[role="menu"]')) onPreview(d) }}
-      className="group/row cursor-pointer transition-colors duration-150 ease-snappy hover:bg-slate-50"
+      className={cx('group/row cursor-pointer transition-colors duration-150 ease-snappy hover:bg-brand-50/40',
+        row.band ? 'bg-slate-50/60' : 'bg-white')}
     >
       {/* 1 — the candidate, printed once per block; their name is their menu */}
       <td className={cellOf(row)}>
         {first ? (
-          <>
-            <div className={cx(B1, 'gap-2')}>
-              <span aria-hidden className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[11px] font-semibold text-brand-700">
-                {(p.name || '?').split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
-              </span>
+          <div className={B1}>
+            <span aria-hidden className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[11px] font-semibold text-brand-700">
+              {(p.name || '?').split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
               <RowMenu label={`${p.name} — candidate actions`} items={personItems} text={p.name} />
-            </div>
-            <div className={cx(B2, 'pl-9')}>
-              <span className="min-w-0 flex-1 truncate text-xs text-slate-500" title={p.email}>{p.email || '—'}</span>
-              {p.anyMoved ? (
-                <Badge size="sm" tone="gray" className="shrink-0"><Rocket className="mr-1 h-3 w-3" aria-hidden />In onboarding</Badge>
-              ) : p.allSigned ? (
-                <button
-                  type="button"
-                  onClick={() => onAskOnboard(p)}
-                  title={`Send ${p.name} to onboarding — every document is signed`}
-                  aria-label={`Send ${p.name} to onboarding — every document is signed`}
-                  className={cx('inline-flex h-[18px] shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 text-xs font-medium text-emerald-700 transition-colors duration-150 ease-snappy hover:border-emerald-300 hover:bg-emerald-100', focusRing)}
-                >
-                  Ready <ArrowRight className="h-3 w-3" aria-hidden />
-                </button>
-              ) : null}
-            </div>
-          </>
+            </span>
+            {p.anyMoved ? (
+              <Badge size="sm" tone="gray" className="shrink-0"><Rocket className="mr-1 h-3 w-3" aria-hidden />Onboarding</Badge>
+            ) : p.allSigned ? (
+              <button
+                type="button"
+                onClick={() => onAskOnboard(p)}
+                title={`Send ${p.name} to onboarding — every document is signed`}
+                aria-label={`Send ${p.name} to onboarding — every document is signed`}
+                className={cx('inline-flex h-[18px] shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 text-xs font-medium text-emerald-700 transition-colors duration-150 ease-snappy hover:border-emerald-300 hover:bg-emerald-100', focusRing)}
+              >
+                Ready <ArrowRight className="h-3 w-3" aria-hidden />
+              </button>
+            ) : null}
+          </div>
         ) : (
           <span className="sr-only">{p.name}, another of their documents</span>
         )}
@@ -684,23 +679,20 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
             type="button"
             onClick={() => onPreview(d)}
             title={name}
-            className={cx('min-w-0 flex-1 truncate rounded text-left text-sm font-medium text-slate-800 underline-offset-2 hover:text-brand-700 hover:underline', focusRing)}
+            className={cx('min-w-0 shrink truncate rounded text-left text-sm font-medium text-slate-800 underline-offset-2 hover:text-brand-700 hover:underline', focusRing)}
           >
             {name}
           </button>
-          {d.content_html && (
-            <Badge size="sm" tone="violet" className="shrink-0"><PenLine className="mr-1 h-3 w-3" aria-hidden />Edited</Badge>
-          )}
-        </div>
-        <div className={cx(B2, 'text-xs text-slate-500')}>
-          <Badge size="sm" tone="gray" className="shrink-0" title={entityTitle}>{d.entity}</Badge>
-          {d.created_at && (
-            <>
-              <span aria-hidden>·</span>
-              <time dateTime={d.created_at} title={fmtLong(d.created_at)} className="shrink-0 tabular-nums">
+          <span className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
+            <span title={entityTitle} className="rounded border border-slate-200 bg-slate-50 px-1 py-px text-[11px] font-medium text-slate-600">{d.entity}</span>
+            {d.created_at && (
+              <time dateTime={d.created_at} title={fmtLong(d.created_at)} className="tabular-nums">
                 {fmtShort(d.created_at)}{p.twin(d) ? `, ${fmtTime(d.created_at)}` : ''}
               </time>
-            </>
+            )}
+          </span>
+          {d.content_html && (
+            <Badge size="sm" tone="violet" className="shrink-0"><PenLine className="mr-1 h-3 w-3" aria-hidden />Edited</Badge>
           )}
         </div>
       </td>
@@ -717,11 +709,9 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
             onUpload={pickFile}
             onOnboard={onAskOnboard}
           />
-        </div>
-        <div className={cx(B2, 'text-xs')}>
-          <span className="min-w-0 truncate text-slate-500">{caption}</span>
+          {caption && <span className="min-w-0 truncate text-xs text-slate-500">{caption}</span>}
           {age != null && age >= 1 && (
-            <span className={cx('shrink-0 tabular-nums', ageClass(age))} title={`${age} days since the covering email was sent`}>· {age}d</span>
+            <span className={cx('shrink-0 text-xs tabular-nums', ageClass(age))} title={`${age} days since the covering email was sent`}>{age}d</span>
           )}
         </div>
       </td>
@@ -733,9 +723,7 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
               note={p.drafts.length ? 'Needed before sending' : ''} onSaved={onMerge} />
           : (
             <div className={cx(B1, 'px-2')}>
-              <span className="min-w-0 truncate text-sm text-slate-400" title={p.differs('joining_date') ? d.joining_date : undefined}>
-                {p.differs('joining_date') ? (d.joining_date || '—') : ''}
-              </span>
+              <span className="min-w-0 truncate text-sm text-slate-400" title={d.joining_date}>{d.joining_date || '—'}</span>
             </div>
           )}
       </td>
@@ -747,9 +735,7 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
               note={p.anySent ? 'Went out to the work email' : ''} onSaved={onMerge} />
           : (
             <div className={cx(B1, 'px-2')}>
-              <span className="min-w-0 truncate text-sm text-slate-400" title={p.differs('personal_email') ? d.personal_email : undefined}>
-                {p.differs('personal_email') ? (d.personal_email || '—') : ''}
-              </span>
+              <span className="min-w-0 truncate text-sm text-slate-400" title={d.personal_email}>{d.personal_email || '—'}</span>
             </div>
           )}
       </td>
@@ -890,8 +876,10 @@ export default function OfferDocs() {
     return out.length ? out : [[]]
   }, [groups])
   const pageIdx = Math.min(page, pages.length - 1)
+  // Alternate candidates onto a faint ground: a person's letters read as one block without a
+  // header band boxing them in, and without leaving cells empty to mark the seam.
   const rows = useMemo(() => pages[pageIdx].flatMap(
-    (g) => g.rows.map((d, i) => ({ d, p: g.p, first: i === 0, last: i === g.rows.length - 1 })),
+    (g, gi) => g.rows.map((d, i) => ({ d, p: g.p, first: i === 0, last: i === g.rows.length - 1, band: gi % 2 === 1 })),
   ), [pages, pageIdx])
   const total = groups.reduce((n, g) => n + g.rows.length, 0)
   const from = pages.slice(0, pageIdx).reduce((n, gs) => n + gs.reduce((m, g) => m + g.rows.length, 0), 0)
@@ -1035,11 +1023,11 @@ export default function OfferDocs() {
                     joining date are printed on the first of their documents and apply to all of them.
                   </caption>
                   <colgroup>
-                    <col className="w-[20%]" />
-                    <col className="w-[24%]" />
                     <col className="w-[18%]" />
-                    <col className="w-[15%]" />
-                    <col className="w-[16%]" />
+                    <col className="w-[24%]" />
+                    <col className="w-[21%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[17%]" />
                     <col className="w-[7%]" />
                   </colgroup>
                   <thead>
