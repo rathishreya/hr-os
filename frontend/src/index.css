@@ -85,6 +85,11 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 }
 .menu-in { animation: menu-in 0.14s var(--ease-snappy); }
 
+/* The letter pane settling when you move to another document. Opacity and transform only,
+   so the global prefers-reduced-motion clamp below lands it on its final state. */
+@keyframes pane-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.pane-in { animation: pane-in 0.14s var(--ease-snappy); }
+
 
 /* Exo 2 — the typeface every source document is set in. Self-hosted so the preview, the print
    window and the emailed PDF all carry the same face. */

@@ -2,13 +2,12 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 're
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowRight, ArrowRightCircle, Building2, Check, ChevronDown, Copy, Eye, FilePlus2,
-  FileText, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw, Rocket, RotateCcw, Search, Upload,
+  AlertTriangle, ArrowLeft, ArrowRightCircle, Building2, Check, ChevronDown, Columns3, Copy, FilePlus2,
+  FileText, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw, Rocket, Search, Upload,
 } from 'lucide-react'
 import { api } from '../api'
 import {
-  Badge, Button, Card, EmptyState, Field, IconButton, Modal, PageHeader, Skeleton, Spinner,
-  cx, focusRing, inputClass,
+  Badge, Button, Field, IconButton, Modal, Skeleton, Spinner, cx, focusRing, inputClass,
 } from '../ui'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -33,7 +32,6 @@ const DOC_LABEL = {
 // ── Where a document sits in the issuance pipeline ──────────────────────────────────────────
 // Four facts read INDEPENDENTLY off the record — progress is not guaranteed to be monotonic,
 // because /send-email is not gated on status, so "emailed but never approved" is a real row.
-const STAGES = ['Drafted', 'Approved', 'Sent', 'Signed']
 const stageFlags = (d) => [true, d.status === 'approved', !!d.email_sent_at, !!d.has_upload]
 
 /** The single next step this document is waiting on. Everything else stays reachable. */
@@ -78,6 +76,18 @@ const fmtLong = (iso) => {
 }
 
 const ENTITY_LEGAL = { EZ: 'EZ Lab Private Limited', AEZ: 'ArabEasy LLC' }
+
+// The six ways to narrow the index. Predicates rather than a nextStep equality, because
+// "went out unapproved" deliberately overlaps the others.
+const LENS = {
+  all: () => true,
+  yours: (d) => ['approve', 'send'].includes(nextStep(d)),
+  theirs: (d) => nextStep(d) === 'upload',
+  signed: (d) => nextStep(d) === 'done',
+  filed: (d) => nextStep(d) === 'locked',
+  unapproved: (d) => !d.move_to_onboarding && d.status !== 'approved' && (!!d.email_sent_at || !!d.has_upload),
+  nodate: (d) => !d.joining_date && !d.move_to_onboarding && !d.has_upload,
+}
 
 // One person, however their documents are linked. The name|email fallback keeps a candidate with
 // no candidate_id from splitting into two blocks.
@@ -237,23 +247,6 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
   )
 }
 
-// ── Table geometry ──────────────────────────────────────────────────────────────────────────
-// One grid, declared once. Every cell obeys a two-band vertical rhythm and nothing else, which is
-// what keeps every row reading as the same shape all the way down the page.
-const TH = 'sticky top-0 z-10 h-9 border-b border-slate-200 bg-slate-50 px-3 text-left align-middle text-xs font-semibold uppercase tracking-wide text-slate-500'
-const CHECKBOX = cx('h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-slate-300 accent-brand-600', focusRing)
-const B1 = 'flex h-7 min-w-0 items-center gap-1.5'                // band 1 — 28px, the height of Button size="sm"
-const B2 = 'mt-0.5 flex h-[18px] min-w-0 items-center gap-1.5'    // band 2 — 18px, the height of Badge size="sm"
-const cellOf = (row, extra) => cx(
-  'align-top border-b px-3',
-  row.first ? 'pt-2.5 pb-1.5' : 'py-1.5',
-  row.last ? 'border-slate-200' : 'border-slate-100',
-  extra,
-)
-
-// ── The overflow menu ───────────────────────────────────────────────────────────────────────
-// Portal + fixed positioning: the table lives in an overflow-auto scroller, so an in-flow dropdown
-// would be clipped. Same machinery as ColumnFilter.
 function RowMenu({ items, label, text }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef(null)
@@ -403,6 +396,11 @@ function useUpload(doc, onUploaded) {
   return { inputRef: ref, busy, onFile, pick: () => ref.current?.click() }
 }
 
+// The two-band vertical rhythm a person-fact obeys: the control on one line, its note on the next,
+// so a message that must not be missed grows the row instead of being truncated.
+const B1 = 'flex h-7 min-w-0 items-center gap-1.5'
+const B2 = 'mt-0.5 flex h-[18px] min-w-0 items-center gap-1.5'
+
 // A fact that belongs to the PERSON, not to one letter: the covering email goes to
 // personal_email || email, and joining_date renders into every letter's body. The backend stores
 // both per document, so a commit fans out across that candidate's unlocked documents — and always
@@ -498,321 +496,210 @@ function PersonField({ person, field, label, placeholder, note: extraNote, onSav
 }
 
 // ── One document ────────────────────────────────────────────────────────────────────────────
-function DocRow({ row, index, name, templateBacked, selected, onToggleSelect, onMerge, onPreview,
-  onEditLetter, onEmail, onDetails, onApprove, onEntity, onAskOnboard, onAddDoc, onOpenOnboarding }) {
-  const { d, p, first } = row
-  const { toast } = useToast()
-  const locked = !!d.move_to_onboarding
+// ── The one repeating unit: a letter in the index ───────────────────────────────────────────
+// A row is navigation, not a control panel. It carries a state dot, the letter's name, a leader
+// that absorbs every pixel of slack so the right-hand tracks stay aligned, and the fact it is
+// waiting on — written as a lower-case fragment, never a label or a button.
+const DOT = {
+  ours: 'bg-amber-500', unapproved: 'bg-amber-500', theirs: 'bg-sky-500',
+  done: 'bg-emerald-500', locked: 'bg-transparent ring-1 ring-inset ring-slate-300',
+}
+const NAME = {
+  ours: 'font-semibold text-slate-900', unapproved: 'font-semibold text-slate-900',
+  theirs: 'font-medium text-slate-700', done: 'font-normal text-slate-600',
+  locked: 'font-normal text-slate-500',
+}
+const PHRASE = {
+  ours: 'text-slate-500', unapproved: 'font-medium text-amber-700',
+  theirs: 'text-slate-500', done: 'text-slate-500', locked: 'text-slate-500',
+}
+
+const turnOf = (d) => {
   const step = nextStep(d)
-  const isDraft = d.status !== 'approved'
-  const flags = stageFlags(d)
-  const skipped = skippedAt(d)
+  if (step === 'approve' && (d.email_sent_at || d.has_upload)) return 'unapproved'
+  return TURN[step]
+}
+
+function phraseOf(d, twin) {
+  const step = nextStep(d)
+  if (step === 'locked') return 'filed to onboarding'
+  if (step === 'done') return `signed · ${d.upload_filename || 'copy on file'}`
+  if (step === 'upload') return `emailed ${fmtShort(d.email_sent_at)}`
+  if (step === 'send') return `approved ${fmtShort(d.approved_at || d.created_at)}`
+  if (d.email_sent_at || d.has_upload) return 'went out unapproved'
+  return `drafted ${fmtShort(d.created_at)}${twin ? `, ${fmtTime(d.created_at)}` : ''}`
+}
+
+function IndexRow({ row, index, name, isSelected, isFocus, checked, selMode, focusRef,
+  onSelect, onFocusRow, onToggle }) {
+  const { d, p } = row
+  const turn = turnOf(d)
+  const locked = !!d.move_to_onboarding
   const age = ageOf(d)
-  const unapproved = !locked && isDraft && (!!d.email_sent_at || !!d.has_upload)
-  const [approving, setApproving] = useState(false)
-  const { inputRef, busy: uploading, onFile: onUploadFile, pick: pickFile } = useUpload(d, onMerge)
-
-  async function runApprove() {
-    setApproving(true)
-    try { await onApprove(d) } finally { setApproving(false) }
-  }
-
-  // The word is the stage; the dots decorate it, and are never the only carrier.
-  const word = locked ? 'In onboarding'
-    : unapproved ? 'Unapproved'
-      : d.has_upload ? 'Signed'
-        : d.email_sent_at ? 'Sent'
-          : d.status === 'approved' ? 'Approved'
-            : 'Drafted'
-  const [verb, when] = d.email_sent_at ? ['Sent', d.email_sent_at]
-    : (d.status === 'approved' && d.approved_at) ? ['Approved', d.approved_at]
-      : ['Drafted', d.created_at]
-  const caption = (verb === word ? '' : `${verb} `) + fmtShort(when)
-
-  const current = flags.lastIndexOf(true) + 1
-  const turn = TURN[step]
-  const dotClass = (i) => {
-    if (flags[i]) return 'bg-emerald-600'
-    if (skipped[i]) return 'bg-white ring-2 ring-inset ring-amber-600'
-    if (i === current && turn === 'ours') return 'bg-amber-600'
-    if (i === current && turn === 'theirs') return 'bg-sky-600'
-    return 'bg-slate-300'
-  }
-  const spoken = [
-    STAGES.map((s, i) => `${s}: ${flags[i] ? 'done' : skipped[i] ? 'skipped' : 'not yet'}.`).join(' '),
-    `${word}. ${caption}.`,
-    age != null && age >= 1 ? `Waiting on the candidate for ${age} day${age === 1 ? '' : 's'}.` : '',
-    unapproved ? 'This document went out without being approved.' : '',
-    d.status === 'approved' && d.approved_by ? `Approved by ${d.approved_by}.` : '',
-  ].filter(Boolean).join(' ')
-
-  // What the Next-action column offers. A locked-and-signed row keeps its file link: the executed
-  // PDF is the only thing an archived row is good for, and the Stage word already says "locked".
-  const ctl = step === 'locked' ? (d.has_upload ? 'file' : 'none') : step === 'done' ? 'file' : step
-
-  const entityTitle = templateBacked
-    ? `${ENTITY_LEGAL[d.entity] || d.entity} — set by the ${name} template`
-    : `${ENTITY_LEGAL[d.entity] || d.entity} — change it from this row’s menu`
-
-  const menuItems = [
-    !locked && isDraft && step !== 'approve' && {
-      label: 'Approve now', icon: <Check className="h-3.5 w-3.5 text-slate-400" />, onClick: runApprove,
-    },
-    !locked && isDraft && { label: 'Edit the wording…', icon: <PenLine className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onEditLetter(d) },
-    !locked && isDraft && templateBacked && d.application_id && {
-      label: 'Details & template…', icon: <RefreshCw className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onDetails(d),
-    },
-    !locked && step !== 'send' && {
-      label: d.email_sent_at ? 'Email again…' : 'Email now…', icon: <Mail className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onEmail(d),
-    },
-    !locked && step !== 'upload' && {
-      label: d.has_upload ? 'Replace signed copy' : 'Upload signed copy',
-      icon: <Upload className="h-3.5 w-3.5 text-slate-400" />, onClick: pickFile,
-    },
-    d.has_upload && {
-      label: 'View signed copy', icon: <FileText className="h-3.5 w-3.5 text-slate-400" />,
-      href: api.documentUploadUrl(d.id), title: d.upload_filename,
-    },
-    { sep: true },
-    {
-      label: 'Print / PDF', icon: <Printer className="h-3.5 w-3.5 text-slate-400" />,
-      onClick: () => documentToPdfBlobUrl(d)
-        .then((u) => { if (!window.open(u, '_blank')) toast('Allow pop-ups to open the PDF', 'error') })
-        .catch((e) => toast(e.message, 'error')),
-    },
-    {
-      label: 'Copy letter text', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />,
-      onClick: () => { navigator.clipboard.writeText(d.content || ''); toast('Copied to clipboard') },
-    },
-    !locked && !templateBacked && {
-      label: `Switch entity to ${d.entity === 'EZ' ? 'AEZ' : 'EZ'}`,
-      icon: <Building2 className="h-3.5 w-3.5 text-slate-400" />,
-      onClick: () => onEntity(d, d.entity === 'EZ' ? 'AEZ' : 'EZ'),
-    },
-  ].filter(Boolean)
-
-  const personItems = [
-    p.appDoc && { label: 'Add document…', icon: <FilePlus2 className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAddDoc(p) },
-    !p.anyMoved && p.appDoc && { label: 'Send to onboarding…', icon: <ArrowRightCircle className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAskOnboard(p) },
-    p.anyMoved && { label: 'Open in Onboarding', icon: <Rocket className="h-3.5 w-3.5 text-slate-400" />, onClick: onOpenOnboarding },
-    { sep: true },
-    {
-      label: 'Copy work email', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />, note: p.email,
-      onClick: () => { navigator.clipboard.writeText(p.email || ''); toast('Work email copied') },
-    },
-    p.contact && {
-      label: 'Copy phone', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />, note: p.contact,
-      onClick: () => { navigator.clipboard.writeText(p.contact); toast('Phone number copied') },
-    },
-  ].filter(Boolean)
+  const phrase = phraseOf(d, p.twin(d))
+  const title = `${name} — ${phrase} · ${ENTITY_LEGAL[d.entity] || d.entity}`
 
   return (
-    <tr className={cx('transition-colors duration-150 ease-snappy', selected ? 'bg-brand-50/60 hover:bg-brand-50' : 'hover:bg-slate-50')}>
-      {/* 1 — select */}
-      <td className={cellOf(row, 'px-0')}>
-        <div className={cx(B1, 'justify-center')}>
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={(e) => onToggleSelect(d.id, index, e)}
-            aria-label={`Select the ${name} for ${p.name}`}
-            className={CHECKBOX}
-          />
-        </div>
-      </td>
-
-      {/* 2 — the candidate, printed once per block; their name is their menu */}
-      <td className={cellOf(row)}>
-        {first ? (
-          <>
-            <div className={B1}>
-              <RowMenu label={`${p.name} — candidate actions`} items={personItems} text={p.name} />
-            </div>
-            <div className={B2}>
-              <span className="min-w-0 flex-1 truncate text-xs text-slate-600" title={p.email}>{p.email || '—'}</span>
-              {p.anyMoved ? (
-                <Badge size="sm" tone="gray" className="shrink-0"><Rocket className="mr-1 h-3 w-3" aria-hidden />In onboarding</Badge>
-              ) : p.allSigned ? (
-                <button
-                  type="button"
-                  onClick={() => onAskOnboard(p)}
-                  title={`Send ${p.name} to onboarding — every document is signed`}
-                  aria-label={`Send ${p.name} to onboarding — every document is signed`}
-                  className={cx('inline-flex h-[18px] shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 text-xs font-medium text-emerald-700 transition-colors duration-150 ease-snappy hover:border-emerald-300 hover:bg-emerald-100', focusRing)}
-                >
-                  Ready <ArrowRight className="h-3 w-3" aria-hidden />
-                </button>
-              ) : null}
-            </div>
-          </>
-        ) : (
-          <span className="sr-only">{p.name}, another of their documents</span>
-        )}
-      </td>
-
-      {/* 3 — what this document is: one left edge on every row */}
-      <td className={cellOf(row)}>
-        <div className={B1}>
-          <button
-            type="button"
-            onClick={() => onPreview(d)}
-            title={name}
-            className={cx('min-w-0 flex-1 truncate rounded text-left text-sm font-medium text-slate-800 underline-offset-2 hover:text-brand-700 hover:underline', focusRing)}
-          >
-            {name}
-          </button>
-          {d.content_html && (
-            <Badge size="sm" tone="violet" className="shrink-0"><PenLine className="mr-1 h-3 w-3" aria-hidden />Edited</Badge>
-          )}
-        </div>
-        <div className={cx(B2, 'text-xs text-slate-500')}>
-          <Badge size="sm" tone="gray" className="shrink-0" title={entityTitle}>{d.entity}</Badge>
-          <span className="sr-only">{entityTitle}</span>
-          {d.created_at && (
-            <>
-              <span aria-hidden>·</span>
-              <time dateTime={d.created_at} title={fmtLong(d.created_at)} className="shrink-0 tabular-nums">
-                {fmtShort(d.created_at)}{p.twin(d) ? `, ${fmtTime(d.created_at)}` : ''}
-              </time>
-            </>
-          )}
-        </div>
-      </td>
-
-      {/* 4 — the stage, in a word, with the pipeline beneath it */}
-      <td className={cellOf(row)}>
-        <div className={B1}>
-          {unapproved && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden />}
-          <span className={cx('min-w-0 truncate text-sm', unapproved ? 'font-medium text-amber-700' : locked ? 'text-slate-600' : 'text-slate-800')}>
-            {word}
-          </span>
-        </div>
-        <div className={cx(B2, 'text-xs')}>
-          <span className="flex shrink-0 items-center" aria-hidden="true">
-            {STAGES.map((s, i) => (
-              <span key={s} className="flex items-center">
-                {i > 0 && <span className={cx('h-px w-2.5', flags[i - 1] && flags[i] ? 'bg-emerald-400' : 'bg-slate-200')} />}
-                <span className={cx('h-2 w-2 rounded-full', dotClass(i))} />
-              </span>
-            ))}
-          </span>
-          <span className="min-w-0 truncate text-slate-500">{caption}</span>
-          {age != null && age >= 1 && (
-            <span className={cx('shrink-0 tabular-nums', ageClass(age))} title={`${age} days since the covering email was sent`}>· {age}d</span>
-          )}
-          <span className="sr-only">{spoken}</span>
-        </div>
-      </td>
-
-      {/* 5 & 6 — the candidate's shared facts, printed on their first row */}
-      <td className={cellOf(row)}>
-        {first
-          ? <PersonField person={p} field="personal_email" label="Personal email" placeholder="name@gmail.com"
-              note={p.anySent ? 'Went out to the work email' : ''} onSaved={onMerge} />
-          : p.differs('personal_email') && (
-            <div className={cx(B1, 'px-2')}>
-              <span className="min-w-0 truncate text-sm text-slate-500" title={d.personal_email}>{d.personal_email || '—'}</span>
-            </div>
-          )}
-      </td>
-      <td className={cellOf(row)}>
-        {first
-          ? <PersonField person={p} field="joining_date" label="Joining date" placeholder="1 July 2026"
-              note={p.drafts.length ? 'Needed before sending' : ''} onSaved={onMerge} />
-          : p.differs('joining_date') && (
-            <div className={cx(B1, 'px-2')}>
-              <span className="min-w-0 truncate text-sm text-slate-500" title={d.joining_date}>{d.joining_date || '—'}</span>
-            </div>
-          )}
-      </td>
-
-      {/* 7 — the one thing this document is waiting on */}
-      <td className={cellOf(row)}>
-        <div className={B1}>
-          {ctl === 'approve' && (
-            <Button variant="ghost" size="sm" className="h-7 w-full" onClick={runApprove} disabled={approving}
-              aria-label={`Approve the ${name} for ${p.name}`}>
-              {approving ? <Spinner className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-              {approving ? 'Approving…' : 'Approve'}
-            </Button>
-          )}
-          {ctl === 'send' && (
-            <Button variant="ghost" size="sm" className="h-7 w-full" onClick={() => onEmail(d)}
-              aria-label={`Review and send the covering email for the ${name}`}>
-              <Mail className="h-3.5 w-3.5" /> Send email
-            </Button>
-          )}
-          {ctl === 'upload' && (
-            <Button variant="ghost" size="sm" className="h-7 w-full" onClick={pickFile} disabled={uploading}
-              aria-label={`Upload the signed copy of the ${name}`}>
-              {uploading ? <Spinner className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}
-              {uploading ? 'Uploading…' : 'Upload'}
-            </Button>
-          )}
-          {ctl === 'file' && (
-            <a href={api.documentUploadUrl(d.id)} target="_blank" rel="noreferrer" title={d.upload_filename || 'Signed copy'}
-              className={cx('flex h-7 min-w-0 items-center gap-1.5 rounded px-2.5 text-xs font-medium text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:decoration-emerald-700', focusRing)}>
-              <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              <span className="min-w-0 truncate">{d.upload_filename || 'Signed copy'}</span>
-            </a>
-          )}
-          {ctl === 'none' && <span className="flex h-7 items-center px-2.5 text-xs text-slate-500">No signed copy</span>}
-        </div>
-        <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only"
-          tabIndex={-1} aria-hidden="true" onChange={onUploadFile} />
-      </td>
-
-      {/* 8 — preview stays out; everything else is one click deeper */}
-      <td className={cellOf(row)}>
-        <div className={cx(B1, 'justify-end gap-1')}>
-          <IconButton onClick={() => onPreview(d)} className="h-7 w-7 shrink-0 p-0"
-            aria-label={`Preview the ${name} for ${p.name}`} title={`Preview the ${name}`}>
-            <Eye className="h-4 w-4" />
-          </IconButton>
-          <RowMenu label={`More actions for the ${name} for ${p.name}`} items={menuItems} />
-        </div>
-      </td>
-    </tr>
-  )
-}
-
-// ── The triage chips: what is waiting on you, and the way to see only that ───────────────────
-const STEP_PRED = {
-  approve: (d) => nextStep(d) === 'approve',
-  send: (d) => nextStep(d) === 'send',
-  upload: (d) => nextStep(d) === 'upload',
-  done: (d) => nextStep(d) === 'done',
-  locked: (d) => nextStep(d) === 'locked',
-  unapproved: (d) => !d.move_to_onboarding && d.status !== 'approved' && (!!d.email_sent_at || !!d.has_upload),
-}
-const STEP_CHIPS = [
-  { key: 'approve', label: 'To approve', dot: 'bg-amber-600' },
-  { key: 'send', label: 'Ready to send', dot: 'bg-amber-600' },
-  { key: 'upload', label: 'Awaiting signature', dot: 'bg-sky-600' },
-  { key: 'unapproved', label: 'Unapproved', dot: 'bg-white ring-2 ring-inset ring-amber-600' },
-  { key: 'done', label: 'Signed', dot: 'bg-emerald-600' },
-  { key: 'locked', label: 'In onboarding', dot: 'bg-slate-400' },
-]
-
-function Chip({ chipKey, label, dot, n, active, onPick }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      disabled={chipKey !== null && !n}
-      onClick={() => onPick(chipKey === null ? null : active ? null : chipKey)}
+    <li
       className={cx(
-        'inline-flex h-8 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition duration-150 ease-snappy', focusRing,
-        active ? 'border-brand-300 bg-brand-50 text-brand-700'
-          : n ? 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-            : 'cursor-default border-slate-200/70 bg-white text-slate-500',
+        'group/row flex h-8 items-center gap-2 rounded-lg pl-1.5 pr-2 transition-[background-color,box-shadow] duration-150 ease-snappy',
+        isSelected ? 'bg-white shadow-card ring-1 ring-slate-900/[0.07]' : 'hover:bg-white/70',
       )}
     >
-      {dot && <span aria-hidden className={cx('h-2 w-2 rounded-full', n ? dot : 'bg-slate-300')} />}
-      {label}<span className="tabular-nums">{n}</span>
-    </button>
+      {/* The state dot and the selection checkbox cross-fade in one fixed slot, so choosing rows
+          in bulk costs no resting chrome and nothing on the row moves. */}
+      <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+        <span
+          aria-hidden
+          className={cx('h-1.5 w-1.5 rounded-full transition-opacity duration-200 ease-snappy', DOT[turn],
+            selMode ? 'opacity-0' : 'opacity-100 group-hover/row:opacity-0 group-focus-within/row:opacity-0')}
+        />
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={locked}
+          onChange={(e) => onToggle(d.id, index, e)}
+          aria-label={`Select the ${name} for ${p.name}`}
+          className={cx('absolute h-3.5 w-3.5 cursor-pointer rounded border-slate-300 accent-brand-600 transition-opacity duration-150 ease-snappy', focusRing,
+            selMode ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100')}
+        />
+      </span>
+
+      <button
+        type="button"
+        ref={isFocus ? focusRef : null}
+        tabIndex={isFocus ? 0 : -1}
+        aria-current={isSelected || undefined}
+        title={title}
+        onClick={() => onSelect(d.id)}
+        onFocus={() => onFocusRow(index)}
+        className={cx('flex h-8 min-w-0 flex-1 items-center gap-2 rounded text-left', focusRing)}
+      >
+        <span className={cx('min-w-0 shrink truncate text-[13px] leading-[18px]', NAME[turn])}>{name}</span>
+        {/* The leader is the only flexible box in the row. Delete it and every column still
+            lines up — the fixed tracks do the work; this just carries the eye across. */}
+        <span
+          aria-hidden
+          className="h-px min-w-3 flex-1 border-b border-dotted border-slate-300 transition-colors duration-150 ease-snappy group-hover/row:border-slate-400"
+        />
+        <span className={cx('hidden w-[122px] shrink-0 truncate text-right text-[11px] 2xl:block', PHRASE[turn])}>{phrase}</span>
+        <span className="hidden w-[26px] shrink-0 text-right text-[10px] font-medium tracking-[0.06em] text-slate-500 2xl:block">{d.entity}</span>
+        <span className={cx('w-[30px] shrink-0 text-right text-[11px] tabular-nums', age != null ? ageClass(age) : 'text-slate-500')}>
+          {age != null && age >= 1 ? `${age}d` : ''}
+        </span>
+        <span className="sr-only">{`${name}, ${phrase}${age != null && age >= 1 ? `, waiting ${age} days` : ''}`}</span>
+      </button>
+    </li>
   )
 }
+
+// The empty states, one shape used three times. ui.jsx's EmptyState is itself a Card and would
+// nest a card inside this page's single card.
+function Nothing({ line, sub, action }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-8 py-16 text-center">
+      <p className="text-[15px] font-medium text-slate-700">{line}</p>
+      {sub && <p className="mt-1 max-w-sm text-xs text-slate-500">{sub}</p>}
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  )
+}
+
+// The letter's provenance, set like the colophon on the back of a contract rather than a progress
+// bar. A stage that was skipped shows a hole in the record, which is how a ledger says so.
+function Ledger({ doc: d, twin }) {
+  const flags = stageFlags(d)
+  const skipped = skippedAt(d)
+  const current = flags.lastIndexOf(true) + 1
+  const turn = turnOf(d)
+  const cells = [
+    { label: 'Drafted', iso: d.created_at, value: `${fmtShort(d.created_at)}${twin ? `, ${fmtTime(d.created_at)}` : ''}` },
+    { label: 'Approved', iso: d.approved_at, value: d.status === 'approved' ? [fmtShort(d.approved_at), d.approved_by].filter(Boolean).join(' · ') || 'yes' : '—' },
+    { label: 'Emailed', iso: d.email_sent_at, value: d.email_sent_at ? fmtShort(d.email_sent_at) : '—' },
+    { label: 'Signed', iso: null, value: null },
+  ]
+  return (
+    <ol className="mt-2 flex max-w-3xl items-stretch text-[11px]">
+      {cells.map((c, i) => (
+        <li key={c.label} className="min-w-0 flex-1 border-l border-slate-200 px-3 first:border-l-0 first:pl-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500">{c.label}</span>
+            {i === current && (
+              <span aria-hidden className={cx('h-[2px] w-3 rounded-full', turn === 'theirs' ? 'bg-sky-600' : 'bg-amber-600')} />
+            )}
+          </div>
+          <div
+            className={cx('mt-0.5 truncate tabular-nums',
+              flags[i] ? 'text-slate-700' : skipped[i] ? 'text-amber-700' : 'text-slate-500')}
+            title={c.iso ? fmtLong(c.iso) : undefined}
+          >
+            {c.label === 'Signed'
+              ? (d.has_upload
+                ? <a href={api.documentUploadUrl(d.id)} target="_blank" rel="noreferrer"
+                    className={cx('text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:decoration-emerald-700', focusRing)}>
+                    {d.upload_filename || 'Signed copy'}
+                  </a>
+                : '—')
+              : c.value}
+            <span className="sr-only">{flags[i] ? '' : skipped[i] ? ' — skipped' : ' — not yet'}</span>
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+// The sheet, scaled to whatever room the desk has. offsetHeight is layout px and is unaffected by
+// the transform; getBoundingClientRect would feed the scaled height back into the observer.
+const SHEET_W = 794   // 210mm at 96dpi
+
+function Desk({ doc, onOpenPdf }) {
+  const wrapRef = useRef(null)
+  const sheetRef = useRef(null)
+  const [fit, setFit] = useState({ s: 1, h: 1123 })
+
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current
+    const sheet = sheetRef.current
+    if (!wrap || !sheet) return undefined
+    let raf = 0
+    const measure = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        setFit({ s: Math.min(1, Math.max(0.78, wrap.clientWidth / SHEET_W)), h: sheet.offsetHeight })
+      })
+    }
+    const ro = new ResizeObserver(measure)
+    ro.observe(wrap)
+    ro.observe(sheet)
+    measure()
+    return () => { cancelAnimationFrame(raf); ro.disconnect() }
+  }, [doc.id, doc.content_html])
+
+  return (
+    <>
+      <div ref={wrapRef} className="mx-auto w-full max-w-[794px]">
+        <div style={{ height: Math.round(fit.h * fit.s) }}>
+          <div ref={sheetRef} style={{ width: SHEET_W, transform: `scale(${fit.s})`, transformOrigin: 'top left' }}>
+            <DocumentPaper doc={doc} render="sheet" />
+          </div>
+        </div>
+      </div>
+      <div className="mx-auto mt-3 flex max-w-[794px] items-baseline justify-between gap-3 text-[11px] text-slate-500">
+        <span>Continuous preview — the issued PDF is paginated.</span>
+        <button
+          type="button"
+          onClick={onOpenPdf}
+          className={cx('shrink-0 rounded font-medium text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-slate-900 hover:decoration-slate-600', focusRing)}
+        >
+          Open as PDF
+        </button>
+      </div>
+    </>
+  )
+}
+
+const MOD = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || '') ? '⌘' : 'Ctrl '
 
 export default function OfferDocs() {
   usePageTitle('Offer & Docs')
@@ -820,42 +707,41 @@ export default function OfferDocs() {
   const navigate = useNavigate()
   const [docs, setDocs] = useState(null)
   const [templates, setTemplates] = useState([])
-  const [view, setView] = useState(null)
-  const [editing, setEditing] = useState(false)     // rich-editor mode for the viewed document
+  const [selectedId, setSelectedId] = useState(null)
+  const [focusIdx, setFocusIdx] = useState(0)
+  const [mode, setMode] = useState('read')          // 'read' | 'edit'
   const editorRef = useRef(null)
+  const focusRef = useRef(null)
   const [form, setForm] = useState(null)            // { doc, mode }
-  const [emailing, setEmailing] = useState(null)    // the document whose covering mail is being reviewed
+  const [emailing, setEmailing] = useState(null)
+  const [viewPdf, setViewPdf] = useState(null)      // the doc shown in the paginated-PDF modal
   const [busy, setBusy] = useState(false)
   const [q, setQ] = useState('')
-  const [stage, setStage] = useState(null)          // a STEP_PRED key, or null for everything
-  const [sortKey, setSortKey] = useState('recent')
+  const [lens, setLens] = useState('all')
+  const [sortKey, setSortKey] = useState('waiting')
+  const [wide, setWide] = useState(() => {
+    try { return localStorage.getItem('offerdocs.wide') === '1' } catch { return false }
+  })
+  const [pane, setPane] = useState('index')         // below xl, only one pane shows
   const [selected, setSelected] = useState(() => new Set())
-  const [confirm, setConfirm] = useState(null)      // { kind, body, cta, Icon, p? }
-  const [barBusy, setBarBusy] = useState(false)
+  const [confirm, setConfirm] = useState(null)
   const colFilters = useColumnFilters()
   const lastIdx = useRef(null)
-  const allRef = useRef(null)
-
-  const openView = (d) => { setEditing(false); setView(d) }
-  const openEditor = (d) => { setView(d); setEditing(true) }
-  const closeView = () => { setEditing(false); setView(null) }
+  const [status, setStatus] = useState('')          // sr-only result announcements
 
   const load = () => api.listAllDocuments().then(setDocs).catch(() => setDocs([]))
   useEffect(() => { load() }, [])
   useEffect(() => { api.listDocumentTemplates().then(setTemplates).catch(() => setTemplates([])) }, [])
 
-  const mergeDoc = (up) => {
-    setDocs((list) => (list || []).map((x) => (x.id === up.id ? { ...x, ...up } : x)))
-    setView((v) => (v && v.id === up.id ? { ...v, ...up } : v))
-  }
+  const mergeDoc = (up) => setDocs((list) => (list || []).map((x) => (x.id === up.id ? { ...x, ...up } : x)))
 
   const tplByKey = useMemo(() => new Map(templates.map((t) => [t.key, t])), [templates])
   const nameOf = useMemo(() => (d) => tplByKey.get(d.template_key)?.label || DOC_LABEL[d.doc_type] || d.doc_type, [tplByKey])
   const identOf = useMemo(() => (d) => `${nameOf(d)}|${d.entity}|${fmtShort(d.created_at)}`, [nameOf])
 
-  // Every candidate-scoped fact comes from the UNFILTERED set, so narrowing the table stays purely
-  // presentational: a stage chip can't make "all signed" appear, and typing a joining date can't
-  // write to only the rows that happen to be visible.
+  // Every candidate-scoped fact comes from the UNFILTERED set, so narrowing the index stays purely
+  // presentational: a lens can't make "all signed" appear, and editing a shared field can't write
+  // to only the letters that happen to be on screen.
   const people = useMemo(() => {
     const m = new Map()
     for (const d of docs || []) {
@@ -865,6 +751,7 @@ export default function OfferDocs() {
       p.all.push(d)
     }
     for (const p of m.values()) {
+      p.all.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
       p.live = p.all.filter((x) => !x.move_to_onboarding)
       p.drafts = p.live.filter((x) => x.status !== 'approved')
       p.anyMoved = p.all.some((x) => x.move_to_onboarding)
@@ -891,50 +778,56 @@ export default function OfferDocs() {
 
   const docValues = useMemo(() => distinctValues(docs || [], nameOf), [docs, nameOf])
   const faceted = useMemo(() => colFilters.apply(searched, { document: nameOf }), [searched, colFilters, nameOf])
-
-  // Counts answer "what would this chip give me", so they honour search and the column filter but
-  // not the stage itself.
   const counts = useMemo(() => {
-    const m = { approve: 0, send: 0, upload: 0, done: 0, locked: 0, unapproved: 0 }
-    for (const d of faceted) { m[nextStep(d)] += 1; if (STEP_PRED.unapproved(d)) m.unapproved += 1 }
+    const m = { all: faceted.length, yours: 0, theirs: 0, signed: 0, filed: 0, unapproved: 0, nodate: 0 }
+    for (const d of faceted) {
+      Object.keys(LENS).forEach((k) => { if (k !== 'all' && LENS[k](d)) m[k] += 1 })
+    }
     return m
   }, [faceted])
+  const shown = useMemo(() => faceted.filter(LENS[lens]), [faceted, lens])
 
-  const filteredDocs = useMemo(() => (stage ? faceted.filter(STEP_PRED[stage]) : faceted), [faceted, stage])
-
-  // Which documents to draw and in what order. The API returns newest-first GLOBALLY, so without
-  // regrouping a candidate's letters are scattered and their name prints over and over.
-  const rows = useMemo(() => {
+  // Letters grouped under the person they belong to, blocks ordered by the sort, letters inside a
+  // block in issue order. The API returns newest-first globally, so without this a person's
+  // letters are scattered down the list.
+  const groups = useMemo(() => {
     const blocks = new Map()
-    for (const d of filteredDocs) {
+    for (const d of shown) {
       const k = personKey(d)
       if (!blocks.has(k)) blocks.set(k, [])
       blocks.get(k).push(d)
     }
-    const list = [...blocks.entries()].map(([k, shown]) => ({ p: people.get(k), shown })).filter((b) => b.p)
     const cmp = {
-      recent: (a, b) => b.p.newest - a.p.newest,
       waiting: (a, b) => b.p.waiting - a.p.waiting || b.p.drafts.length - a.p.drafts.length,
+      recent: (a, b) => b.p.newest - a.p.newest,
       name: (a, b) => a.p.name.localeCompare(b.p.name),
     }[sortKey]
-    list.sort(cmp)
-    const out = []
-    for (const { p, shown } of list) {
-      const ordered = [...shown].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-      ordered.forEach((d, i) => out.push({ d, p, first: i === 0, last: i === ordered.length - 1 }))
-    }
-    return out
-  }, [filteredDocs, people, sortKey])
+    return [...blocks.entries()]
+      .map(([k, rows]) => ({ p: people.get(k), rows: rows.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) }))
+      .filter((g) => g.p)
+      .sort(cmp)
+  }, [shown, people, sortKey])
 
-  // Selection is read through the visible rows, so a filter change can never leave you acting on
-  // documents you cannot see — and there is no state to prune.
-  const selCount = rows.reduce((n, r) => n + (selected.has(r.d.id) ? 1 : 0), 0)
-  const allChecked = rows.length > 0 && selCount === rows.length
+  const rows = useMemo(() => groups.flatMap((g) => g.rows.map((d) => ({ d, p: g.p }))), [groups])
+
+  // The letter on the desk. Falls back to the first row so the pane is never blank while the index
+  // has something in it.
+  const current = useMemo(
+    () => rows.find((r) => r.d.id === selectedId) || rows[0] || null,
+    [rows, selectedId],
+  )
   useEffect(() => {
-    if (allRef.current) allRef.current.indeterminate = selCount > 0 && selCount < rows.length
-  }, [selCount, rows.length])
+    if (current && current.d.id !== selectedId) setSelectedId(current.d.id)
+  }, [current, selectedId])
+  useEffect(() => { if (focusIdx >= rows.length) setFocusIdx(0) }, [rows.length, focusIdx])
 
-  const toggleAll = () => setSelected(allChecked ? new Set() : new Set(rows.map((r) => r.d.id)))
+  const selCount = rows.reduce((n, r) => n + (selected.has(r.d.id) ? 1 : 0), 0)
+  const selMode = selCount > 0
+  const selDrafts = rows
+    .filter((r) => selected.has(r.d.id) && r.d.status !== 'approved' && !r.d.move_to_onboarding)
+    .map((r) => r.d)
+
+  const select = (id) => { setSelectedId(id); setMode('read'); setPane('letter') }
   const toggleRow = (id, index, e) => {
     const shift = e?.nativeEvent?.shiftKey
     const anchor = lastIdx.current
@@ -942,7 +835,7 @@ export default function OfferDocs() {
       const n = new Set(s)
       if (shift && anchor != null) {
         const [a, b] = [anchor, index].sort((x, y) => x - y)
-        for (let i = a; i <= b; i += 1) n.add(rows[i].d.id)
+        for (let i = a; i <= b; i += 1) if (!rows[i].d.move_to_onboarding) n.add(rows[i].d.id)
       } else if (n.has(id)) n.delete(id)
       else n.add(id)
       return n
@@ -950,17 +843,28 @@ export default function OfferDocs() {
     lastIdx.current = index
   }
 
-  const selDrafts = rows
-    .filter((r) => selected.has(r.d.id) && r.d.status !== 'approved' && !r.d.move_to_onboarding)
-    .map((r) => r.d)
+  // ── acting ────────────────────────────────────────────────────────────────────────────────
+  // After an act, move to the next letter that needs you rather than sitting on the one just
+  // dealt with. With a queue of drafts, the modifier chord walks it.
+  function advance(actedId) {
+    const i = rows.findIndex((r) => r.d.id === actedId)
+    if (i < 0) return
+    const order = [...rows.slice(i + 1), ...rows.slice(0, i + 1)]
+    const next = order.find((r) => turnOf(r.d) === 'ours' || turnOf(r.d) === 'unapproved') || rows[i]
+    setSelectedId(next.d.id)
+    setFocusIdx(rows.findIndex((r) => r.d.id === next.d.id))
+    setStatus(`${nameOf(next.d)} for ${next.p.name}. ${phraseOf(next.d, next.p.twin(next.d))}.`)
+  }
 
-  async function approveDoc(d) {
+  async function approveDoc(d, { then } = {}) {
+    setBusy(true)
     try {
       const up = await api.approveDocument(d.id)
       mergeDoc(up)
       toast('Document approved')
+      if (then !== false) advance(d.id)
       return up
-    } catch (e) { toast(e.message, 'error'); throw e }
+    } catch (e) { toast(e.message, 'error'); throw e } finally { setBusy(false) }
   }
 
   async function setEntity(d, entity) {
@@ -968,13 +872,15 @@ export default function OfferDocs() {
     catch (e) { toast(e.message, 'error') }
   }
 
+  const openPdf = (d) => setViewPdf(d)
+
   const askOnboard = (p) => setConfirm({
     kind: 'onboard', p, Icon: ArrowRightCircle, cta: 'Send to onboarding',
     body: `Send ${p.name} to onboarding? This creates their onboarding tracker; the document used to do it is locked from further edits. There is no undo from this screen.`,
   })
 
   async function runConfirm() {
-    setBarBusy(true)
+    setBusy(true)
     try {
       if (confirm.kind === 'bulk') {
         const res = await Promise.allSettled(selDrafts.map((d) => api.approveDocument(d.id)))
@@ -987,20 +893,15 @@ export default function OfferDocs() {
         toast('Sent to onboarding')
       }
       setConfirm(null)
-    } catch (e) { toast(e.message, 'error') } finally { setBarBusy(false) }
-  }
-
-  async function copy(d) {
-    await navigator.clipboard.writeText(d.content || '')
-    toast('Copied to clipboard')
+    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
   }
 
   async function saveLetter() {
     setBusy(true)
     try {
       const html = sanitizeHtml(editorRef.current?.getHtml() || '')
-      mergeDoc(await api.saveDocumentContent(view.id, { content_html: html }))
-      setEditing(false)
+      mergeDoc(await api.saveDocumentContent(current.d.id, { content_html: html }))
+      setMode('read')
       toast('Letter saved')
     } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
   }
@@ -1009,235 +910,489 @@ export default function OfferDocs() {
     if (!window.confirm('Discard your manual edits and revert to the generated template?')) return
     setBusy(true)
     try {
-      mergeDoc(await api.saveDocumentContent(view.id, { content_html: '' }))
-      setEditing(false)
+      mergeDoc(await api.saveDocumentContent(current.d.id, { content_html: '' }))
+      setMode('read')
       toast('Reverted to the generated template')
     } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
   }
 
-  function onFormDone(up, mode) {
-    setForm(null)
-    if (mode === 'edit') setView((v) => (v && v.id === up.id ? { ...v, ...up } : v))
-    load()
+  function onFormDone(up) { setForm(null); setSelectedId(up.id); load() }
+
+  const toggleWide = () => setWide((w) => {
+    const n = !w
+    try { localStorage.setItem('offerdocs.wide', n ? '1' : '0') } catch { /* private mode */ }
+    return n
+  })
+
+  // ── keyboard ──────────────────────────────────────────────────────────────────────────────
+  const ask = current ? askOf(current) : null
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.target.closest?.('input,textarea,select,[contenteditable]')) return
+      if (document.querySelector('[role="dialog"],[role="menu"]')) return
+      const i = rows.findIndex((r) => r.d.id === selectedId)
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const n = Math.min(rows.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1)))
+        if (rows[n]) { setSelectedId(rows[n].d.id); setFocusIdx(n); focusRef.current?.focus() }
+      } else if (e.key === 'Home' && rows[0]) { e.preventDefault(); setSelectedId(rows[0].d.id); setFocusIdx(0) }
+      else if (e.key === 'End' && rows.length) { e.preventDefault(); setSelectedId(rows[rows.length - 1].d.id); setFocusIdx(rows.length - 1) }
+      else if (e.key === 'Escape' && selMode) { setSelected(new Set()) }
+      else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && ask?.run && !busy) { e.preventDefault(); ask.run() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [rows, selectedId, ask, busy, selMode])
+
+  // ── what this letter is asking for ────────────────────────────────────────────────────────
+  function askOf({ d, p }) {
+    const step = nextStep(d)
+    const unapproved = step === 'approve' && (d.email_sent_at || d.has_upload)
+    const others = rows.filter((r) => r.d.id !== d.id && (turnOf(r.d) === 'ours' || turnOf(r.d) === 'unapproved')).length
+    const sub = (text, cls = 'text-slate-500') => <p className={cx('mt-0.5 truncate text-[11px]', cls)}>{text}</p>
+
+    if (selMode) {
+      return {
+        line: `${selCount} letter${selCount === 1 ? '' : 's'} selected`,
+        sub: sub(`${selDrafts.length} ${selDrafts.length === 1 ? 'is a draft' : 'are drafts'}`),
+        cta: `Approve ${selDrafts.length}`,
+        Icon: Check,
+        disabled: !selDrafts.length,
+        secondary: <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>,
+        run: () => selDrafts.length && setConfirm({
+          kind: 'bulk', Icon: Check, cta: `Approve ${selDrafts.length}`,
+          body: `Approve ${selDrafts.length} draft${selDrafts.length === 1 ? '' : 's'} without opening ${selDrafts.length === 1 ? 'it' : 'them'}? An approved document can no longer be regenerated from its template.`,
+        }),
+      }
+    }
+    if (mode === 'edit') {
+      return {
+        line: 'Editing the wording — this overrides the template until you revert.',
+        warn: true,
+        cta: 'Save letter',
+        Icon: Check,
+        run: saveLetter,
+        secondary: (
+          <>
+            {d.content_html && <Button variant="ghost" size="sm" onClick={revertLetter} disabled={busy}>Revert to template</Button>}
+            <Button variant="ghost" size="sm" onClick={() => setMode('read')} disabled={busy}>Cancel</Button>
+          </>
+        ),
+      }
+    }
+    const editBtn = <Button variant="ghost" size="sm" onClick={() => setMode('edit')}>Edit wording</Button>
+    const noDate = !d.joining_date && (step === 'approve' || step === 'send')
+    const dateWarning = noDate
+      ? sub('Joining date is blank — the letter will print an empty date.', 'text-amber-700')
+      : null
+
+    if (step === 'approve') {
+      return {
+        line: unapproved ? 'This went out without approval.' : 'Waiting on your approval.',
+        warn: unapproved,
+        sub: dateWarning || sub(unapproved
+          ? `Emailed ${fmtShort(d.email_sent_at)}`
+          : `Drafted ${fmtShort(d.created_at)}${others ? ` · ${others} more need you` : ''}`, unapproved ? 'text-amber-700' : undefined),
+        cta: 'Approve', Icon: Check, secondary: editBtn, run: () => approveDoc(d),
+      }
+    }
+    if (step === 'send') {
+      return {
+        line: `Approved and ready to email ${p.name.split(' ')[0]}.`,
+        sub: dateWarning || sub(`Approved ${fmtShort(d.approved_at || d.created_at)}${d.approved_by ? ` by ${d.approved_by}` : ''}`),
+        cta: 'Review & send', Icon: Mail, secondary: editBtn, run: () => setEmailing(d),
+      }
+    }
+    if (step === 'upload') {
+      const age = ageOf(d)
+      return {
+        line: `Sent to ${p.name.split(' ')[0]}${age >= 1 ? ` ${age} day${age === 1 ? '' : 's'} ago` : ''}. Waiting on their signature.`,
+        sub: sub(`Emailed ${fmtShort(d.email_sent_at)}`),
+        cta: 'File the signed copy', Icon: Upload, upload: true,
+        secondary: <Button variant="ghost" size="sm" onClick={() => setEmailing(d)}>Email again</Button>,
+      }
+    }
+    if (step === 'done') {
+      if (p.allSigned && !p.anyMoved) {
+        return {
+          line: `Every letter for ${p.name.split(' ')[0]} is signed.`,
+          sub: sub(`${p.live.length} of ${p.live.length} on file`),
+          cta: `Send ${p.name.split(' ')[0]} to onboarding`, Icon: ArrowRightCircle,
+          run: () => askOnboard(p),
+          secondary: <Button variant="ghost" size="sm" onClick={() => window.open(api.documentUploadUrl(d.id), '_blank')}>Open signed copy</Button>,
+        }
+      }
+      return {
+        line: 'Signed copy on file.',
+        sub: sub(d.upload_filename || 'Countersigned PDF'),
+        cta: 'Open signed copy', Icon: FileText, ghost: true,
+        run: () => window.open(api.documentUploadUrl(d.id), '_blank'),
+      }
+    }
+    return {
+      line: 'Filed to onboarding. Read-only.',
+      sub: sub(d.upload_filename || 'No signed copy'),
+      cta: 'Open in Onboarding', Icon: Rocket, ghost: true,
+      run: () => navigate('/onboarding'),
+      secondary: d.has_upload
+        ? <Button variant="ghost" size="sm" onClick={() => window.open(api.documentUploadUrl(d.id), '_blank')}>Open signed copy</Button>
+        : null,
+    }
   }
 
-  const clearAll = () => { setQ(''); setStage(null); colFilters.clear() }
-  const TOOLBAR = cx('h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none',
-    'transition-colors duration-150 ease-snappy hover:border-slate-300 focus:border-brand-500', focusRing)
+  // ── the menus, ported whole ───────────────────────────────────────────────────────────────
+  function menuItems(d) {
+    const locked = !!d.move_to_onboarding
+    const isDraft = d.status !== 'approved'
+    const step = nextStep(d)
+    const templateBacked = tplByKey.has(d.template_key)
+    return [
+      !locked && isDraft && step !== 'approve' && {
+        label: 'Approve now', icon: <Check className="h-3.5 w-3.5 text-slate-400" />, onClick: () => approveDoc(d, { then: false }),
+      },
+      !locked && isDraft && { label: 'Edit the wording…', icon: <PenLine className="h-3.5 w-3.5 text-slate-400" />, onClick: () => setMode('edit') },
+      !locked && isDraft && templateBacked && d.application_id && {
+        label: 'Details & template…', icon: <RefreshCw className="h-3.5 w-3.5 text-slate-400" />, onClick: () => setForm({ doc: d, mode: 'edit' }),
+      },
+      !locked && step !== 'send' && {
+        label: d.email_sent_at ? 'Email again…' : 'Email now…', icon: <Mail className="h-3.5 w-3.5 text-slate-400" />, onClick: () => setEmailing(d),
+      },
+      !locked && step !== 'upload' && {
+        label: d.has_upload ? 'Replace signed copy' : 'Upload signed copy',
+        icon: <Upload className="h-3.5 w-3.5 text-slate-400" />, onClick: pickFile,
+      },
+      d.has_upload && {
+        label: 'View signed copy', icon: <FileText className="h-3.5 w-3.5 text-slate-400" />,
+        href: api.documentUploadUrl(d.id), title: d.upload_filename,
+      },
+      { sep: true },
+      { label: 'Open as PDF', icon: <Printer className="h-3.5 w-3.5 text-slate-400" />, onClick: () => openPdf(d) },
+      {
+        label: 'Copy letter text', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />,
+        onClick: () => { navigator.clipboard.writeText(d.content || ''); toast('Copied to clipboard') },
+      },
+      !locked && !templateBacked && {
+        label: `Switch entity to ${d.entity === 'EZ' ? 'AEZ' : 'EZ'}`,
+        icon: <Building2 className="h-3.5 w-3.5 text-slate-400" />,
+        onClick: () => setEntity(d, d.entity === 'EZ' ? 'AEZ' : 'EZ'),
+      },
+    ].filter(Boolean)
+  }
+
+  function personItems(p) {
+    return [
+      p.appDoc && { label: 'Add document…', icon: <FilePlus2 className="h-3.5 w-3.5 text-slate-400" />, onClick: () => setForm({ doc: p.appDoc, mode: 'new' }) },
+      !p.anyMoved && p.appDoc && { label: 'Send to onboarding…', icon: <ArrowRightCircle className="h-3.5 w-3.5 text-slate-400" />, onClick: () => askOnboard(p) },
+      p.anyMoved && { label: 'Open in Onboarding', icon: <Rocket className="h-3.5 w-3.5 text-slate-400" />, onClick: () => navigate('/onboarding') },
+      { sep: true },
+      {
+        label: 'Copy work email', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />, note: p.email,
+        onClick: () => { navigator.clipboard.writeText(p.email || ''); toast('Work email copied') },
+      },
+      p.contact && {
+        label: 'Copy phone', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />, note: p.contact,
+        onClick: () => { navigator.clipboard.writeText(p.contact); toast('Phone number copied') },
+      },
+    ].filter(Boolean)
+  }
+
+  const d = current?.d
+  const p = current?.p
+  const { inputRef, busy: uploading, onFile: onUploadFile, pick: pickFile } = useUpload(d || { id: 0 }, mergeDoc)
+  const name = d ? nameOf(d) : ''
+  const initials = (p?.name || '?').split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+
+  const CENSUS = [
+    ['all', 'all'], ['yours', 'need you'], ['theirs', 'with candidates'],
+    ['signed', 'signed'], ['filed', 'filed'], ['unapproved', 'went out unapproved'], ['nodate', 'have no joining date'],
+  ]
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Offer & Docs"
-        subtitle="Every letter you owe a candidate, and the one thing each is waiting on. Fill their details once, preview, email for signature, then file the signed copy back."
-      />
+    <div className="flex min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
+      <p role="status" className="sr-only">{status}</p>
 
-      {docs === null ? (
-        <div className="space-y-5">
-          <div className="flex flex-wrap gap-2">
-            {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-8 w-28 rounded-lg" />)}
+      {/* ── the index ─────────────────────────────────────────────────────────────────────── */}
+      <aside className={cx(
+        'flex shrink-0 flex-col border-slate-200 bg-slate-50',
+        wide ? 'w-full' : 'w-full border-r xl:w-[320px] 2xl:w-[468px]',
+        !wide && pane === 'letter' && 'max-xl:hidden',
+        mode === 'edit' && 'hidden',
+      )}>
+        <div className="shrink-0 border-b border-slate-200 px-3 pb-2.5 pt-3">
+          <div className="flex items-center gap-2">
+            <h1 className="text-[15px] font-semibold tracking-tight text-slate-900">Offer &amp; Docs</h1>
+            <span className="text-[11px] tabular-nums text-slate-500">{(docs || []).length}</span>
+            <IconButton
+              className="ml-auto h-7 w-7 p-0"
+              aria-pressed={wide}
+              aria-label="Show every column (hides the letter)"
+              title="Show every column (hides the letter)"
+              onClick={toggleWide}
+            >
+              <Columns3 className="h-4 w-4" />
+            </IconButton>
           </div>
-          <Card className="overflow-hidden p-0">
-            <div className="space-y-3 p-3">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-4">
-                  <Skeleton className="h-4 w-40" />
-                  <Skeleton className="h-4 w-48" />
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="ml-auto h-7 w-28 rounded-lg" />
+
+          {/* The census: what is on the page, and the way to see only that. The underline is the
+              selection mark — a row of chips would be a toolbar of boxes. */}
+          <p className="mt-1.5 text-[11px] leading-4 text-slate-600">
+            {CENSUS.filter(([k]) => k === 'all' || counts[k] > 0).map(([k, label], i) => (
+              <span key={k}>
+                {i > 0 && <span aria-hidden className="text-slate-300"> · </span>}
+                <button
+                  type="button"
+                  onClick={() => setLens(k)}
+                  aria-pressed={lens === k}
+                  className={cx('rounded', focusRing,
+                    lens === k
+                      ? 'font-medium text-slate-900 underline decoration-2 decoration-brand-400 underline-offset-4'
+                      : k === 'unapproved' || k === 'nodate'
+                        ? 'text-amber-700 hover:underline hover:decoration-amber-300 hover:underline-offset-4'
+                        : 'hover:text-slate-900 hover:underline hover:decoration-slate-300 hover:underline-offset-4')}
+                >
+                  <b className="tabular-nums font-medium">{counts[k]}</b> {label}
+                </button>
+              </span>
+            ))}
+          </p>
+
+          <div className="mt-2 flex items-center gap-2">
+            <label className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                aria-label="Search candidates and letters"
+                placeholder="Search…"
+                className={cx('h-8 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-2 text-xs text-slate-800 outline-none',
+                  'transition-colors duration-150 ease-snappy placeholder:text-slate-500 hover:border-slate-300 focus:border-brand-500', focusRing)}
+              />
+            </label>
+            <span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-600">
+              Document
+              <ColumnFilter
+                label="Document"
+                values={docValues}
+                excluded={colFilters.filters.document || []}
+                onChange={(a) => colFilters.setFilter('document', a)}
+              />
+            </span>
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value)}
+              aria-label="Sort candidates"
+              className={cx('h-8 shrink-0 rounded-lg border border-slate-200 bg-white px-1.5 text-[11px] text-slate-700', focusRing)}
+            >
+              <option value="waiting">Longest waiting</option>
+              <option value="recent">Recent</option>
+              <option value="name">Candidate A–Z</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-6">
+          {docs === null ? (
+            <div className="space-y-4 px-1.5 pt-4">
+              {[0, 1, 2].map((g) => (
+                <div key={g} className="space-y-1.5">
+                  <Skeleton className="h-3 w-28" />
+                  {[0, 1, 2].map((r) => <Skeleton key={r} className="h-3 w-40" />)}
                 </div>
               ))}
             </div>
-          </Card>
-        </div>
-      ) : docs.length === 0 ? (
-        <EmptyState
-          icon={FileText}
-          title="No documents yet"
-          description="Documents show up here once generated — automatically when a candidate is marked Hired, or from a candidate’s Offer tab."
-        />
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <Chip chipKey={null} label="All" dot={null} n={faceted.length} active={stage === null} onPick={setStage} />
-            {STEP_CHIPS.map((c) => (
-              <Chip key={c.key} chipKey={c.key} label={c.label} dot={c.dot} n={counts[c.key] || 0} active={stage === c.key} onPick={setStage} />
-            ))}
-            <div className="ml-auto flex items-center gap-2">
-              <label className="sr-only" htmlFor="od-sort">Sort candidates</label>
-              <select id="od-sort" value={sortKey} onChange={(e) => setSortKey(e.target.value)} className={TOOLBAR}>
-                <option value="recent">Recent first</option>
-                <option value="waiting">Longest waiting</option>
-                <option value="name">Candidate A–Z</option>
-              </select>
-              <label className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden />
-                <input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search candidates and documents"
-                  placeholder="Search candidate or document…" className={cx(TOOLBAR, 'w-56 pl-8')} />
-              </label>
+          ) : rows.length === 0 ? (
+            <div className="px-3 py-6 text-center">
+              <p className="text-xs text-slate-500">Nothing matches.</p>
+              <Button variant="ghost" size="sm" className="mt-3" onClick={() => { setQ(''); setLens('all'); colFilters.clear() }}>Clear</Button>
             </div>
-          </div>
+          ) : groups.map((g) => (
+            <section key={g.p.key} aria-labelledby={`g${g.p.key}`} className="group/blk">
+              <h3
+                id={`g${g.p.key}`}
+                className="sticky top-0 z-[1] box-content flex h-[26px] items-center gap-2.5 bg-slate-50 px-1.5 pb-1.5 pt-4"
+              >
+                <span className="shrink-0 text-[13px] font-semibold leading-[18px] tracking-tight text-slate-800">{g.p.name}</span>
+                <span aria-hidden className="h-px flex-1 bg-slate-200" />
+                {g.p.allSigned && !g.p.anyMoved ? (
+                  <button
+                    type="button"
+                    onClick={() => askOnboard(g.p)}
+                    className={cx('shrink-0 rounded text-[11px] font-medium text-emerald-700 hover:text-emerald-800', focusRing)}
+                  >
+                    Send to onboarding →
+                  </button>
+                ) : (
+                  <span className="shrink-0 text-[11px] tabular-nums text-slate-500">{g.rows.length}</span>
+                )}
+                <RowMenu label={`${g.p.name} — candidate actions`} items={personItems(g.p)} />
+              </h3>
 
-          {rows.length === 0 ? (
-            <EmptyState
-              icon={Search}
-              title="Nothing matches these filters"
-              description="No document matches what you’re narrowing by."
-              action={<Button variant="ghost" onClick={clearAll}>Clear filters</Button>}
-            />
-          ) : (
-            <Card className="overflow-hidden p-0">
-              <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 300px)', minHeight: '20rem' }}>
-                <table className="w-full min-w-[1280px] table-fixed border-separate border-spacing-0 text-sm">
-                  <caption className="sr-only">
-                    One row per document, grouped by candidate. A candidate’s name, personal email and
-                    joining date are printed on the first of their documents and apply to all of them.
-                  </caption>
-                  <colgroup>
-                    <col className="w-[3%]" />
-                    <col className="w-[15.5%]" />
-                    <col className="w-[17%]" />
-                    <col className="w-[15.5%]" />
-                    <col className="w-[17.5%]" />
-                    <col className="w-[12.5%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[7%]" />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th scope="col" className={cx(TH, 'px-0 text-center')}>
-                        <input type="checkbox" ref={allRef} checked={allChecked} onChange={toggleAll}
-                          aria-label={`Select all ${rows.length} documents`} className={CHECKBOX} />
-                      </th>
-                      <th scope="col" className={TH}>Candidate</th>
-                      <th scope="col" className={TH}>
-                        <span className="inline-flex items-center gap-1">
-                          Document
-                          <ColumnFilter label="Document" values={docValues}
-                            excluded={colFilters.filters.document || []}
-                            onChange={(a) => colFilters.setFilter('document', a)} />
-                        </span>
-                      </th>
-                      <th scope="col" className={TH}>Stage</th>
-                      <th scope="col" className={TH}>Personal email</th>
-                      <th scope="col" className={TH}>Joining date</th>
-                      <th scope="col" className={TH}>Next action</th>
-                      <th scope="col" className={cx(TH, 'text-right')}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row, i) => (
-                      <DocRow
-                        key={row.d.id}
-                        row={row}
-                        index={i}
-                        name={nameOf(row.d)}
-                        templateBacked={tplByKey.has(row.d.template_key)}
-                        selected={selected.has(row.d.id)}
-                        onToggleSelect={toggleRow}
-                        onMerge={mergeDoc}
-                        onPreview={openView}
-                        onEditLetter={openEditor}
-                        onEmail={setEmailing}
-                        onDetails={(d) => setForm({ doc: d, mode: 'edit' })}
-                        onApprove={approveDoc}
-                        onEntity={setEntity}
-                        onAskOnboard={askOnboard}
-                        onAddDoc={(p) => setForm({ doc: p.appDoc, mode: 'new' })}
-                        onOpenOnboarding={() => navigate('/onboarding')}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="space-y-px">
+                {g.rows.map((doc) => {
+                  const idx = rows.findIndex((r) => r.d.id === doc.id)
+                  return (
+                    <IndexRow
+                      key={doc.id}
+                      row={{ d: doc, p: g.p }}
+                      index={idx}
+                      name={nameOf(doc)}
+                      isSelected={doc.id === selectedId}
+                      isFocus={idx === focusIdx}
+                      checked={selected.has(doc.id)}
+                      selMode={selMode}
+                      focusRef={focusRef}
+                      onSelect={select}
+                      onFocusRow={setFocusIdx}
+                      onToggle={toggleRow}
+                    />
+                  )
+                })}
+              </ul>
 
-              {/* One confirm surface, in the Card's footer: showing it grows the card downward and
-                  never shoves a single row. */}
-              {(confirm || selCount > 0) && (
-                <div className="flex min-h-12 flex-wrap items-center gap-2 border-t border-slate-200 bg-slate-50 px-3 py-2">
-                  {confirm ? (
-                    <>
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />
-                      <p role="status" className="min-w-0 text-xs text-slate-700">{confirm.body}</p>
-                      <div className="ml-auto flex shrink-0 items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => setConfirm(null)} disabled={barBusy}>Cancel</Button>
-                        <Button size="sm" onClick={runConfirm} disabled={barBusy}>
-                          {barBusy ? <Spinner className="h-3.5 w-3.5" /> : <confirm.Icon className="h-3.5 w-3.5" />} {confirm.cta}
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p role="status" className="text-xs font-medium tabular-nums text-slate-700">{selCount} selected</p>
-                      <div className="ml-auto flex shrink-0 items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
-                        <Button
-                          size="sm"
-                          disabled={!selDrafts.length}
-                          title={selDrafts.length ? undefined : 'Nothing in this selection is a draft'}
-                          onClick={() => setConfirm({
-                            kind: 'bulk', Icon: Check, cta: `Approve ${selDrafts.length}`,
-                            body: `Approve ${selDrafts.length} draft${selDrafts.length === 1 ? '' : 's'} without opening ${selDrafts.length === 1 ? 'it' : 'them'}? An approved document can no longer be regenerated from its template.`,
-                          })}
-                        >
-                          <Check className="h-3.5 w-3.5" /> Approve {selDrafts.length}
-                        </Button>
-                      </div>
-                    </>
-                  )}
+              {g.p.appDoc && (
+                <div className="h-6 pl-[26px]">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ doc: g.p.appDoc, mode: 'new' })}
+                    className={cx('rounded text-[11px] text-slate-500 opacity-0 transition-opacity duration-150 ease-snappy',
+                      'hover:text-slate-900 group-hover/blk:opacity-100 group-focus-within/blk:opacity-100 focus-visible:opacity-100', focusRing)}
+                  >
+                    + Add a document for {g.p.name.split(' ')[0]}
+                  </button>
                 </div>
               )}
-            </Card>
-          )}
-        </>
-      )}
+            </section>
+          ))}
+        </div>
+      </aside>
 
-      <Modal
-        open={!!view}
-        onClose={closeView}
-        size="doc"
-        title={view ? (
-          <span className="inline-flex items-center gap-2">
-            {nameOf(view)} — {view.candidate_name || 'Candidate'}
-            {view.content_html && <Badge tone="violet"><PenLine className="mr-1 h-3 w-3" /> Edited</Badge>}
-          </span>
-        ) : ''}
-        footer={view && (
-          editing ? (
-            <>
-              {view.content_html && (
-                <Button variant="ghost" onClick={revertLetter} disabled={busy} className="mr-auto text-slate-500"><RotateCcw className="h-4 w-4" /> Revert to template</Button>
-              )}
-              <Button variant="ghost" onClick={() => setEditing(false)} disabled={busy}>Cancel</Button>
-              <Button onClick={saveLetter} disabled={busy}>{busy ? <Spinner /> : <><Check className="h-4 w-4" /> Save letter</>}</Button>
-            </>
-          ) : (
-            <>
-              {view.status === 'approved' && view.approved_by && (
-                <p className="mr-auto text-xs text-slate-500">Approved by {view.approved_by}{view.approved_at ? ` · ${fmtLong(view.approved_at)}` : ''}</p>
-              )}
-              <Button variant="ghost" onClick={() => { documentToPdfBlobUrl(view).then((u) => { if (!window.open(u, '_blank')) toast('Allow pop-ups to open the PDF', 'error') }).catch((e) => toast(e.message, 'error')) }}><Printer className="h-4 w-4" /> Print / PDF</Button>
-              <Button variant="ghost" onClick={() => copy(view)}><Copy className="h-4 w-4" /> Copy</Button>
-              {view.status !== 'approved' && !view.move_to_onboarding && (
-                <Button variant="ghost" onClick={() => setEditing(true)} title="Type directly on the letter"><PenLine className="h-4 w-4" /> Edit letter</Button>
-              )}
-              {view.status !== 'approved'
-                ? <Button onClick={() => approveDoc(view)} disabled={busy}>{busy ? <Spinner /> : <><Check className="h-4 w-4" /> Approve</>}</Button>
-                : <Badge tone="green">Approved</Badge>}
-            </>
-          )
-        )}
-      >
-        {view && (
+      {/* ── the letter ────────────────────────────────────────────────────────────────────── */}
+      <section className={cx('flex min-w-0 flex-1 flex-col', wide && mode !== 'edit' && 'hidden', !wide && pane === 'index' && 'max-xl:hidden')}>
+        {!d ? (
+          <Nothing
+            line={docs === null ? 'Loading…' : (docs || []).length === 0 ? 'No documents yet.' : 'Nothing is waiting on you.'}
+            sub={(docs || []).length === 0
+              ? 'A letter appears here the moment a candidate is marked Hired, or when you generate one from their Offer tab.'
+              : undefined}
+            action={lens !== 'all' ? <Button variant="ghost" size="sm" onClick={() => setLens('all')}>Show every letter</Button> : undefined}
+          />
+        ) : (
           <>
-            {editing && (
-              <p className="mb-2 rounded-lg border border-brand-100 bg-brand-50/60 px-3 py-2 text-xs text-brand-800">
-                Editing the letter directly. Click any line to change the wording, use the toolbar to format, then <strong>Save</strong>. This overrides the template until you Revert.
-              </p>
-            )}
-            <DocumentPaper doc={view} editable={editing} editorRef={editorRef} />
+            {/* Band A — the person, and the two facts all their letters share */}
+            <div className="flex min-h-[54px] shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 px-4 py-2 2xl:px-6">
+              <IconButton className="h-7 w-7 shrink-0 p-0 xl:hidden" aria-label="Back to the index" onClick={() => setPane('index')}>
+                <ArrowLeft className="h-4 w-4" />
+              </IconButton>
+              <span aria-hidden className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[11px] font-semibold text-brand-700">{initials}</span>
+              <span className="min-w-0 truncate text-[15px] font-semibold leading-[22px] tracking-tight text-slate-900">{p.name}</span>
+              <span className="min-w-0 truncate text-xs text-slate-500">{p.email}</span>
+              <span className="flex min-w-0 items-baseline gap-1.5 text-[11px] text-slate-500">
+                Joining
+                <PersonField variant="inline" person={p} field="joining_date" label="Joining date"
+                  placeholder="1 July 2026" note={p.drafts.length ? 'Needed before sending' : ''} onSaved={mergeDoc} />
+              </span>
+              <span className="flex min-w-0 items-baseline gap-1.5 text-[11px] text-slate-500">
+                Personal
+                <PersonField variant="inline" person={p} field="personal_email" label="Personal email"
+                  placeholder="name@gmail.com" note={p.anySent ? 'Went out to the work email' : ''} onSaved={mergeDoc} />
+              </span>
+              <span className="ml-auto shrink-0 text-[11px] tabular-nums text-slate-500">
+                Letter {p.all.findIndex((x) => x.id === d.id) + 1} of {p.all.length}
+              </span>
+              <RowMenu label={`${p.name} — candidate actions`} items={personItems(p)} />
+            </div>
+
+            {/* Band B — what this letter is, and its provenance */}
+            <div key={d.id} className="pane-in shrink-0 border-b border-slate-200 px-4 pb-2.5 pt-3 2xl:px-6">
+              <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                <h2 className="min-w-0 truncate text-[17px] font-semibold leading-6 tracking-tight text-slate-900">{name}</h2>
+                <span className="shrink-0 text-[11px] font-medium text-slate-500">{ENTITY_LEGAL[d.entity] || d.entity}</span>
+                {d.content_html && <Badge size="sm" tone="violet"><PenLine className="mr-1 h-3 w-3" aria-hidden />Edited</Badge>}
+                {d.move_to_onboarding && (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-slate-500"><Lock className="h-3 w-3" aria-hidden />Read-only</span>
+                )}
+              </div>
+              <Ledger doc={d} twin={p.twin(d)} />
+            </div>
+
+            {/* The desk */}
+            <div className={cx('min-h-0 flex-1 overflow-auto px-4 py-5 2xl:px-6 2xl:py-6',
+              d.move_to_onboarding ? 'bg-slate-200/60' : 'bg-slate-100')}>
+              {mode === 'edit' ? (
+                <div className="mx-auto w-full max-w-[794px]">
+                  <DocumentPaper doc={d} editable editorRef={editorRef} />
+                </div>
+              ) : (
+                <>
+                  <div className="hidden xl:block"><Desk doc={d} onOpenPdf={() => openPdf(d)} /></div>
+                  <div className="xl:hidden">
+                    <Nothing
+                      line={name}
+                      sub="Open the letter to read it at full size."
+                      action={<Button variant="ghost" size="sm" onClick={() => openPdf(d)}>Open the letter</Button>}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* The action rail — exactly one primary, and it is the only place an action lives */}
+            <div className="flex min-h-[56px] shrink-0 items-center gap-3 border-t border-slate-200 bg-white px-4 py-2.5 2xl:px-6">
+              {confirm ? (
+                <>
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+                  <p role="status" className="min-w-0 flex-1 text-[13px] text-amber-900">{confirm.body}</p>
+                  <Button variant="ghost" size="sm" onClick={() => setConfirm(null)} disabled={busy}>Cancel</Button>
+                  <Button size="sm" onClick={runConfirm} disabled={busy}>
+                    {busy ? <Spinner className="h-3.5 w-3.5" /> : <confirm.Icon className="h-3.5 w-3.5" />} {confirm.cta}
+                  </Button>
+                </>
+              ) : ask && (
+                <>
+                  <div className="min-w-0 flex-1">
+                    <p className={cx('truncate text-sm font-medium', ask.warn ? 'text-amber-800' : 'text-slate-800')}>{ask.line}</p>
+                    {ask.sub}
+                  </div>
+                  {ask.secondary}
+                  <Button
+                    variant={ask.ghost ? 'ghost' : 'primary'}
+                    className="h-9 min-w-[132px] shrink-0 px-4 text-sm"
+                    onClick={ask.upload ? pickFile : ask.run}
+                    disabled={busy || uploading || ask.disabled}
+                  >
+                    {busy || uploading ? <Spinner className="h-3.5 w-3.5" /> : <ask.Icon className="h-4 w-4" />}
+                    {uploading ? 'Uploading…' : ask.cta}
+                    {!ask.ghost && (
+                      <kbd aria-hidden className="ml-1 rounded bg-white/20 px-1 text-[10px] font-semibold leading-4 text-white ring-1 ring-inset ring-white/40">{MOD}⏎</kbd>
+                    )}
+                  </Button>
+                  <RowMenu label={`More actions for the ${name} for ${p.name}`} items={menuItems(d)} />
+                </>
+              )}
+              <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={onUploadFile} />
+            </div>
           </>
         )}
+      </section>
+
+      {/* The paginated PDF, still available on demand — it is the artefact that actually gets sent */}
+      <Modal
+        open={!!viewPdf}
+        onClose={() => setViewPdf(null)}
+        size="doc"
+        title={viewPdf ? `${nameOf(viewPdf)} — ${viewPdf.candidate_name || 'Candidate'}` : ''}
+        footer={viewPdf && (
+          <>
+            <Button variant="ghost" onClick={() => {
+              documentToPdfBlobUrl(viewPdf)
+                .then((u) => { if (!window.open(u, '_blank')) toast('Allow pop-ups to open the PDF', 'error') })
+                .catch((e) => toast(e.message, 'error'))
+            }}><Printer className="h-4 w-4" /> Open in a new tab</Button>
+            <Button variant="ghost" onClick={() => setViewPdf(null)}>Close</Button>
+          </>
+        )}
+      >
+        {viewPdf && <DocumentPaper doc={viewPdf} />}
       </Modal>
 
       {form && (
@@ -1255,7 +1410,13 @@ export default function OfferDocs() {
           key={`email-${emailing.id}`}
           doc={emailing}
           onClose={() => setEmailing(null)}
-          onSent={() => load()}
+          onSent={() => {
+            // The send endpoint yields a send record, not a document, so nudge the row forward
+            // optimistically and let the refetch reconcile.
+            mergeDoc({ ...emailing, email_sent_at: new Date().toISOString() })
+            advance(emailing.id)
+            load()
+          }}
         />
       )}
     </div>
