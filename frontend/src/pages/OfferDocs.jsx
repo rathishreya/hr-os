@@ -30,11 +30,6 @@ const DOC_LABEL = {
   contractor_agreement: 'Contractor agreement',
 }
 
-// ── Where a document sits in the issuance pipeline ──────────────────────────────────────────
-// Four facts read INDEPENDENTLY off the record — progress is not guaranteed to be monotonic,
-// because /send-email is not gated on status, so "emailed but never approved" is a real row.
-const STAGES = ['Drafted', 'Approved', 'Sent', 'Signed']
-const stageFlags = (d) => [true, d.status === 'approved', !!d.email_sent_at, !!d.has_upload]
 
 /** The single next step this document is waiting on. Everything else stays reachable. */
 function nextStep(d) {
@@ -45,14 +40,7 @@ function nextStep(d) {
   return 'approve'
 }
 
-// Whose move it is.
-const TURN = { approve: 'ours', send: 'ours', upload: 'theirs', done: 'done', locked: 'locked' }
 
-// An earlier stage left undone while a later one is done.
-const skippedAt = (d) => {
-  const f = stageFlags(d)
-  return f.map((v, i) => !v && f.slice(i + 1).some(Boolean))
-}
 
 const daysSince = (iso) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 864e5) : null)
 // How long the candidate has been sitting on it. Only meaningful while we're waiting on them.
@@ -243,11 +231,69 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
 const TH = 'sticky top-0 z-10 h-9 border-b border-slate-200 bg-slate-50 px-3 text-left align-middle text-xs font-semibold uppercase tracking-wide text-slate-500'
 const B1 = 'flex h-7 min-w-0 items-center gap-1.5'                // band 1 — 28px, the height of Button size="sm"
 const B2 = 'mt-0.5 flex h-[18px] min-w-0 items-center gap-1.5'    // band 2 — 18px, the height of Badge size="sm"
-// The row's next step, written rather than boxed. A column of identical bordered buttons is the
-// loudest thing a table can contain; the same click as a quiet link costs nothing, and the eye can
-// read the column instead of counting buttons.
-const ACTION =
-  'inline-flex items-center gap-1.5 rounded text-left text-xs font-medium text-brand-700 underline-offset-2 transition-colors duration-150 ease-snappy hover:text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-50'
+// A document's status is not a column anyone can write: each state is the trace of a real event
+// — approving it, emailing it, filing the signed copy back, moving the candidate to onboarding.
+// So the dropdown reads as a status and behaves as the control that performs the next event.
+const STATUS = [
+  { key: 'draft', label: 'Draft', tone: 'text-amber-700' },
+  { key: 'approved', label: 'Approved', tone: 'text-amber-700' },
+  { key: 'sent', label: 'Sent for signature', tone: 'text-sky-700' },
+  { key: 'signed', label: 'Signed', tone: 'text-emerald-700' },
+  { key: 'onboarding', label: 'In onboarding', tone: 'text-slate-500' },
+]
+const DOT = {
+  draft: 'bg-amber-500', approved: 'bg-amber-500', sent: 'bg-sky-500',
+  signed: 'bg-emerald-500', onboarding: 'bg-slate-300',
+}
+const statusOf = (d) => (d.move_to_onboarding ? 'onboarding'
+  : d.has_upload ? 'signed'
+    : d.email_sent_at ? 'sent'
+      : d.status === 'approved' ? 'approved' : 'draft')
+
+function StatusSelect({ doc: d, person: p, busy, onApprove, onEmail, onUpload, onOnboard }) {
+  const now = statusOf(d)
+  const locked = !!d.move_to_onboarding
+  const tone = STATUS.find((x) => x.key === now)?.tone || 'text-slate-700'
+
+  // What each option would actually do. Anything with no honest action behind it is disabled
+  // rather than silently doing nothing.
+  const run = {
+    draft: null,                                   // nothing un-approves a document
+    approved: !locked && d.status !== 'approved' ? () => onApprove(d) : null,
+    sent: !locked ? () => onEmail(d) : null,
+    signed: !locked ? onUpload : null,
+    onboarding: !locked && p.appDoc ? () => onOnboard(p) : null,
+  }
+  const why = {
+    draft: 'A document cannot be moved back to draft',
+    approved: locked ? 'Locked — the candidate is in onboarding' : 'Already approved',
+    sent: 'Locked — the candidate is in onboarding',
+    signed: 'Locked — the candidate is in onboarding',
+    onboarding: locked ? 'Already in onboarding' : 'This candidate has no linked application',
+  }
+
+  return (
+    <span className="flex items-center gap-1.5">
+      <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full', DOT[now])} />
+      <select
+        value={now}
+        disabled={busy || locked}
+        aria-label={`Status of the ${p.name} document`}
+        onChange={(e) => run[e.target.value]?.()}
+        className={cx('h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 text-xs font-medium outline-none',
+          'transition-colors duration-150 ease-snappy hover:border-slate-200 hover:bg-white focus:border-brand-500 focus:bg-white',
+          'disabled:cursor-not-allowed disabled:opacity-70', focusRing, tone)}
+      >
+        {STATUS.map((o) => (
+          <option key={o.key} value={o.key} disabled={o.key !== now && !run[o.key]} title={run[o.key] ? undefined : why[o.key]}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </span>
+  )
+}
+
 
 const cellOf = (row, extra) => cx(
   'align-top border-b px-3',
@@ -510,10 +556,7 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
   const locked = !!d.move_to_onboarding
   const step = nextStep(d)
   const isDraft = d.status !== 'approved'
-  const flags = stageFlags(d)
-  const skipped = skippedAt(d)
   const age = ageOf(d)
-  const unapproved = !locked && isDraft && (!!d.email_sent_at || !!d.has_upload)
   const [approving, setApproving] = useState(false)
   const { inputRef, busy: uploading, onFile: onUploadFile, pick: pickFile } = useUpload(d, onMerge)
 
@@ -522,38 +565,9 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
     try { await onApprove(d) } finally { setApproving(false) }
   }
 
-  // The word is the stage; the dots decorate it, and are never the only carrier.
-  const word = locked ? 'In onboarding'
-    : unapproved ? 'Unapproved'
-      : d.has_upload ? 'Signed'
-        : d.email_sent_at ? 'Sent'
-          : d.status === 'approved' ? 'Approved'
-            : 'Drafted'
-  const [verb, when] = d.email_sent_at ? ['Sent', d.email_sent_at]
-    : (d.status === 'approved' && d.approved_at) ? ['Approved', d.approved_at]
-      : ['Drafted', d.created_at]
-  const caption = (verb === word ? '' : `${verb} `) + fmtShort(when)
-
-  const current = flags.lastIndexOf(true) + 1
-  const turn = TURN[step]
-  const dotClass = (i) => {
-    if (flags[i]) return 'bg-emerald-600'
-    if (skipped[i]) return 'bg-white ring-2 ring-inset ring-amber-600'
-    if (i === current && turn === 'ours') return 'bg-amber-600'
-    if (i === current && turn === 'theirs') return 'bg-sky-600'
-    return 'bg-slate-300'
-  }
-  const spoken = [
-    STAGES.map((s, i) => `${s}: ${flags[i] ? 'done' : skipped[i] ? 'skipped' : 'not yet'}.`).join(' '),
-    `${word}. ${caption}.`,
-    age != null && age >= 1 ? `Waiting on the candidate for ${age} day${age === 1 ? '' : 's'}.` : '',
-    unapproved ? 'This document went out without being approved.' : '',
-    d.status === 'approved' && d.approved_by ? `Approved by ${d.approved_by}.` : '',
-  ].filter(Boolean).join(' ')
-
-  // What the Next-action column offers. A locked-and-signed row keeps its file link: the executed
-  // PDF is the only thing an archived row is good for, and the Stage word already says "locked".
-  const ctl = step === 'locked' ? (d.has_upload ? 'file' : 'none') : step === 'done' ? 'file' : step
+  const caption = d.email_sent_at ? `Sent ${fmtShort(d.email_sent_at)}`
+    : d.status === 'approved' && d.approved_at ? `Approved ${fmtShort(d.approved_at)}`
+      : `Drafted ${fmtShort(d.created_at)}`
 
   const entityTitle = templateBacked
     ? `${ENTITY_LEGAL[d.entity] || d.entity} — set by the ${name} template`
@@ -642,7 +656,7 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
         )}
       </td>
 
-      {/* 2 — what this document is: one left edge on every row */}
+      {/* 2 — which letter */}
       <td className={cellOf(row)}>
         <div className={B1}>
           <button
@@ -659,7 +673,6 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
         </div>
         <div className={cx(B2, 'text-xs text-slate-500')}>
           <Badge size="sm" tone="gray" className="shrink-0" title={entityTitle}>{d.entity}</Badge>
-          <span className="sr-only">{entityTitle}</span>
           {d.created_at && (
             <>
               <span aria-hidden>·</span>
@@ -671,42 +684,28 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
         </div>
       </td>
 
-      {/* 3 — the stage, in a word, with the pipeline beneath it */}
+      {/* 3 — where it has got to, and the control that moves it on */}
       <td className={cellOf(row)}>
         <div className={B1}>
-          {unapproved && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden />}
-          <span className={cx('min-w-0 truncate text-sm', unapproved ? 'font-medium text-amber-700' : locked ? 'text-slate-600' : 'text-slate-800')}>
-            {word}
-          </span>
+          <StatusSelect
+            doc={d}
+            person={p}
+            busy={approving || uploading}
+            onApprove={onApprove}
+            onEmail={onEmail}
+            onUpload={pickFile}
+            onOnboard={onAskOnboard}
+          />
         </div>
         <div className={cx(B2, 'text-xs')}>
-          <span className="flex shrink-0 items-center" aria-hidden="true">
-            {STAGES.map((s, i) => (
-              <span key={s} className="flex items-center">
-                {i > 0 && <span className={cx('h-px w-2.5', flags[i - 1] && flags[i] ? 'bg-emerald-400' : 'bg-slate-200')} />}
-                <span className={cx('h-2 w-2 rounded-full', dotClass(i))} />
-              </span>
-            ))}
-          </span>
           <span className="min-w-0 truncate text-slate-500">{caption}</span>
           {age != null && age >= 1 && (
             <span className={cx('shrink-0 tabular-nums', ageClass(age))} title={`${age} days since the covering email was sent`}>· {age}d</span>
           )}
-          <span className="sr-only">{spoken}</span>
         </div>
       </td>
 
-      {/* 4 & 5 — the candidate's shared facts, printed on their first row */}
-      <td className={cellOf(row)}>
-        {first
-          ? <PersonField person={p} field="personal_email" label="Personal email" placeholder="name@gmail.com"
-              note={p.anySent ? 'Went out to the work email' : ''} onSaved={onMerge} />
-          : p.differs('personal_email') && (
-            <div className={cx(B1, 'px-2')}>
-              <span className="min-w-0 truncate text-sm text-slate-500" title={d.personal_email}>{d.personal_email || '—'}</span>
-            </div>
-          )}
-      </td>
+      {/* 4 — joining date, the candidate's, edited once */}
       <td className={cellOf(row)}>
         {first
           ? <PersonField person={p} field="joining_date" label="Joining date" placeholder="1 July 2026"
@@ -718,44 +717,22 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
           )}
       </td>
 
-      {/* 6 — the one thing this document is waiting on */}
+      {/* 5 — the address the letter goes to */}
       <td className={cellOf(row)}>
-        <div className={B1}>
-          {ctl === 'approve' && (
-            <button type="button" onClick={runApprove} disabled={approving} className={ACTION}
-              aria-label={`Approve the ${name} for ${p.name}`}>
-              {approving ? <Spinner className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-              {approving ? 'Approving…' : 'Approve'}
-            </button>
+        {first
+          ? <PersonField person={p} field="personal_email" label="Email" placeholder="name@gmail.com"
+              note={p.anySent ? 'Went out to the work email' : ''} onSaved={onMerge} />
+          : p.differs('personal_email') && (
+            <div className={cx(B1, 'px-2')}>
+              <span className="min-w-0 truncate text-sm text-slate-500" title={d.personal_email}>{d.personal_email || '—'}</span>
+            </div>
           )}
-          {ctl === 'send' && (
-            <button type="button" onClick={() => onEmail(d)} className={ACTION}
-              aria-label={`Review and send the covering email for the ${name}`}>
-              <Mail className="h-3.5 w-3.5" /> Send email
-            </button>
-          )}
-          {ctl === 'upload' && (
-            <button type="button" onClick={pickFile} disabled={uploading} className={ACTION}
-              aria-label={`Upload the signed copy of the ${name}`}>
-              {uploading ? <Spinner className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}
-              {uploading ? 'Uploading…' : 'Upload signed'}
-            </button>
-          )}
-          {ctl === 'file' && (
-            <a href={api.documentUploadUrl(d.id)} target="_blank" rel="noreferrer" title={d.upload_filename || 'Signed copy'}
-              className={cx('flex min-w-0 items-center gap-1.5 rounded text-xs font-medium text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:decoration-emerald-700', focusRing)}>
-              <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              <span className="min-w-0 truncate">{d.upload_filename || 'Signed copy'}</span>
-            </a>
-          )}
-          {ctl === 'none' && <span className="text-xs text-slate-500">No signed copy</span>}
-        </div>
-        <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only"
-          tabIndex={-1} aria-hidden="true" onChange={onUploadFile} />
       </td>
 
-      {/* 7 — preview stays out; everything else is one click deeper */}
+      {/* 6 — preview stays out; everything else is one click deeper */}
       <td className={cellOf(row)}>
+        <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only"
+          tabIndex={-1} aria-hidden="true" onChange={onUploadFile} />
         <div className={cx(B1, 'justify-end gap-1')}>
           <IconButton onClick={() => onPreview(d)} className="h-7 w-7 shrink-0 p-0"
             aria-label={`Preview the ${name} for ${p.name}`} title={`Preview the ${name}`}>
@@ -765,44 +742,6 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
         </div>
       </td>
     </tr>
-  )
-}
-
-// ── The triage chips: what is waiting on you, and the way to see only that ───────────────────
-const STEP_PRED = {
-  approve: (d) => nextStep(d) === 'approve',
-  send: (d) => nextStep(d) === 'send',
-  upload: (d) => nextStep(d) === 'upload',
-  done: (d) => nextStep(d) === 'done',
-  locked: (d) => nextStep(d) === 'locked',
-  unapproved: (d) => !d.move_to_onboarding && d.status !== 'approved' && (!!d.email_sent_at || !!d.has_upload),
-}
-const STEP_CHIPS = [
-  { key: 'approve', label: 'To approve', dot: 'bg-amber-600' },
-  { key: 'send', label: 'Ready to send', dot: 'bg-amber-600' },
-  { key: 'upload', label: 'Awaiting signature', dot: 'bg-sky-600' },
-  { key: 'unapproved', label: 'Unapproved', dot: 'bg-white ring-2 ring-inset ring-amber-600' },
-  { key: 'done', label: 'Signed', dot: 'bg-emerald-600' },
-  { key: 'locked', label: 'In onboarding', dot: 'bg-slate-400' },
-]
-
-function Chip({ chipKey, label, dot, n, active, onPick }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      disabled={chipKey !== null && !n}
-      onClick={() => onPick(chipKey === null ? null : active ? null : chipKey)}
-      className={cx(
-        'inline-flex h-8 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition duration-150 ease-snappy', focusRing,
-        active ? 'border-brand-300 bg-brand-50 text-brand-700'
-          : n ? 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-            : 'cursor-default border-slate-200/70 bg-white text-slate-500',
-      )}
-    >
-      {dot && <span aria-hidden className={cx('h-2 w-2 rounded-full', n ? dot : 'bg-slate-300')} />}
-      {label}<span className="tabular-nums">{n}</span>
-    </button>
   )
 }
 
@@ -819,7 +758,6 @@ export default function OfferDocs() {
   const [emailing, setEmailing] = useState(null)    // the document whose covering mail is being reviewed
   const [busy, setBusy] = useState(false)
   const [q, setQ] = useState('')
-  const [stage, setStage] = useState(null)          // a STEP_PRED key, or null for everything
   const [sortKey, setSortKey] = useState('recent')
   const [confirm, setConfirm] = useState(null)      // { p, body } — sending someone to onboarding
   const [barBusy, setBarBusy] = useState(false)
@@ -881,15 +819,7 @@ export default function OfferDocs() {
   const docValues = useMemo(() => distinctValues(docs || [], nameOf), [docs, nameOf])
   const faceted = useMemo(() => colFilters.apply(searched, { document: nameOf }), [searched, colFilters, nameOf])
 
-  // Counts answer "what would this chip give me", so they honour search and the column filter but
-  // not the stage itself.
-  const counts = useMemo(() => {
-    const m = { approve: 0, send: 0, upload: 0, done: 0, locked: 0, unapproved: 0 }
-    for (const d of faceted) { m[nextStep(d)] += 1; if (STEP_PRED.unapproved(d)) m.unapproved += 1 }
-    return m
-  }, [faceted])
-
-  const filteredDocs = useMemo(() => (stage ? faceted.filter(STEP_PRED[stage]) : faceted), [faceted, stage])
+  const filteredDocs = faceted
 
   // Which documents to draw and in what order. The API returns newest-first GLOBALLY, so without
   // regrouping a candidate's letters are scattered and their name prints over and over.
@@ -974,7 +904,7 @@ export default function OfferDocs() {
     load()
   }
 
-  const clearAll = () => { setQ(''); setStage(null); colFilters.clear() }
+  const clearAll = () => { setQ(''); colFilters.clear() }
   const TOOLBAR = cx('h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none',
     'transition-colors duration-150 ease-snappy hover:border-slate-300 focus:border-brand-500', focusRing)
 
@@ -1012,10 +942,10 @@ export default function OfferDocs() {
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            <Chip chipKey={null} label="All" dot={null} n={faceted.length} active={stage === null} onPick={setStage} />
-            {STEP_CHIPS.map((c) => (
-              <Chip key={c.key} chipKey={c.key} label={c.label} dot={c.dot} n={counts[c.key] || 0} active={stage === c.key} onPick={setStage} />
-            ))}
+            <p className="text-sm text-slate-500">
+              <span className="font-medium tabular-nums text-slate-700">{rows.length}</span>
+              {rows.length === 1 ? ' document' : ' documents'}
+            </p>
             <div className="ml-auto flex items-center gap-2">
               <label className="sr-only" htmlFor="od-sort">Sort candidates</label>
               <select id="od-sort" value={sortKey} onChange={(e) => setSortKey(e.target.value)} className={TOOLBAR}>
@@ -1041,18 +971,17 @@ export default function OfferDocs() {
           ) : (
             <Card className="overflow-hidden p-0">
               <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 300px)', minHeight: '20rem' }}>
-                <table className="w-full min-w-[1180px] table-fixed border-separate border-spacing-0 text-sm">
+                <table className="w-full min-w-[1020px] table-fixed border-separate border-spacing-0 text-sm">
                   <caption className="sr-only">
                     One row per document, grouped by candidate. A candidate’s name, personal email and
                     joining date are printed on the first of their documents and apply to all of them.
                   </caption>
                   <colgroup>
-                    <col className="w-[17%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[24%]" />
                     <col className="w-[18%]" />
                     <col className="w-[15%]" />
-                    <col className="w-[18%]" />
-                    <col className="w-[13%]" />
-                    <col className="w-[12%]" />
+                    <col className="w-[16%]" />
                     <col className="w-[7%]" />
                   </colgroup>
                   <thead>
@@ -1066,10 +995,9 @@ export default function OfferDocs() {
                             onChange={(a) => colFilters.setFilter('document', a)} />
                         </span>
                       </th>
-                      <th scope="col" className={TH}>Stage</th>
-                      <th scope="col" className={TH}>Personal email</th>
+                      <th scope="col" className={TH}>Status</th>
                       <th scope="col" className={TH}>Joining date</th>
-                      <th scope="col" className={TH}>Next action</th>
+                      <th scope="col" className={TH}>Email</th>
                       <th scope="col" className={cx(TH, 'text-right')}>Actions</th>
                     </tr>
                   </thead>
