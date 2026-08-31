@@ -71,11 +71,32 @@ function PdfPreview({ doc }) {
         if (alive) setUrl(u)
         else URL.revokeObjectURL(u)
       })
-      .catch((e) => { if (alive) setErr(e.message || 'Could not render the PDF') })
+      .catch((e) => {
+        if (!alive) return
+        // The PDF builder is a lazy chunk, so this is what a tab left open across a deploy hits:
+        // it asks for last release's filename, which no longer exists. Nothing is wrong with the
+        // document — the page is just running old code.
+        const stale = /dynamically imported module|Importing a module script failed/i.test(String(e.message || ''))
+        setErr(stale ? 'STALE' : (e.message || 'Could not render the PDF'))
+      })
     return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id, doc.content_html, doc.status])
 
+  if (err === 'STALE') {
+    return (
+      <div className="flex flex-col items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        <p>This page is running an older version of the app. Reload to pick up the current one — nothing is wrong with the document.</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition duration-150 ease-snappy hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50"
+        >
+          Reload the page
+        </button>
+      </div>
+    )
+  }
   if (err) {
     return <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{err}</div>
   }
