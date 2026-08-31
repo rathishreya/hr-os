@@ -21,6 +21,10 @@ import EmailDocumentModal from '../components/docs/EmailDocumentModal'
 // doc_type -> label, the FALLBACK only. A document drafted from a template shows the template's
 // own name, because doc_type cannot tell an Offer Letter from a Traineeship Offer Letter — three
 // such rows read as duplicates of each other.
+// Legacy documents carry no template, so the last resort is their raw type ('offer_letter').
+// Print that as a name.
+const prettify = (k) => String(k || '').replace(/[_-]+/g, ' ').replace(/^\w/, (c) => c.toUpperCase()).trim()
+
 const DOC_LABEL = {
   offer: 'Offer letter',
   contract: 'Contract',
@@ -241,9 +245,14 @@ const STATUS = [
   { key: 'signed', label: 'Signed', tone: 'text-emerald-700' },
   { key: 'onboarding', label: 'In onboarding', tone: 'text-slate-500' },
 ]
-const DOT = {
-  draft: 'bg-amber-500', approved: 'bg-amber-500', sent: 'bg-sky-500',
-  signed: 'bg-emerald-500', onboarding: 'bg-slate-300',
+// One tone per state, carried by the chip, its dot and its caret together — so status is legible
+// as a colour at a glance and still reads as a control you can open.
+const TONE = {
+  draft: { dot: 'bg-amber-500', chip: 'border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-300 hover:bg-amber-100' },
+  approved: { dot: 'bg-amber-500', chip: 'border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-300 hover:bg-amber-100' },
+  sent: { dot: 'bg-sky-500', chip: 'border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-300 hover:bg-sky-100' },
+  signed: { dot: 'bg-emerald-500', chip: 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300 hover:bg-emerald-100' },
+  onboarding: { dot: 'bg-slate-400', chip: 'border-slate-200 bg-slate-100 text-slate-600' },
 }
 const statusOf = (d) => (d.move_to_onboarding ? 'onboarding'
   : d.has_upload ? 'signed'
@@ -253,7 +262,7 @@ const statusOf = (d) => (d.move_to_onboarding ? 'onboarding'
 function StatusSelect({ doc: d, person: p, busy, onApprove, onEmail, onUpload, onOnboard }) {
   const now = statusOf(d)
   const locked = !!d.move_to_onboarding
-  const tone = STATUS.find((x) => x.key === now)?.tone || 'text-slate-700'
+  const tone = TONE[now] || TONE.draft
 
   // What each option would actually do. Anything with no honest action behind it is disabled
   // rather than silently doing nothing.
@@ -273,16 +282,18 @@ function StatusSelect({ doc: d, person: p, busy, onApprove, onEmail, onUpload, o
   }
 
   return (
-    <span className="flex items-center gap-1.5">
-      <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full', DOT[now])} />
+    <span className="relative inline-flex max-w-full items-center">
+      <span aria-hidden className={cx('pointer-events-none absolute left-2.5 h-1.5 w-1.5 rounded-full', tone.dot)} />
       <select
         value={now}
         disabled={busy || locked}
-        aria-label={`Status of the ${p.name} document`}
+        aria-label={`Status of this document for ${p.name}`}
         onChange={(e) => run[e.target.value]?.()}
-        className={cx('h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 text-xs font-medium outline-none',
-          'transition-colors duration-150 ease-snappy hover:border-slate-200 hover:bg-white focus:border-brand-500 focus:bg-white',
-          'disabled:cursor-not-allowed disabled:opacity-70', focusRing, tone)}
+        className={cx(
+          'h-7 max-w-full appearance-none truncate rounded-full border py-0 pl-6 pr-7 text-xs font-medium outline-none',
+          'transition-colors duration-150 ease-snappy disabled:cursor-not-allowed disabled:opacity-80',
+          focusRing, tone.chip,
+        )}
       >
         {STATUS.map((o) => (
           <option key={o.key} value={o.key} disabled={o.key !== now && !run[o.key]} title={run[o.key] ? undefined : why[o.key]}>
@@ -290,15 +301,19 @@ function StatusSelect({ doc: d, person: p, busy, onApprove, onEmail, onUpload, o
           </option>
         ))}
       </select>
+      {!locked && <ChevronDown aria-hidden className="pointer-events-none absolute right-2 h-3 w-3 opacity-60" />}
     </span>
   )
 }
 
 
+// One vertical rhythm for every cell: a 28px band for the control, an 18px band for its note.
+// A candidate's first row opens with a little more air and their last closes with a firmer rule,
+// so a person's letters read as one block without a tinted band drawing a box round them.
 const cellOf = (row, extra) => cx(
-  'align-top border-b px-3',
-  row.first ? 'pt-2.5 pb-1.5' : 'py-1.5',
-  row.last ? 'border-slate-200' : 'border-slate-100',
+  'align-top px-3',
+  row.first ? 'pt-3 pb-2' : 'pt-1.5 pb-2',
+  row.last ? 'border-b border-slate-200' : 'border-b border-slate-100',
   extra,
 )
 
@@ -626,16 +641,19 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
   ].filter(Boolean)
 
   return (
-    <tr className="transition-colors duration-150 ease-snappy hover:bg-slate-50">
+    <tr className="group/row transition-colors duration-150 ease-snappy hover:bg-slate-50">
       {/* 1 — the candidate, printed once per block; their name is their menu */}
       <td className={cellOf(row)}>
         {first ? (
           <>
-            <div className={B1}>
+            <div className={cx(B1, 'gap-2')}>
+              <span aria-hidden className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[11px] font-semibold text-brand-700">
+                {(p.name || '?').split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
+              </span>
               <RowMenu label={`${p.name} — candidate actions`} items={personItems} text={p.name} />
             </div>
-            <div className={B2}>
-              <span className="min-w-0 flex-1 truncate text-xs text-slate-600" title={p.email}>{p.email || '—'}</span>
+            <div className={cx(B2, 'pl-9')}>
+              <span className="min-w-0 flex-1 truncate text-xs text-slate-500" title={p.email}>{p.email || '—'}</span>
               {p.anyMoved ? (
                 <Badge size="sm" tone="gray" className="shrink-0"><Rocket className="mr-1 h-3 w-3" aria-hidden />In onboarding</Badge>
               ) : p.allSigned ? (
@@ -710,9 +728,11 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
         {first
           ? <PersonField person={p} field="joining_date" label="Joining date" placeholder="1 July 2026"
               note={p.drafts.length ? 'Needed before sending' : ''} onSaved={onMerge} />
-          : p.differs('joining_date') && (
+          : (
             <div className={cx(B1, 'px-2')}>
-              <span className="min-w-0 truncate text-sm text-slate-500" title={d.joining_date}>{d.joining_date || '—'}</span>
+              <span className="min-w-0 truncate text-sm text-slate-400" title={p.differs('joining_date') ? d.joining_date : undefined}>
+                {p.differs('joining_date') ? (d.joining_date || '—') : ''}
+              </span>
             </div>
           )}
       </td>
@@ -722,9 +742,11 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
         {first
           ? <PersonField person={p} field="personal_email" label="Email" placeholder="name@gmail.com"
               note={p.anySent ? 'Went out to the work email' : ''} onSaved={onMerge} />
-          : p.differs('personal_email') && (
+          : (
             <div className={cx(B1, 'px-2')}>
-              <span className="min-w-0 truncate text-sm text-slate-500" title={d.personal_email}>{d.personal_email || '—'}</span>
+              <span className="min-w-0 truncate text-sm text-slate-400" title={p.differs('personal_email') ? d.personal_email : undefined}>
+                {p.differs('personal_email') ? (d.personal_email || '—') : ''}
+              </span>
             </div>
           )}
       </td>
@@ -733,7 +755,8 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
       <td className={cellOf(row)}>
         <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only"
           tabIndex={-1} aria-hidden="true" onChange={onUploadFile} />
-        <div className={cx(B1, 'justify-end gap-1')}>
+        <div className={cx(B1, 'justify-end gap-1 text-slate-400 opacity-70 transition-opacity duration-150 ease-snappy',
+          'group-hover/row:opacity-100 group-focus-within/row:opacity-100')}>
           <IconButton onClick={() => onPreview(d)} className="h-7 w-7 shrink-0 p-0"
             aria-label={`Preview the ${name} for ${p.name}`} title={`Preview the ${name}`}>
             <Eye className="h-4 w-4" />
@@ -779,7 +802,7 @@ export default function OfferDocs() {
   }
 
   const tplByKey = useMemo(() => new Map(templates.map((t) => [t.key, t])), [templates])
-  const nameOf = useMemo(() => (d) => tplByKey.get(d.template_key)?.label || DOC_LABEL[d.doc_type] || d.doc_type, [tplByKey])
+  const nameOf = useMemo(() => (d) => tplByKey.get(d.template_key)?.label || DOC_LABEL[d.doc_type] || prettify(d.doc_type), [tplByKey])
   const identOf = useMemo(() => (d) => `${nameOf(d)}|${d.entity}|${fmtShort(d.created_at)}`, [nameOf])
 
   // Every candidate-scoped fact comes from the UNFILTERED set, so narrowing the table stays purely
@@ -1020,7 +1043,7 @@ export default function OfferDocs() {
                     <tr>
                       <th scope="col" className={TH}>Candidate</th>
                       <th scope="col" className={TH}>
-                        <span className="inline-flex items-center gap-1">
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
                           Document
                           <ColumnFilter label="Document" values={docValues}
                             excluded={colFilters.filters.document || []}
