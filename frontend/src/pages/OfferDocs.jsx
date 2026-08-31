@@ -248,7 +248,7 @@ const STATUS = [
 // One tone per state, carried by the chip, its dot and its caret together — so status is legible
 // as a colour at a glance and still reads as a control you can open.
 const TONE = {
-  draft: { dot: 'bg-amber-500', chip: 'border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-300 hover:bg-amber-100' },
+  draft: { dot: 'bg-slate-400', chip: 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50' },
   approved: { dot: 'bg-amber-500', chip: 'border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-300 hover:bg-amber-100' },
   sent: { dot: 'bg-sky-500', chip: 'border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-300 hover:bg-sky-100' },
   signed: { dot: 'bg-emerald-500', chip: 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300 hover:bg-emerald-100' },
@@ -582,7 +582,7 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
 
   const caption = d.email_sent_at ? `Sent ${fmtShort(d.email_sent_at)}`
     : d.status === 'approved' && d.approved_at ? `Approved ${fmtShort(d.approved_at)}`
-      : `Drafted ${fmtShort(d.created_at)}`
+      : ''   // a draft's only date is its creation date, which the Document cell already carries
 
   const entityTitle = templateBacked
     ? `${ENTITY_LEGAL[d.entity] || d.entity} — set by the ${name} template`
@@ -641,7 +641,10 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
   ].filter(Boolean)
 
   return (
-    <tr className="group/row transition-colors duration-150 ease-snappy hover:bg-slate-50">
+    <tr
+      onClick={(e) => { if (!e.target.closest('button,a,input,select,label,[role="menu"]')) onPreview(d) }}
+      className="group/row cursor-pointer transition-colors duration-150 ease-snappy hover:bg-slate-50"
+    >
       {/* 1 — the candidate, printed once per block; their name is their menu */}
       <td className={cellOf(row)}>
         {first ? (

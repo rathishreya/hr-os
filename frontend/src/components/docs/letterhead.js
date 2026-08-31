@@ -85,7 +85,7 @@ export function letterheadHtml(entityKey, brandName) {
 }
 
 /** The colored edge accents. Measured off the source pages at 300 DPI: 6.35mm bars in three
- *  37.15mm bands, and a 0.25mm navy hairline that runs the artwork's full 218mm alongside them
+ *  37.15mm bands, and a 0.15mm navy hairline that runs the artwork's full 218mm alongside them
  *  to a 2.6mm square at the far end. The left side is the exact 180-degree mirror of the right. */
 export function accentsHtml() {
   const bar = 6.35, band = 37.15, ruleX = 6.58, sqX = 5.35
@@ -117,5 +117,5 @@ export function chromeCss(mode) {
   .lh-chip1{ top:6.60mm; height:7.20mm; }  .lh-chip2{ top:16.26mm; height:6.95mm; }
   .acc-bar{ position:${pos}; display:block; }
   .acc-sq{ position:${pos}; width:2.6mm; height:2.5mm; background:${C.navy}; display:block; }
-  .acc-rule{ position:${pos}; width:0.25mm; background:${C.navy}; display:block; }`
+  .acc-rule{ position:${pos}; width:0.15mm; background:${C.navy}; display:block; }`
 }

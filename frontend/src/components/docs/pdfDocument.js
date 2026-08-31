@@ -267,7 +267,7 @@ function letterhead(entityKey, brandName) {
  *  bars' inner edge to a 2.6mm square. The left side is the exact 180-degree mirror of the right.
  *  letterhead.accentsHtml carries the same figures for the preview and print paths. */
 export const ACC = {
-  barW: 6.35, band: 37.15, ruleW: 0.25, sqW: 2.6, sqH: 2.5,
+  barW: 6.35, band: 37.15, ruleW: 0.15, sqW: 2.6, sqH: 2.5,
   ruleR: [0.4, 216.1], sqRy: 216.1,                   // right: bars from the top, square at the foot
   leftBars: 181.8, ruleL: [77.0, 292.8], sqLy: 74.5,  // left: square at the head, bars at the bottom
   ruleOff: 0.23,  // the hairline sits this far inside the bars' inner edge, running their full length
