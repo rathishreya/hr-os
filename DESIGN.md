@@ -49,7 +49,9 @@ Fixed rem scale (not fluid) — correct for product UI.
 - Page title (`PageHeader` h1): `text-2xl font-bold tracking-tight text-slate-900`
 - Modal title: `text-lg font-semibold`
 - Body: `text-sm` ink; muted meta in `text-slate-500`
-- Labels / table headers: `text-xs font-medium uppercase tracking-wide text-slate-500`
+- Labels: `text-xs font-medium uppercase tracking-wide text-slate-500`
+- Table headers: `text-[11px] font-semibold uppercase tracking-wide text-brand-800` on a
+  `bg-brand-100` band — exported as `TH_TYPE` / `THEAD`, never retyped (see Tables)
 - Numeric data: `tabular-nums`
 
 ## Motion
@@ -82,6 +84,22 @@ Shared primitives in `frontend/src/ui.jsx`:
   **PageHeader**, **EmptyState** (teaches the interface), **Tabs**, **Modal**.
 - **DataTable** (`components/DataTable.jsx`) — sortable, paginated, sticky header, compact mode,
   empty state, keyboard-operable headers with `aria-sort`.
+
+### Tables
+
+Every table imports its classes from `components/tableStyles.js`. There is no second opinion:
+`TABLE_WRAP`, `TABLE_SCROLL`, `THEAD`, `THEAD_ROW`, `TH` / `TH_TYPE`, `TD`, `ROW`, `ROW_GROUP`,
+`ROW_HOVER`, `EMPTY`. The header band is `bg-brand-100` with `text-brand-800` lettering (7.7:1)
+and it is **opaque** — a translucent sticky header lets rows bleed through as they scroll under
+it. Stickiness and z-index stay at the call site, because stacking order belongs to the page.
+
+This exists because the tables had drifted into five different headers (plain slate, translucent
+slate, a slate gradient, a hardcoded `#e8e4f5`, and one with no band at all) across three type
+sizes. If you find yourself writing a header colour by hand, you are re-opening that drift.
+
+An editable value inside a cell rests as **plain text with no border**, reveals a border on hover,
+and shows the focus ring on focus. It never sits in a permanent box, and its placeholder is a
+prompt ("Add date") rather than a sample value ("1 July 2026") — a sample reads as real data.
 
 ### Interaction states
 

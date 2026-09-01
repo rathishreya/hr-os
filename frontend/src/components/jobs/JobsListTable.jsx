@@ -4,6 +4,7 @@ import {
   FileText, Users, CheckCircle2, Circle, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { Badge, cx } from '../../ui'
+import { THEAD, THEAD_ROW, TH_TYPE } from '../tableStyles'
 import { api } from '../../api'
 import { useToast } from '../Toast'
 import { useColumnFilters, ColumnFilter, distinctValues } from '../tableFilters'
@@ -192,8 +193,8 @@ export default function JobsListTable({ rows, onStatusChange }) {
     const active = sort.key === col
     return (
       <th className={cx(
-        'whitespace-nowrap px-3 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-500',
-        align === 'center' ? 'text-center' : 'text-left',
+        'whitespace-nowrap px-3 py-3', TH_TYPE,
+        align === 'center' && 'text-center',
       )}>
         <span className="inline-flex items-center gap-1">
           <span className="inline-flex cursor-pointer items-center gap-1 hover:text-brand-700" onClick={() => toggleSort(col)}>
@@ -212,30 +213,30 @@ export default function JobsListTable({ rows, onStatusChange }) {
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
         <table className="w-full min-w-[1400px] border-collapse text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-sm">
-            <tr className="border-b border-slate-200">
+          <thead className={cx(THEAD, 'sticky top-0 z-10')}>
+            <tr className={THEAD_ROW}>
               <SortHead label="Job ID" col="id" filterKey="id" />
               <SortHead label="Charge code" col="charge_code" filterKey="charge_code" />
-              <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">JD</th>
-              <th className="px-2 py-3 text-left text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Status {colFilter('status')}</span></th>
-              <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500" title="AI-validation OK — a green check means the JD is generated and the AI raised no flags; an empty circle means no JD yet or open AI flags to review.">
+              <th className={cx("px-2 py-3 text-center", TH_TYPE)}>JD</th>
+              <th className={cx("px-2 py-3", TH_TYPE)}><span className="inline-flex items-center gap-1">Status {colFilter('status')}</span></th>
+              <th className={cx("px-2 py-3 text-center", TH_TYPE)} title="AI-validation OK — a green check means the JD is generated and the AI raised no flags; an empty circle means no JD yet or open AI flags to review.">
                 <span className="inline-flex cursor-help items-center gap-1">OK</span>
               </th>
               <SortHead label="Job Title" col="position" filterKey="position" />
               <SortHead label="Department" col="department" filterKey="department" />
               <SortHead label="Location" col="location" filterKey="location" />
-              <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Application</th>
-              <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Shortlisted</th>
-              <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Interview</th>
-              <th className="px-2 py-3 text-center text-[11px] font-bold uppercase text-slate-500">Offer</th>
+              <th className={cx("px-2 py-3 text-center", TH_TYPE)}>Application</th>
+              <th className={cx("px-2 py-3 text-center", TH_TYPE)}>Shortlisted</th>
+              <th className={cx("px-2 py-3 text-center", TH_TYPE)}>Interview</th>
+              <th className={cx("px-2 py-3 text-center", TH_TYPE)}>Offer</th>
               <SortHead label="Exp (yrs)" col="yoe_max" filterKey="yoe" align="center" />
               <SortHead label="Min Salary" col="salary_min" filterKey="salary_min" />
               <SortHead label="Max Salary" col="salary_max" filterKey="salary_max" />
               <SortHead label="Ageing" col="ageing_days" filterKey="ageing" align="center" />
-              <th className="px-3 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Hiring Mgr {colFilter('hiring_manager')}</span></th>
-              <th className="px-3 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Recruiter {colFilter('recruiter')}</span></th>
-              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">Type {colFilter('employment_type')}</span></th>
-              <th className="px-2 py-3 text-[11px] font-bold uppercase text-slate-500"><span className="inline-flex items-center gap-1">New/Repl {colFilter('hire_type')}</span></th>
+              <th className={cx("px-3 py-3", TH_TYPE)}><span className="inline-flex items-center gap-1">Hiring Mgr {colFilter('hiring_manager')}</span></th>
+              <th className={cx("px-3 py-3", TH_TYPE)}><span className="inline-flex items-center gap-1">Recruiter {colFilter('recruiter')}</span></th>
+              <th className={cx("px-2 py-3", TH_TYPE)}><span className="inline-flex items-center gap-1">Type {colFilter('employment_type')}</span></th>
+              <th className={cx("px-2 py-3", TH_TYPE)}><span className="inline-flex items-center gap-1">New/Repl {colFilter('hire_type')}</span></th>
               <SortHead label="Created" col="created_at" filterKey="created" />
               <SortHead label="Start date" col="start_hiring_date" filterKey="start" />
             </tr>

@@ -7,6 +7,7 @@ import { api } from '../api'
 import {
   Badge, Button, Spinner, Avatar, Tabs, inputClass, stageTone, scoreTone, cx,
 } from '../ui'
+import { THEAD, TH_TYPE } from './tableStyles'
 import { useToast } from './Toast'
 import { useResumeFile } from '../hooks/useResumeFile'
 import FormattedResume from './role/FormattedResume'
@@ -75,7 +76,7 @@ function DataTable({ columns, rows, empty }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
       <table className="w-full min-w-[640px] text-left text-sm">
-        <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <thead className={cx(THEAD, TH_TYPE)}>
           <tr>
             {columns.map((col) => (
               <th key={col.key} className="whitespace-nowrap px-4 py-3">{col.label}</th>

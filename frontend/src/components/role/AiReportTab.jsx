@@ -8,6 +8,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { Badge, Button, Spinner, cx } from '../../ui'
+import { THEAD, TH_TYPE } from '../tableStyles'
 import { api } from '../../api'
 import { useToast } from '../Toast'
 
@@ -415,7 +416,7 @@ export default function AiReportTab({ app, onRefresh }) {
             {contributions.some((c) => c.points != null) && (
               <div className="overflow-hidden rounded-lg border border-slate-100">
                 <table className="w-full text-left">
-                  <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400">
+                  <thead className={cx(THEAD, TH_TYPE)}>
                     <tr>
                       <th className="px-3 py-1.5 font-medium">Dimension</th>
                       <th className="px-3 py-1.5 text-right font-medium">Score</th>

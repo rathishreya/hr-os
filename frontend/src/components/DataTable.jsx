@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { cx } from '../ui'
+import { THEAD, THEAD_ROW, TH_TYPE } from './tableStyles'
 import { ColumnFilter, distinctValues } from './tableFilters'
 
 // Per-column faceted filtering: pass `filterable` to turn it on. Every column then gets a funnel
@@ -112,8 +113,8 @@ export function DataTable({
         style={stickyHeader ? { maxHeight } : undefined}
       >
         <table className="w-full min-w-[960px] border-collapse text-left text-sm">
-          <thead className={cx(stickyHeader && 'sticky top-0 z-10 bg-slate-50 shadow-sm')}>
-            <tr className="border-b border-slate-200">
+          <thead className={cx(THEAD, stickyHeader && 'sticky top-0 z-10')}>
+            <tr className={THEAD_ROW}>
               {columns.map((col) => {
                 const isSortable = sortable && col.sortable !== false
                 const sortDir = sort.key === col.key ? sort.dir : null
@@ -124,7 +125,7 @@ export function DataTable({
                     aria-sort={isSortable ? (sortDir === 'asc' ? 'ascending' : sortDir === 'desc' ? 'descending' : 'none') : undefined}
                     className={cx(
                       headPad,
-                      'text-xs font-semibold uppercase tracking-wide text-slate-500',
+                      TH_TYPE,
                       col.className,
                     )}
                   >

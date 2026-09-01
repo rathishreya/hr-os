@@ -13,6 +13,7 @@ import {
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ColumnFilter, distinctValues, useColumnFilters } from '../components/tableFilters'
+import { EMPTY, ROW, ROW_GROUP, ROW_HOVER, TABLE_SCROLL, TABLE_WRAP, TD, TH, THEAD, THEAD_ROW } from '../components/tableStyles'
 import DocumentPaper from '../components/docs/DocumentPaper'
 import { documentToPdfBlobUrl } from '../components/docs/pdfDocument'
 import { sanitizeHtml } from '../components/docs/docHtml'
@@ -81,7 +82,7 @@ const EntityChip = ({ value, title }) => (
 
 // A date column: the day, with the time underneath only when it is needed to tell two rows apart.
 const DateCell = ({ iso, withTime = false }) => {
-  if (!iso) return <span className="text-sm text-slate-300">—</span>
+  if (!iso) return <span className={cx('text-sm', EMPTY)}>—</span>
   return (
     <time dateTime={iso} title={fmtLong(iso)} className="block leading-tight">
       <span className="block text-xs tabular-nums text-slate-600">{fmtShort(iso)}</span>
@@ -253,9 +254,7 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
 // what keeps every row reading as the same shape all the way down the page.
 // The same header, padding and hover DataTable and JobsListTable use, so this table reads as
 // part of the app rather than as its own thing.
-const TH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500'
-const TD = 'px-3 py-2 align-middle'
-const ROW_HOVER = 'transition-colors duration-150 ease-snappy hover:bg-brand-50/50'
+// The app's one table vocabulary — see components/tableStyles.js.
 // Every cell is one 28px line. Nothing stacks, so a row is a row.
 const B1 = 'flex h-7 min-w-0 items-center gap-2'
 // A document's status is not a column anyone can write: each state is the trace of a real event
@@ -563,7 +562,9 @@ function PersonField({ person, field, label, placeholder, note: extraNote, onSav
 
   return (
     <div className={B1}>
-      <div className="min-w-0 flex-1">
+      {/* pulled left by the cell's own padding so the value sits on the same line as every
+          other cell's text, while the hover state still has room to breathe */}
+      <div className="-ml-2 min-w-0 flex-1">
         <input
           type="text"
           value={val}
@@ -581,12 +582,11 @@ function PersonField({ person, field, label, placeholder, note: extraNote, onSav
             if (e.key === 'Escape') { setVal(shared); setDirty(false); e.currentTarget.blur() }
           }}
           className={cx(
-            'h-7 w-full rounded-md border bg-transparent px-2 text-sm text-slate-800 outline-none',
-            'transition-colors duration-150 ease-snappy placeholder:text-slate-500',
+            'h-7 w-full rounded-md border border-transparent bg-transparent px-2 text-sm text-slate-800 outline-none',
+            'transition-colors duration-150 ease-snappy',
             'hover:border-slate-300 hover:bg-white focus:border-brand-500 focus:bg-white',
             'disabled:cursor-not-allowed disabled:opacity-60', focusRing,
-            differs ? 'border-dashed border-amber-500 placeholder:text-amber-700'
-              : val ? 'border-transparent' : 'border-dashed border-slate-400',
+            differs ? 'placeholder:text-amber-700' : 'placeholder:text-slate-500',
           )}
         />
       </div>
@@ -668,7 +668,7 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
   return (
     <tr
       onClick={(e) => { if (!e.target.closest('button,a,input,select,label,[role="menu"]')) onPreview(d) }}
-      className={cx('group/row cursor-pointer border-b border-slate-100', ROW_HOVER)}
+      className={cx('group/row cursor-pointer', ROW, ROW_HOVER)}
     >
       {/* 1 — the candidate owns this column; a letter sits under their heading */}
       <td className={TD} />
@@ -773,7 +773,7 @@ function CandidateRow({ person: p, count, open, onToggle, onMerge, onAskOnboard,
   return (
     <tr
       onClick={(e) => { if (!e.target.closest('button,a,input,select,label,[role="menu"]')) onToggle() }}
-      className={cx('cursor-pointer border-b border-slate-200 bg-slate-50/70', ROW_HOVER)}
+      className={cx('cursor-pointer bg-slate-50/70', ROW_GROUP, ROW_HOVER)}
     >
       <td className={TD} colSpan={2}>
         <div className="flex min-w-0 items-center gap-2">
@@ -799,10 +799,10 @@ function CandidateRow({ person: p, count, open, onToggle, onMerge, onAskOnboard,
         </div>
       </td>
       <td className={TD}>
-        <div className="flex min-w-0 flex-wrap items-center gap-1">
+        <div className="flex min-w-0 items-center gap-1">
           {p.entities.length
             ? p.entities.map((e) => <EntityChip key={e} value={e} />)
-            : <span className="text-sm text-slate-300">—</span>}
+            : <span className={cx('text-sm', EMPTY)}>—</span>}
         </div>
       </td>
       <td className={TD}>
@@ -823,11 +823,11 @@ function CandidateRow({ person: p, count, open, onToggle, onMerge, onAskOnboard,
         </div>
       </td>
       <td className={TD}>
-        <PersonField person={p} field="joining_date" label="Joining date" placeholder="1 July 2026"
+        <PersonField person={p} field="joining_date" label="Joining date" placeholder="Add date"
           note={p.drafts.length ? 'Needed before sending' : ''} onSaved={onMerge} />
       </td>
       <td className={TD}>
-        <PersonField person={p} field="personal_email" label="Email" placeholder="name@gmail.com"
+        <PersonField person={p} field="personal_email" label="Email" placeholder="Add personal email"
           note={p.anySent ? 'Went out to the work email' : ''} onSaved={onMerge} />
       </td>
       <td className={TD} title="When their first document was drafted"><DateCell iso={p.firstAt} /></td>
@@ -1117,8 +1117,8 @@ export default function OfferDocs() {
               action={<Button variant="ghost" onClick={clearAll}>Clear filters</Button>}
             />
           ) : (
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="relative overflow-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
+            <div className={TABLE_WRAP}>
+              <div className={TABLE_SCROLL} style={{ maxHeight: 'calc(100vh - 320px)' }}>
                 <table className="w-full min-w-[1240px] table-fixed border-collapse text-left text-sm">
                   <caption className="sr-only">
                     One row per document, grouped under the candidate they belong to. The candidate’s
@@ -1127,8 +1127,8 @@ export default function OfferDocs() {
                   </caption>
                   <colgroup>
                     <col className="w-[13%]" />
-                    <col className="w-[20%]" />
-                    <col className="w-[6%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[8%]" />
                     <col className="w-[18%]" />
                     <col className="w-[10%]" />
                     <col className="w-[13%]" />
@@ -1136,8 +1136,8 @@ export default function OfferDocs() {
                     <col className="w-[7%]" />
                     <col className="w-[6%]" />
                   </colgroup>
-                  <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
-                    <tr className="border-b border-slate-200">
+                  <thead className={cx(THEAD, 'sticky top-0 z-10')}>
+                    <tr className={THEAD_ROW}>
                       <th scope="col" className={TH}>Candidate</th>
                       <th scope="col" className={TH}>
                         <span className="inline-flex items-center gap-1 whitespace-nowrap">

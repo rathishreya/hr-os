@@ -4,6 +4,7 @@ import {
   UserPlus, Star, Pencil, X, ClipboardList, CalendarPlus, Mail, FileDown,
 } from 'lucide-react'
 import { Badge, Button, Modal, scoreTone, stageTone, cx, Spinner } from '../../ui'
+import { THEAD, THEAD_ROW, TH_TYPE } from '../tableStyles'
 import { formatComp } from '../../utils/exportCsv'
 import { INTERVIEW_TYPES } from '../../constants'
 import { useJobAppColumns } from '../../hooks/useJobAppColumns'
@@ -722,14 +723,14 @@ export default function JobApplicationsWorkspace({
           ) : (
             <div className="absolute inset-0 overflow-auto">
               <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
-                <thead className="sticky top-0 z-10 border-b border-[#d5cfe8] bg-[#e8e4f5]">
+                <thead className={cx(THEAD, THEAD_ROW, 'sticky top-0 z-10')}>
                   <tr>
                     {activeColumns.map((col) => (
                       <th
                         key={col.id}
                         className={cx(
-                          'whitespace-nowrap px-3 py-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#5a6278]',
-                          sort.key === col.id && 'text-[#4c4f6b]',
+                          'whitespace-nowrap px-3 py-3', TH_TYPE,
+                          sort.key === col.id && 'text-brand-900',
                         )}
                       >
                         {col.id === 'select' ? (

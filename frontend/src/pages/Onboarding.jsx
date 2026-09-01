@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { api } from '../api'
 import { Card, Badge, Button, Spinner, EmptyState, PageHeader, Modal, Field, inputClass, cx } from '../ui'
+import { THEAD, THEAD_ROW, TH_TYPE } from '../components/tableStyles'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useColumnFilters, ColumnFilter, distinctValues } from '../components/tableFilters'
@@ -261,7 +262,7 @@ function CandidateTracker({ plan, onPatch, onReset }) {
           <div className="overflow-x-auto px-3">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <tr className={TH_TYPE}>
                   <th className="py-1.5 pr-2 font-semibold">Step</th><th className="py-1.5 pr-2">Owner</th><th className="py-1.5 pr-2">When</th><th className="py-1.5 pr-2">Status</th><th className="py-1.5">Notes</th>
                 </tr>
               </thead>
@@ -435,7 +436,7 @@ export default function Onboarding() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <tr className={cx(THEAD, THEAD_ROW, TH_TYPE)}>
                       <th className="px-4 py-2.5"><span className="inline-flex items-center gap-1">New hire {onbFilter('hire')}</span></th>
                       <th className="px-4 py-2.5"><span className="inline-flex items-center gap-1">Position {onbFilter('position')}</span></th>
                       <th className="px-4 py-2.5"><span className="inline-flex items-center gap-1">Joining {onbFilter('joining')}</span></th>

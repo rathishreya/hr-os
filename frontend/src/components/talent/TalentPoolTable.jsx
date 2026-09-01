@@ -4,6 +4,7 @@ import {
   Pencil, Globe, Phone, Mail, MapPin, Download, Columns3, LayoutList, LayoutGrid, Sparkles, Check, Copy,
 } from 'lucide-react'
 import { Badge, Button, Avatar, scoreTone, stageTone, cx } from '../../ui'
+import { THEAD, THEAD_ROW, TH_TYPE } from '../tableStyles'
 import { useTalentPoolColumns } from '../../hooks/useTalentPoolColumns'
 import { useColumnFilters, ColumnFilter, distinctValues } from '../tableFilters'
 import TalentPoolColumnSettings from './TalentPoolColumnSettings'
@@ -440,7 +441,7 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
       <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-md ring-1 ring-slate-900/5">
         <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 300px)' }}>
           <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
-            <thead className="sticky top-0 z-30 border-b border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/90 backdrop-blur-sm">
+            <thead className={cx(THEAD, THEAD_ROW, 'sticky top-0 z-30')}>
               <tr>
                 {activeColumns.map((col) => {
                   const sortable = !!sortFns[col.id]
@@ -451,8 +452,8 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
                       className={cx(
                         headPad,
                         COL_WIDTH[col.id],
-                        'text-[11px] font-bold uppercase tracking-wider text-slate-500',
-                        isSticky && 'sticky z-40 bg-slate-50 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.06)]',
+                        TH_TYPE,
+                        isSticky && 'sticky z-40 bg-brand-100 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.06)]',
                       )}
                       style={isSticky ? { left: stickyOffsets[col.id] } : undefined}
                     >
