@@ -1,8 +1,8 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowRight, ArrowRightCircle, Building2, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Eye, FilePlus2,
+  AlertTriangle, ArrowRight, ArrowRightCircle, Building2, Check, ChevronDown, ChevronRight, Copy, Eye, FilePlus2,
   FileText, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw, Rocket, RotateCcw, Search, Upload,
 } from 'lucide-react'
 import { api } from '../api'
@@ -232,7 +232,11 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
 // ── Table geometry ──────────────────────────────────────────────────────────────────────────
 // One grid, declared once. Every cell obeys a two-band vertical rhythm and nothing else, which is
 // what keeps every row reading as the same shape all the way down the page.
-const TH = 'sticky top-0 z-10 h-9 border-b border-slate-200 bg-slate-50 px-3 text-left align-middle text-xs font-semibold uppercase tracking-wide text-slate-500'
+// The same header, padding and hover DataTable and JobsListTable use, so this table reads as
+// part of the app rather than as its own thing.
+const TH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500'
+const TD = 'px-3 py-2 align-middle'
+const ROW_HOVER = 'transition-colors duration-150 ease-snappy hover:bg-brand-50/50'
 // Every cell is one 28px line. Nothing stacks, so a row is a row.
 const B1 = 'flex h-7 min-w-0 items-center gap-2'
 // A document's status is not a column anyone can write: each state is the trace of a real event
@@ -310,11 +314,7 @@ function StatusSelect({ doc: d, person: p, busy, onApprove, onEmail, onUpload, o
 // One vertical rhythm for every cell: a 28px band for the control, an 18px band for its note.
 // A candidate's first row opens with a little more air and their last closes with a firmer rule,
 // so a person's letters read as one block without a tinted band drawing a box round them.
-const cellOf = (row, extra) => cx(
-  'px-3 py-1 align-middle',
-  row.last ? 'border-b border-slate-200' : 'border-b border-slate-100',
-  extra,
-)
+
 
 // ── The overflow menu ───────────────────────────────────────────────────────────────────────
 // Portal + fixed positioning: the table lives in an overflow-auto scroller, so an in-flow dropdown
@@ -561,9 +561,8 @@ function PersonField({ person, field, label, placeholder, note: extraNote, onSav
 }
 
 // ── One document ────────────────────────────────────────────────────────────────────────────
-function DocRow({ row, name, templateBacked, onMerge, onPreview,
-  onEditLetter, onEmail, onDetails, onApprove, onEntity, onAskOnboard, onAddDoc, onOpenOnboarding }) {
-  const { d, p, first } = row
+function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
+  onEditLetter, onEmail, onDetails, onApprove, onEntity, onAskOnboard }) {
   const { toast } = useToast()
   const locked = !!d.move_to_onboarding
   const step = nextStep(d)
@@ -622,58 +621,14 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
     },
   ].filter(Boolean)
 
-  const personItems = [
-    p.appDoc && { label: 'Add document…', icon: <FilePlus2 className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAddDoc(p) },
-    !p.anyMoved && p.appDoc && { label: 'Send to onboarding…', icon: <ArrowRightCircle className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAskOnboard(p) },
-    p.anyMoved && { label: 'Open in Onboarding', icon: <Rocket className="h-3.5 w-3.5 text-slate-400" />, onClick: onOpenOnboarding },
-    { sep: true },
-    {
-      label: 'Copy work email', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />, note: p.email,
-      onClick: () => { navigator.clipboard.writeText(p.email || ''); toast('Work email copied') },
-    },
-    p.contact && {
-      label: 'Copy phone', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />, note: p.contact,
-      onClick: () => { navigator.clipboard.writeText(p.contact); toast('Phone number copied') },
-    },
-  ].filter(Boolean)
 
   return (
     <tr
       onClick={(e) => { if (!e.target.closest('button,a,input,select,label,[role="menu"]')) onPreview(d) }}
-      className={cx('group/row cursor-pointer transition-colors duration-150 ease-snappy hover:bg-brand-50/40',
-        row.band ? 'bg-slate-50/60' : 'bg-white')}
+      className={cx('group/row cursor-pointer border-b border-slate-100', ROW_HOVER)}
     >
-      {/* 1 — the candidate, printed once per block; their name is their menu */}
-      <td className={cellOf(row)}>
-        {first ? (
-          <div className={B1}>
-            <span aria-hidden className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[11px] font-semibold text-brand-700">
-              {(p.name || '?').split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
-            </span>
-            <span className="min-w-0 flex-1">
-              <RowMenu label={`${p.name} — candidate actions`} items={personItems} text={p.name} />
-            </span>
-            {p.anyMoved ? (
-              <Badge size="sm" tone="gray" className="shrink-0"><Rocket className="mr-1 h-3 w-3" aria-hidden />Onboarding</Badge>
-            ) : p.allSigned ? (
-              <button
-                type="button"
-                onClick={() => onAskOnboard(p)}
-                title={`Send ${p.name} to onboarding — every document is signed`}
-                aria-label={`Send ${p.name} to onboarding — every document is signed`}
-                className={cx('inline-flex h-[18px] shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 text-xs font-medium text-emerald-700 transition-colors duration-150 ease-snappy hover:border-emerald-300 hover:bg-emerald-100', focusRing)}
-              >
-                Ready <ArrowRight className="h-3 w-3" aria-hidden />
-              </button>
-            ) : null}
-          </div>
-        ) : (
-          <span className="sr-only">{p.name}, another of their documents</span>
-        )}
-      </td>
-
-      {/* 2 — which letter */}
-      <td className={cellOf(row)}>
+      {/* 1 — the letter, indented under its candidate */}
+      <td className={cx(TD, 'pl-10')} colSpan={2}>
         <div className={B1}>
           <button
             type="button"
@@ -697,8 +652,8 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
         </div>
       </td>
 
-      {/* 3 — where it has got to, and the control that moves it on */}
-      <td className={cellOf(row)}>
+      {/* 2 — where it has got to, and the control that moves it on */}
+      <td className={TD}>
         <div className={B1}>
           <StatusSelect
             doc={d}
@@ -716,32 +671,12 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
         </div>
       </td>
 
-      {/* 4 — joining date, the candidate's, edited once */}
-      <td className={cellOf(row)}>
-        {first
-          ? <PersonField person={p} field="joining_date" label="Joining date" placeholder="1 July 2026"
-              note={p.drafts.length ? 'Needed before sending' : ''} onSaved={onMerge} />
-          : (
-            <div className={cx(B1, 'px-2')}>
-              <span className="min-w-0 truncate text-sm text-slate-400" title={d.joining_date}>{d.joining_date || '—'}</span>
-            </div>
-          )}
-      </td>
+      {/* 3 & 4 — the candidate owns these; they are stated on their row, not on every letter */}
+      <td className={TD} />
+      <td className={TD} />
 
-      {/* 5 — the address the letter goes to */}
-      <td className={cellOf(row)}>
-        {first
-          ? <PersonField person={p} field="personal_email" label="Email" placeholder="name@gmail.com"
-              note={p.anySent ? 'Went out to the work email' : ''} onSaved={onMerge} />
-          : (
-            <div className={cx(B1, 'px-2')}>
-              <span className="min-w-0 truncate text-sm text-slate-400" title={d.personal_email}>{d.personal_email || '—'}</span>
-            </div>
-          )}
-      </td>
-
-      {/* 6 — preview stays out; everything else is one click deeper */}
-      <td className={cellOf(row)}>
+      {/* 5 — preview stays out; everything else is one click deeper */}
+      <td className={TD}>
         <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only"
           tabIndex={-1} aria-hidden="true" onChange={onUploadFile} />
         <div className={cx(B1, 'justify-end gap-1 text-slate-400 opacity-70 transition-opacity duration-150 ease-snappy',
@@ -751,6 +686,95 @@ function DocRow({ row, name, templateBacked, onMerge, onPreview,
             <Eye className="h-4 w-4" />
           </IconButton>
           <RowMenu label={`More actions for the ${name} for ${p.name}`} items={menuItems} />
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+// A candidate: click the row to open or close their letters. Their joining date and personal
+// email live here rather than on every letter, because they belong to the person — editing one
+// writes to all of their unlocked documents.
+function CandidateRow({ person: p, count, open, onToggle, onMerge, onAskOnboard, onAddDoc, onOpenOnboarding }) {
+  const { toast } = useToast()
+  const summary = useMemo(() => {
+    const by = {}
+    for (const d of p.all) { const k = statusOf(d); by[k] = (by[k] || 0) + 1 }
+    return STATUS.filter((o) => by[o.key]).map((o) => `${by[o.key]} ${o.label.toLowerCase()}`).join(' · ')
+  }, [p])
+
+  const items = [
+    p.appDoc && { label: 'Add document…', icon: <FilePlus2 className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAddDoc(p) },
+    !p.anyMoved && p.appDoc && { label: 'Send to onboarding…', icon: <ArrowRightCircle className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAskOnboard(p) },
+    p.anyMoved && { label: 'Open in Onboarding', icon: <Rocket className="h-3.5 w-3.5 text-slate-400" />, onClick: onOpenOnboarding },
+    { sep: true },
+    {
+      label: 'Copy work email', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />, note: p.email,
+      onClick: () => { navigator.clipboard.writeText(p.email || ''); toast('Work email copied') },
+    },
+    p.contact && {
+      label: 'Copy phone', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />, note: p.contact,
+      onClick: () => { navigator.clipboard.writeText(p.contact); toast('Phone number copied') },
+    },
+  ].filter(Boolean)
+
+  return (
+    <tr
+      onClick={(e) => { if (!e.target.closest('button,a,input,select,label,[role="menu"]')) onToggle() }}
+      className={cx('cursor-pointer border-b border-slate-200 bg-slate-50/70', ROW_HOVER)}
+    >
+      <td className={TD}>
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={`${open ? 'Hide' : 'Show'} ${p.name}’s documents`}
+            onClick={onToggle}
+            className={cx('inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200/70 hover:text-slate-600', focusRing)}
+          >
+            <ChevronRight className={cx('h-4 w-4 transition-transform duration-150 ease-snappy', open && 'rotate-90')} />
+          </button>
+          <span aria-hidden className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[11px] font-semibold text-brand-700">
+            {(p.name || '?').split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-slate-900">{p.name}</span>
+            <span className="block truncate text-xs text-slate-500" title={p.email}>{p.email || '—'}</span>
+          </span>
+        </div>
+      </td>
+      <td className={TD}>
+        <span className="text-sm text-slate-600 tabular-nums">{count}</span>
+        <span className="text-sm text-slate-500">{count === 1 ? ' document' : ' documents'}</span>
+      </td>
+      <td className={TD}>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate text-xs text-slate-500">{summary}</span>
+          {p.anyMoved ? (
+            <Badge size="sm" tone="gray" className="shrink-0"><Rocket className="mr-1 h-3 w-3" aria-hidden />Onboarding</Badge>
+          ) : p.allSigned ? (
+            <button
+              type="button"
+              onClick={() => onAskOnboard(p)}
+              title={`Send ${p.name} to onboarding — every document is signed`}
+              className={cx('inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 transition-colors duration-150 ease-snappy hover:border-emerald-300 hover:bg-emerald-100', focusRing)}
+            >
+              Ready <ArrowRight className="h-3 w-3" aria-hidden />
+            </button>
+          ) : null}
+        </div>
+      </td>
+      <td className={TD}>
+        <PersonField person={p} field="joining_date" label="Joining date" placeholder="1 July 2026"
+          note={p.drafts.length ? 'Needed before sending' : ''} onSaved={onMerge} />
+      </td>
+      <td className={TD}>
+        <PersonField person={p} field="personal_email" label="Email" placeholder="name@gmail.com"
+          note={p.anySent ? 'Went out to the work email' : ''} onSaved={onMerge} />
+      </td>
+      <td className={TD}>
+        <div className="flex items-center justify-end">
+          <RowMenu label={`${p.name} — candidate actions`} items={items} />
         </div>
       </td>
     </tr>
@@ -773,6 +797,8 @@ export default function OfferDocs() {
   const [sortKey, setSortKey] = useState('recent')
   const [status, setStatus] = useState('')          // '' = every status
   const [page, setPage] = useState(0)
+  // Candidates open by default — everything is visible on arrival; clicking a name folds it away.
+  const [collapsed, setCollapsed] = useState(() => new Set())
   const [confirm, setConfirm] = useState(null)      // { p, body } — sending someone to onboarding
   const [barBusy, setBarBusy] = useState(false)
   const colFilters = useColumnFilters()
@@ -944,6 +970,12 @@ export default function OfferDocs() {
     load()
   }
 
+  const toggleGroup = (key) => setCollapsed((c) => {
+    const n = new Set(c)
+    if (n.has(key)) n.delete(key); else n.add(key)
+    return n
+  })
+
   const clearAll = () => { setQ(''); setStatus(''); colFilters.clear(); setPage(0) }
   const TOOLBAR = cx('h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none',
     'transition-colors duration-150 ease-snappy hover:border-slate-300 focus:border-brand-500', focusRing)
@@ -1015,9 +1047,9 @@ export default function OfferDocs() {
               action={<Button variant="ghost" onClick={clearAll}>Clear filters</Button>}
             />
           ) : (
-            <Card className="overflow-hidden p-0">
-              <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 300px)', minHeight: '20rem' }}>
-                <table className="w-full min-w-[1020px] table-fixed border-separate border-spacing-0 text-sm">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="relative overflow-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
+                <table className="w-full min-w-[1020px] table-fixed border-collapse text-left text-sm">
                   <caption className="sr-only">
                     One row per document, grouped by candidate. A candidate’s name, personal email and
                     joining date are printed on the first of their documents and apply to all of them.
@@ -1030,8 +1062,8 @@ export default function OfferDocs() {
                     <col className="w-[17%]" />
                     <col className="w-[7%]" />
                   </colgroup>
-                  <thead>
-                    <tr>
+                  <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                    <tr className="border-b border-slate-200">
                       <th scope="col" className={TH}>Candidate</th>
                       <th scope="col" className={TH}>
                         <span className="inline-flex items-center gap-1 whitespace-nowrap">
@@ -1048,38 +1080,61 @@ export default function OfferDocs() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row) => (
-                      <DocRow
-                        key={row.d.id}
-                        row={row}
-                        name={nameOf(row.d)}
-                        templateBacked={tplByKey.has(row.d.template_key)}
-                        onMerge={mergeDoc}
-                        onPreview={openView}
-                        onEditLetter={openEditor}
-                        onEmail={setEmailing}
-                        onDetails={(d) => setForm({ doc: d, mode: 'edit' })}
-                        onApprove={approveDoc}
-                        onEntity={setEntity}
-                        onAskOnboard={askOnboard}
-                        onAddDoc={(p) => setForm({ doc: p.appDoc, mode: 'new' })}
-                        onOpenOnboarding={() => navigate('/onboarding')}
-                      />
+                    {pages[pageIdx].map((g) => (
+                      <Fragment key={g.p.key}>
+                        <CandidateRow
+                          person={g.p}
+                          count={g.rows.length}
+                          open={!collapsed.has(g.p.key)}
+                          onToggle={() => toggleGroup(g.p.key)}
+                          onMerge={mergeDoc}
+                          onAskOnboard={askOnboard}
+                          onAddDoc={(person) => setForm({ doc: person.appDoc, mode: 'new' })}
+                          onOpenOnboarding={() => navigate('/onboarding')}
+                        />
+                        {!collapsed.has(g.p.key) && g.rows.map((doc) => (
+                          <DocRow
+                            key={doc.id}
+                            doc={doc}
+                            person={g.p}
+                            name={nameOf(doc)}
+                            templateBacked={tplByKey.has(doc.template_key)}
+                            onMerge={mergeDoc}
+                            onPreview={openView}
+                            onEditLetter={openEditor}
+                            onEmail={setEmailing}
+                            onDetails={(x) => setForm({ doc: x, mode: 'edit' })}
+                            onApprove={approveDoc}
+                            onEntity={setEntity}
+                            onAskOnboard={askOnboard}
+                          />
+                        ))}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
               </div>
 
               {pages.length > 1 && (
-                <div className="flex items-center justify-between gap-2 border-t border-slate-200 px-3 py-2">
-                  <p className="text-xs tabular-nums text-slate-500">Page {pageIdx + 1} of {pages.length}</p>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/80 px-4 py-2.5 text-xs text-slate-600">
+                  <span className="tabular-nums">Page {pageIdx + 1} of {pages.length}</span>
                   <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="sm" disabled={pageIdx === 0} onClick={() => setPage(pageIdx - 1)}>
-                      <ChevronLeft className="h-3.5 w-3.5" /> Previous
-                    </Button>
-                    <Button variant="ghost" size="sm" disabled={pageIdx >= pages.length - 1} onClick={() => setPage(pageIdx + 1)}>
-                      Next <ChevronRight className="h-3.5 w-3.5" />
-                    </Button>
+                    <button
+                      type="button"
+                      disabled={pageIdx === 0}
+                      onClick={() => setPage(pageIdx - 1)}
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 transition-[background-color,transform] duration-150 ease-snappy hover:bg-slate-50 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:opacity-40 disabled:active:scale-100"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      disabled={pageIdx >= pages.length - 1}
+                      onClick={() => setPage(pageIdx + 1)}
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 transition-[background-color,transform] duration-150 ease-snappy hover:bg-slate-50 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:opacity-40 disabled:active:scale-100"
+                    >
+                      Next
+                    </button>
                   </div>
                 </div>
               )}
@@ -1096,7 +1151,7 @@ export default function OfferDocs() {
                   </Button>
                 </div>
               )}
-            </Card>
+            </div>
           )}
         </>
       )}
