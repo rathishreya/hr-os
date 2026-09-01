@@ -16,7 +16,7 @@ from ..services import recruitment
 from ..services import resume_extract
 from ..services import scoring
 from ..services.ai import ai
-from ..services.documents import render_document
+from ..services.documents import TEMPLATES, render_document, settled_entity
 from ..services.jobs_table import _panel_email
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
@@ -45,6 +45,21 @@ def _ensure_hire_artifacts(db: Session, app: models.Application) -> None:
         # grounded in the role's title, JD responsibilities and CTC. HR edits terms + approves.
         pos = (hr.position if hr else "").lower()
         template_key = "ez_traineeship_offer" if any(w in pos for w in ("trainee", "intern")) else "ez_offer_letter"
+
+        # A candidate belongs to one operating entity. Both auto-draft templates are EZ, and only
+        # EZ issues an offer letter at all — AEZ issues contracts and NDAs — so for a candidate
+        # already settled on another entity there is simply nothing to draft here. Dropping the EZ
+        # letter in anyway is how one candidate ended up holding four EZ letters beside an AEZ
+        # contract: the de-duplication above looks for an offer-type document, which an AEZ
+        # candidate can never have, so it fired every single time they were marked Hired.
+        settled = settled_entity(db, app.candidate_id)
+        if settled and TEMPLATES[template_key].entity != settled:
+            recruitment.log(db, "document.autodraft_skipped", "application", app.id, {
+                "candidate_entity": settled, "would_have_drafted": template_key,
+                "reason": f"{settled} issues no offer letter; the recruiter drafts their contract by hand",
+            })
+            return
+
         job = hr.job if hr else None
         rendered = render_document(template_key, {
             "name": (cand.name if cand else "") or "",
