@@ -159,7 +159,22 @@ function PanelistInput({ panelists, suggestions, onChange }) {
   )
 }
 
+// The assessment-file route is public only when it carries the signed ?t= token we email a
+// candidate; a recruiter must reach it with the Bearer header, so a plain <a href> gets a 401.
+async function previewAssessment(assessmentId, toast) {
+  let url = ''
+  try {
+    url = URL.createObjectURL(await api.fetchAssessmentFile(assessmentId))
+    window.open(url, '_blank', 'noopener')
+  } catch (err) {
+    toast(err.message, 'error')
+  } finally {
+    if (url) setTimeout(() => URL.revokeObjectURL(url), 60000)
+  }
+}
+
 export function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, busy, isNew, app }) {
+  const { toast } = useToast()
   const [assessments, setAssessments] = useState([])
   useEffect(() => {
     if (form.interview_type === 'assessment' && assessments.length === 0) {
@@ -233,7 +248,7 @@ export function RoundForm({ form, setForm, panelSuggestions, onSave, onCancel, b
               {assessments.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
             {form.assessment_id ? (
-              <a href={api.assessmentFileUrl(form.assessment_id)} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-600 hover:border-brand-300 hover:text-brand-700">Preview</a>
+              <button type="button" onClick={() => previewAssessment(form.assessment_id, toast)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-600 hover:border-brand-300 hover:text-brand-700">Preview</button>
             ) : null}
           </div>
           {assessments.length === 0 && <p className="mt-1 text-xs text-amber-600">No assessments yet — add one on the Assessments page first.</p>}

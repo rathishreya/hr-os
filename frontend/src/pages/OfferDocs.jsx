@@ -71,6 +71,25 @@ const fmtLong = (iso) => {
 
 const ENTITY_LEGAL = { EZ: 'EZ Lab Private Limited', AEZ: 'ArabEasy LLC' }
 
+// Which company's paper the letter is on. Its own column now, so it reads down the table.
+const EntityChip = ({ value, title }) => (
+  <span title={title || ENTITY_LEGAL[value] || value}
+    className="inline-flex shrink-0 items-center rounded border border-slate-200 bg-slate-50 px-1.5 py-px text-[11px] font-medium text-slate-600">
+    {value}
+  </span>
+)
+
+// A date column: the day, with the time underneath only when it is needed to tell two rows apart.
+const DateCell = ({ iso, withTime = false }) => {
+  if (!iso) return <span className="text-sm text-slate-300">—</span>
+  return (
+    <time dateTime={iso} title={fmtLong(iso)} className="block leading-tight">
+      <span className="block text-xs tabular-nums text-slate-600">{fmtShort(iso)}</span>
+      {withTime && <span className="block text-[11px] tabular-nums text-slate-400">{fmtTime(iso)}</span>}
+    </time>
+  )
+}
+
 // One person, however their documents are linked. The name|email fallback keeps a candidate with
 // no candidate_id from splitting into two blocks.
 const personKey = (d) => (d.candidate_id != null ? `c${d.candidate_id}` : `n:${d.candidate_name}|${d.email}`)
@@ -263,7 +282,7 @@ const statusOf = (d) => (d.move_to_onboarding ? 'onboarding'
     : d.email_sent_at ? 'sent'
       : d.status === 'approved' ? 'approved' : 'draft')
 
-function StatusSelect({ doc: d, person: p, busy, onApprove, onEmail, onUpload, onOnboard }) {
+function StatusSelect({ doc: d, person: p, busy, title, onApprove, onEmail, onUpload, onOnboard }) {
   const now = statusOf(d)
   const locked = !!d.move_to_onboarding
   const tone = TONE[now] || TONE.draft
@@ -286,7 +305,7 @@ function StatusSelect({ doc: d, person: p, busy, onApprove, onEmail, onUpload, o
   }
 
   return (
-    <span className="relative inline-flex min-w-0 max-w-[10.5rem] flex-1 items-center">
+    <span title={title || undefined} className="relative inline-flex min-w-0 max-w-[10.5rem] flex-1 items-center">
       <span aria-hidden className={cx('pointer-events-none absolute left-2.5 h-1.5 w-1.5 rounded-full', tone.dot)} />
       <select
         value={now}
@@ -443,6 +462,27 @@ function RowMenu({ items, label, text }) {
   )
 }
 
+// Opening the copy that was filed back. The route is behind the Bearer auth gate, so a plain
+// <a href> navigation (no Authorization header) is answered with a 401 — fetch it as an
+// authenticated Blob and open that, the same way Assessments opens its files.
+async function openSignedCopy(doc, toast) {
+  let url = ''
+  try {
+    url = URL.createObjectURL(await api.fetchDocumentUploadFile(doc.id))
+    if (!window.open(url, '_blank', 'noopener')) {
+      // Pop-up blocked: fall back to a same-gesture download so the file still reaches them.
+      const a = document.createElement('a')
+      a.href = url; a.download = doc.upload_filename || 'signed-copy.pdf'
+      document.body.appendChild(a); a.click(); a.remove()
+    }
+  } catch (err) {
+    toast(err.message, 'error')
+  } finally {
+    // Give the new tab time to load the blob before the URL is revoked.
+    if (url) setTimeout(() => URL.revokeObjectURL(url), 60000)
+  }
+}
+
 // Filing the signed & countersigned copy back. One file input per row, driven by whichever control
 // is currently offering it — never duplicated.
 function useUpload(doc, onUploaded) {
@@ -576,9 +616,12 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
     try { await onApprove(d) } finally { setApproving(false) }
   }
 
-  const caption = d.email_sent_at ? `Sent ${fmtShort(d.email_sent_at)}`
-    : d.status === 'approved' && d.approved_at ? `Approved ${fmtShort(d.approved_at)}`
-      : ''   // a draft's only date is its creation date, which the Document cell already carries
+  // When this status was reached. It rides on the control as a tooltip rather than as a chip
+  // beside it: Created and Updated are columns of their own now, so a third inline date read as
+  // noise and cost the status label the width it needed.
+  const reached = d.email_sent_at ? `Sent ${fmtLong(d.email_sent_at)}`
+    : d.status === 'approved' && d.approved_at ? `Approved ${fmtLong(d.approved_at)}`
+      : ''
 
   const entityTitle = templateBacked
     ? `${ENTITY_LEGAL[d.entity] || d.entity} — set by the ${name} template`
@@ -601,7 +644,7 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
     },
     d.has_upload && {
       label: 'View signed copy', icon: <FileText className="h-3.5 w-3.5 text-slate-400" />,
-      href: api.documentUploadUrl(d.id), title: d.upload_filename,
+      title: d.upload_filename, onClick: () => openSignedCopy(d, toast),
     },
     { sep: true },
     {
@@ -641,40 +684,35 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
           >
             {name}
           </button>
-          <span className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
-            <span title={entityTitle} className="rounded border border-slate-200 bg-slate-50 px-1 py-px text-[11px] font-medium text-slate-600">{d.entity}</span>
-            {d.created_at && (
-              <time dateTime={d.created_at} title={fmtLong(d.created_at)} className="tabular-nums">
-                {fmtShort(d.created_at)}{p.twin(d) ? `, ${fmtTime(d.created_at)}` : ''}
-              </time>
-            )}
-          </span>
           {d.content_html && (
             <Badge size="sm" tone="violet" className="shrink-0"><PenLine className="mr-1 h-3 w-3" aria-hidden />Edited</Badge>
           )}
         </div>
       </td>
 
-      {/* 3 — where it has got to, and the control that moves it on */}
+      {/* 3 — whose paper it is on */}
+      <td className={TD}><EntityChip value={d.entity} title={entityTitle} /></td>
+
+      {/* 4 — where it has got to, and the control that moves it on */}
       <td className={TD}>
         <div className={B1}>
           <StatusSelect
             doc={d}
             person={p}
+            title={reached}
             busy={approving || uploading}
             onApprove={onApprove}
             onEmail={onEmail}
             onUpload={pickFile}
             onOnboard={onAskOnboard}
           />
-          {caption && <span className="min-w-0 truncate text-xs text-slate-500">{caption}</span>}
           {age != null && age >= 1 && (
             <span className={cx('shrink-0 text-xs tabular-nums', ageClass(age))} title={`${age} days since the covering email was sent`}>{age}d</span>
           )}
         </div>
       </td>
 
-      {/* 4 & 5 — inherited from the candidate, so the row is never half empty */}
+      {/* 5 & 6 — inherited from the candidate, so the row is never half empty */}
       <td className={TD}>
         <span className="block truncate text-sm text-slate-400" title={d.joining_date}>{d.joining_date || '—'}</span>
       </td>
@@ -684,7 +722,12 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
         </span>
       </td>
 
-      {/* 6 — preview stays out; everything else is one click deeper */}
+      {/* 7 & 8 — when it was drafted, and when it last moved. The time shows only on the
+          rows that would otherwise read as duplicates of each other. */}
+      <td className={TD}><DateCell iso={d.created_at} withTime={p.twin(d)} /></td>
+      <td className={TD}><DateCell iso={d.updated_at || ''} /></td>
+
+      {/* 9 — preview stays out; everything else is one click deeper */}
       <td className={TD}>
         <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only"
           tabIndex={-1} aria-hidden="true" onChange={onUploadFile} />
@@ -756,6 +799,13 @@ function CandidateRow({ person: p, count, open, onToggle, onMerge, onAskOnboard,
         </div>
       </td>
       <td className={TD}>
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
+          {p.entities.length
+            ? p.entities.map((e) => <EntityChip key={e} value={e} />)
+            : <span className="text-sm text-slate-300">—</span>}
+        </div>
+      </td>
+      <td className={TD}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="min-w-0 truncate text-xs text-slate-500">{summary}</span>
           {p.anyMoved ? (
@@ -780,6 +830,8 @@ function CandidateRow({ person: p, count, open, onToggle, onMerge, onAskOnboard,
         <PersonField person={p} field="personal_email" label="Email" placeholder="name@gmail.com"
           note={p.anySent ? 'Went out to the work email' : ''} onSaved={onMerge} />
       </td>
+      <td className={TD} title="When their first document was drafted"><DateCell iso={p.firstAt} /></td>
+      <td className={TD} title="When anything on their documents last moved"><DateCell iso={p.lastAt} /></td>
       <td className={TD}>
         <div className="flex items-center justify-end">
           <RowMenu label={`${p.name} — candidate actions`} items={items} />
@@ -847,6 +899,14 @@ export default function OfferDocs() {
       p.anySent = p.all.some((x) => x.email_sent_at)
       p.appDoc = p.all.find((x) => x.application_id)
       p.newest = p.all.reduce((t, x) => Math.max(t, +new Date(x.created_at) || 0), 0)
+      p.entities = [...new Set(p.all.map((x) => x.entity).filter(Boolean))]
+      // Their block's own span: when the first letter was drafted, and when anything last moved.
+      // updated_at is NULL on documents drafted before the column existed, so created_at stands in.
+      const made = p.all.map((x) => +new Date(x.created_at) || 0).filter(Boolean)
+      const touched = p.all.map((x) => +new Date(x.updated_at || x.created_at) || 0).filter(Boolean)
+      p.firstAt = made.length ? new Date(Math.min(...made)).toISOString() : ''
+      p.lastTouch = touched.length ? Math.max(...touched) : 0
+      p.lastAt = p.lastTouch ? new Date(p.lastTouch).toISOString() : ''
       p.waiting = p.all.reduce((t, x) => Math.max(t, ageOf(x) ?? -1), -1)
       p.differs = (f) => new Set(p.live.map((x) => x[f] || '')).size > 1
       const seen = new Map()
@@ -884,6 +944,7 @@ export default function OfferDocs() {
     const list = [...blocks.entries()].map(([k, shown]) => ({ p: people.get(k), shown })).filter((b) => b.p)
     const cmp = {
       recent: (a, b) => b.p.newest - a.p.newest,
+      updated: (a, b) => b.p.lastTouch - a.p.lastTouch,
       waiting: (a, b) => b.p.waiting - a.p.waiting || b.p.drafts.length - a.p.drafts.length,
       name: (a, b) => a.p.name.localeCompare(b.p.name),
     }[sortKey]
@@ -1036,6 +1097,7 @@ export default function OfferDocs() {
               <label className="sr-only" htmlFor="od-sort">Sort candidates</label>
               <select id="od-sort" value={sortKey} onChange={(e) => { setSortKey(e.target.value); setPage(0) }} className={TOOLBAR}>
                 <option value="recent">Recent first</option>
+                <option value="updated">Recently updated</option>
                 <option value="waiting">Longest waiting</option>
                 <option value="name">Candidate A–Z</option>
               </select>
@@ -1057,18 +1119,22 @@ export default function OfferDocs() {
           ) : (
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="relative overflow-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
-                <table className="w-full min-w-[1020px] table-fixed border-collapse text-left text-sm">
+                <table className="w-full min-w-[1240px] table-fixed border-collapse text-left text-sm">
                   <caption className="sr-only">
-                    One row per document, grouped by candidate. A candidate’s name, personal email and
-                    joining date are printed on the first of their documents and apply to all of them.
+                    One row per document, grouped under the candidate they belong to. The candidate’s
+                    row carries their personal email and joining date, which apply to all of their
+                    documents; its date columns span the whole block.
                   </caption>
                   <colgroup>
-                    <col className="w-[15%]" />
-                    <col className="w-[27%]" />
-                    <col className="w-[21%]" />
                     <col className="w-[13%]" />
-                    <col className="w-[17%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[6%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[13%]" />
                     <col className="w-[7%]" />
+                    <col className="w-[7%]" />
+                    <col className="w-[6%]" />
                   </colgroup>
                   <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                     <tr className="border-b border-slate-200">
@@ -1081,9 +1147,12 @@ export default function OfferDocs() {
                             onChange={(a) => { colFilters.setFilter('document', a); setPage(0) }} />
                         </span>
                       </th>
+                      <th scope="col" className={TH}>Entity</th>
                       <th scope="col" className={TH}>Status</th>
                       <th scope="col" className={TH}>Joining date</th>
                       <th scope="col" className={TH}>Email</th>
+                      <th scope="col" className={TH}>Created</th>
+                      <th scope="col" className={TH}>Updated</th>
                       <th scope="col" className={cx(TH, 'text-right')}>Actions</th>
                     </tr>
                   </thead>

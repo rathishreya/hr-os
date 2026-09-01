@@ -95,6 +95,7 @@ def _ensure_sqlite_columns() -> None:
             ("move_to_onboarding", "BOOLEAN DEFAULT 0"),
             ("personal_email", "VARCHAR DEFAULT ''"),
             ("email_sent_at", "TIMESTAMP"),
+            ("updated_at", "TIMESTAMP"),
         ],
         "assessments": [
             ("team", "VARCHAR DEFAULT ''"),
@@ -153,6 +154,7 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS upload_file BYTEA",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS move_to_onboarding BOOLEAN DEFAULT FALSE",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS transcript TEXT DEFAULT ''",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS timeline JSONB DEFAULT '[]'::jsonb",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS proctoring JSONB DEFAULT '{}'::jsonb",

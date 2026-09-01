@@ -241,6 +241,16 @@ export const api = {
       return r.json()
     }),
   documentUploadUrl: (id) => `${BASE}/documents/${id}/upload-file`,
+  // The upload-file route sits behind the Bearer auth gate, so a plain <a href> gets a 401.
+  // Fetch it WITH the header and hand back a Blob, mirroring fetchResumeFile.
+  fetchDocumentUploadFile: async (id) => {
+    const r = await fetch(BASE + `/documents/${id}/upload-file`, { headers: authHeaders() })
+    if (!r.ok) {
+      if (r.status === 401) onUnauthorized(`/documents/${id}/upload-file`)
+      throw new Error(r.status === 404 ? 'No signed copy is filed on this document' : 'Could not load the signed copy')
+    }
+    return r.blob()
+  },
   // Covering email: fetch the draft for review, then post the reviewed version back to send.
   documentEmailDraft: (id) => req(`/documents/${id}/email-draft`),
   sendDocumentEmail: (id, body) => req(`/documents/${id}/send-email`, { method: 'POST', body: JSON.stringify(body) }),

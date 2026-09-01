@@ -602,6 +602,7 @@ class DocumentOut(BaseModel):
     has_upload: bool = False
     email_sent_at: datetime | None = None   # when the covering mail last went out
     created_at: datetime
+    updated_at: datetime | None = None      # NULL on rows drafted before the column existed
     candidate_name: str = ""  # enriched by the list endpoint for the Offer & Docs page
     email: str = ""
     contact: str = ""

@@ -289,6 +289,8 @@ class Document(Base):
     # When the covering email carrying this document was last sent (NULL = never sent).
     email_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    # Last time any field on this document changed. NULL on rows that predate the column.
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=True)
 
 
 class OnboardingPlan(Base):
