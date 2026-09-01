@@ -551,9 +551,9 @@ function PersonField({ person, field, label, placeholder, note: extraNote, onSav
         />
       </div>
       {note && (
-        <span id={noteId} title={note.text} aria-label={note.text}
-          className={cx('shrink-0 cursor-help text-sm font-semibold leading-none', note.cls)}>
-          *<span className="sr-only">{note.text}</span>
+        <span id={noteId} title={note.text} className={cx('shrink-0 cursor-help', note.cls)}>
+          <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+          <span className="sr-only">{note.text}</span>
         </span>
       )}
     </div>
@@ -627,8 +627,11 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
       onClick={(e) => { if (!e.target.closest('button,a,input,select,label,[role="menu"]')) onPreview(d) }}
       className={cx('group/row cursor-pointer border-b border-slate-100', ROW_HOVER)}
     >
-      {/* 1 — the letter, indented under its candidate */}
-      <td className={cx(TD, 'pl-10')} colSpan={2}>
+      {/* 1 — the candidate owns this column; a letter sits under their heading */}
+      <td className={TD} />
+
+      {/* 2 — which letter */}
+      <td className={cx(TD, 'pl-6')}>
         <div className={B1}>
           <button
             type="button"
@@ -652,7 +655,7 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
         </div>
       </td>
 
-      {/* 2 — where it has got to, and the control that moves it on */}
+      {/* 3 — where it has got to, and the control that moves it on */}
       <td className={TD}>
         <div className={B1}>
           <StatusSelect
@@ -671,11 +674,17 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
         </div>
       </td>
 
-      {/* 3 & 4 — the candidate owns these; they are stated on their row, not on every letter */}
-      <td className={TD} />
-      <td className={TD} />
+      {/* 4 & 5 — inherited from the candidate, so the row is never half empty */}
+      <td className={TD}>
+        <span className="block truncate text-sm text-slate-400" title={d.joining_date}>{d.joining_date || '—'}</span>
+      </td>
+      <td className={TD}>
+        <span className="block truncate text-sm text-slate-400" title={d.personal_email || p.email}>
+          {d.personal_email || p.email || '—'}
+        </span>
+      </td>
 
-      {/* 5 — preview stays out; everything else is one click deeper */}
+      {/* 6 — preview stays out; everything else is one click deeper */}
       <td className={TD}>
         <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only"
           tabIndex={-1} aria-hidden="true" onChange={onUploadFile} />
@@ -723,7 +732,7 @@ function CandidateRow({ person: p, count, open, onToggle, onMerge, onAskOnboard,
       onClick={(e) => { if (!e.target.closest('button,a,input,select,label,[role="menu"]')) onToggle() }}
       className={cx('cursor-pointer border-b border-slate-200 bg-slate-50/70', ROW_HOVER)}
     >
-      <td className={TD}>
+      <td className={TD} colSpan={2}>
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
@@ -739,13 +748,12 @@ function CandidateRow({ person: p, count, open, onToggle, onMerge, onAskOnboard,
           </span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-semibold text-slate-900">{p.name}</span>
-            <span className="block truncate text-xs text-slate-500" title={p.email}>{p.email || '—'}</span>
+            <span className="block truncate text-xs text-slate-500" title={p.email}>
+              {p.email || '—'}
+              <span className="text-slate-400"> · <span className="tabular-nums">{count}</span> {count === 1 ? 'document' : 'documents'}</span>
+            </span>
           </span>
         </div>
-      </td>
-      <td className={TD}>
-        <span className="text-sm text-slate-600 tabular-nums">{count}</span>
-        <span className="text-sm text-slate-500">{count === 1 ? ' document' : ' documents'}</span>
       </td>
       <td className={TD}>
         <div className="flex min-w-0 items-center gap-2">
@@ -1055,8 +1063,8 @@ export default function OfferDocs() {
                     joining date are printed on the first of their documents and apply to all of them.
                   </caption>
                   <colgroup>
-                    <col className="w-[18%]" />
-                    <col className="w-[24%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[27%]" />
                     <col className="w-[21%]" />
                     <col className="w-[13%]" />
                     <col className="w-[17%]" />
