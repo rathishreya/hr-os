@@ -4,7 +4,7 @@ import {
   FileText, Users, CheckCircle2, Circle, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { Badge, cx } from '../../ui'
-import { THEAD, THEAD_ROW, TH_TYPE } from '../tableStyles'
+import { TABLE_SCROLL, TABLE_WRAP, THEAD, THEAD_ROW, TH_TYPE } from '../tableStyles'
 import { api } from '../../api'
 import { useToast } from '../Toast'
 import { useColumnFilters, ColumnFilter, distinctValues } from '../tableFilters'
@@ -210,9 +210,9 @@ export default function JobsListTable({ rows, onStatusChange }) {
   if (!rows.length) return null
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
-        <table className="w-full min-w-[1400px] border-collapse text-sm">
+    <div className={TABLE_WRAP}>
+      <div className={TABLE_SCROLL} style={{ maxHeight: 'calc(100vh - 280px)' }}>
+        <table className="w-full min-w-[1400px] border-collapse text-left text-sm">
           <thead className={cx(THEAD, 'sticky top-0 z-10')}>
             <tr className={THEAD_ROW}>
               <SortHead label="Job ID" col="id" filterKey="id" />

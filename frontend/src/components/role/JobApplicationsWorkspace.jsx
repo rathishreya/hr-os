@@ -4,7 +4,7 @@ import {
   UserPlus, Star, Pencil, X, ClipboardList, CalendarPlus, Mail, FileDown,
 } from 'lucide-react'
 import { Badge, Button, Modal, scoreTone, stageTone, cx, Spinner } from '../../ui'
-import { THEAD, THEAD_ROW, TH_TYPE } from '../tableStyles'
+import { ROW, ROW_HOVER, THEAD, THEAD_ROW, TH_TYPE } from '../tableStyles'
 import { formatComp } from '../../utils/exportCsv'
 import { INTERVIEW_TYPES } from '../../constants'
 import { useJobAppColumns } from '../../hooks/useJobAppColumns'
@@ -734,11 +734,11 @@ export default function JobApplicationsWorkspace({
                         )}
                       >
                         {col.id === 'select' ? (
-                          <input type="checkbox" checked={pageRows.length > 0 && selectedIds.size === pageRows.length} onChange={toggleSelectAll} className="h-4 w-4 cursor-pointer rounded border-[#b8b0d4] text-brand-600" />
+                          <input type="checkbox" checked={pageRows.length > 0 && selectedIds.size === pageRows.length} onChange={toggleSelectAll} className="h-4 w-4 cursor-pointer rounded border-brand-300 text-brand-600" />
                         ) : (
                           <span className="inline-flex items-center gap-1">
                             <span
-                              className={cx(sortFns[col.id] && 'cursor-pointer transition-colors duration-150 ease-snappy hover:text-[#4a5568]')}
+                              className={cx(sortFns[col.id] && 'cursor-pointer transition-colors duration-150 ease-snappy hover:text-brand-900')}
                               onClick={() => sortFns[col.id] && toggleSort(col.id)}
                             >
                               {col.label}
@@ -764,9 +764,8 @@ export default function JobApplicationsWorkspace({
                       key={row.id}
                       onClick={() => openRow(row)}
                       className={cx(
-                        'cursor-pointer border-b border-slate-100 transition-colors duration-150 ease-snappy',
-                        selectedIds.has(row.id) ? 'bg-brand-50/80' : i % 2 === 0 ? 'bg-white' : 'bg-slate-50/30',
-                        'hover:bg-brand-50/50',
+                        'cursor-pointer bg-white', ROW, ROW_HOVER,
+                        selectedIds.has(row.id) && 'bg-brand-50/80',
                       )}
                     >
                       {activeColumns.map((col) => (

@@ -4,7 +4,7 @@ import {
   Pencil, Globe, Phone, Mail, MapPin, Download, Columns3, LayoutList, LayoutGrid, Sparkles, Check, Copy,
 } from 'lucide-react'
 import { Badge, Button, Avatar, scoreTone, stageTone, cx } from '../../ui'
-import { THEAD, THEAD_ROW, TH_TYPE } from '../tableStyles'
+import { TABLE_WRAP, THEAD, THEAD_ROW, TH_TYPE } from '../tableStyles'
 import { useTalentPoolColumns } from '../../hooks/useTalentPoolColumns'
 import { useColumnFilters, ColumnFilter, distinctValues } from '../tableFilters'
 import TalentPoolColumnSettings from './TalentPoolColumnSettings'
@@ -438,7 +438,7 @@ export default function TalentPoolTable({ rows, onRowClick, onEdit, selectable =
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-md ring-1 ring-slate-900/5">
+      <div className={TABLE_WRAP}>
         <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 300px)' }}>
           <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
             <thead className={cx(THEAD, THEAD_ROW, 'sticky top-0 z-30')}>
