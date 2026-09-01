@@ -122,6 +122,8 @@ def _ensure_sqlite_columns() -> None:
             for name, decl in cols:
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {decl}"))
+        # SQLite's MAX() with several arguments is the scalar maximum, not the aggregate.
+        conn.execute(text("""UPDATE documents SET updated_at = MAX(created_at, COALESCE(approved_at, created_at), COALESCE(email_sent_at, created_at)) WHERE updated_at IS NULL"""))
 
 
 def _ensure_pg_columns() -> None:
@@ -185,6 +187,7 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS smtp_password VARCHAR DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_refresh_token VARCHAR DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_scope VARCHAR DEFAULT ''",
+            """UPDATE documents SET updated_at = GREATEST(created_at, COALESCE(approved_at, created_at), COALESCE(email_sent_at, created_at)) WHERE updated_at IS NULL""",
         ):
             conn.execute(text(stmt))
 
