@@ -137,12 +137,12 @@ function prefillTerms(doc) {
 
 // Keyed per doc.id so state initializes from the doc without an effect. mode: 'edit' regenerates
 // the same document; 'new' generates an additional document for the same candidate/application.
-function DocFormModal({ doc, mode, templates, onClose, onDone }) {
+function DocFormModal({ doc, mode, templates, lockedEntity, onClose, onDone }) {
   const { toast } = useToast()
   const [templateKey, setTemplateKey] = useState(
     mode === 'new' ? '' : doc.template_key || '',  // '' -> the effect below picks the entity's first
   )
-  const [entity, setEntity] = useState(doc.entity || 'EZ')
+  const [entity, setEntity] = useState(lockedEntity || doc.entity || 'EZ')
   const [terms, setTerms] = useState(prefillTerms(doc))
   const [resp, setResp] = useState(
     Array.isArray(doc.terms?.responsibilities) ? doc.terms.responsibilities.join('\n') : '',
@@ -207,11 +207,24 @@ function DocFormModal({ doc, mode, templates, onClose, onDone }) {
           </span>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Entity">
-            <select className={inputClass} value={entity} onChange={(e) => setEntity(e.target.value)}>
-              <option value="EZ">EZ — EZ Lab Private Limited</option>
-              <option value="AEZ">AEZ — ArabEasy LLC</option>
-            </select>
+          <Field
+            label="Entity"
+            hint={lockedEntity
+              ? 'Settled by this candidate\u2019s first document — a candidate holds documents from one entity only.'
+              : 'This is the first document for this candidate, so it settles which entity they are on.'}
+          >
+            {lockedEntity ? (
+              <div className={cx(inputClass, 'flex items-center gap-2 bg-slate-50 text-slate-600')}>
+                <EntityChip value={lockedEntity} />
+                <span className="min-w-0 truncate">{ENTITY_LEGAL[lockedEntity] || lockedEntity}</span>
+                <Lock className="ml-auto h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+              </div>
+            ) : (
+              <select className={inputClass} value={entity} onChange={(e) => setEntity(e.target.value)}>
+                <option value="EZ">EZ — EZ Lab Private Limited</option>
+                <option value="AEZ">AEZ — ArabEasy LLC</option>
+              </select>
+            )}
           </Field>
           <Field
             label="Document to generate"
@@ -346,8 +359,10 @@ function RowMenu({ items, label, text }) {
   useLayoutEffect(() => {
     if (!open || !btnRef.current) return
     const r = btnRef.current.getBoundingClientRect()
-    const W = 232
-    const h = Math.max(8, items.reduce((acc, it) => acc + (it.sep ? 9 : 26), 8))
+    const W = 264
+    // py-1.5 (12) + one text-sm line (20) = 32; a note adds a text-[11px] line (16). A separator
+    // is my-1 + h-px = 9. The +8 is the list's own py-1.
+    const h = Math.max(8, items.reduce((acc, it) => acc + (it.sep ? 9 : it.note ? 48 : 32), 8))
     setPos({
       top: Math.min(r.bottom + 6, Math.max(8, window.innerHeight - h - 12)),
       left: Math.min(Math.max(8, r.right - W), window.innerWidth - W - 8),
@@ -387,7 +402,24 @@ function RowMenu({ items, label, text }) {
     else if (e.key === 'Tab') setOpen(false)
   }
 
-  const ITEM = 'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none'
+  const ITEM = cx(
+    'flex w-full items-start gap-2 px-3 py-1.5 text-left text-sm text-slate-700',
+    'transition-colors duration-150 ease-snappy hover:bg-slate-50 focus-visible:bg-slate-50',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50',
+  )
+
+  // The label owns its line and truncates; anything secondary sits underneath it, in full.
+  const body = (it) => (
+    <>
+      <span className="mt-0.5 shrink-0">{it.icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate leading-5">{it.label}</span>
+        {it.note && (
+          <span className="block truncate text-[11px] leading-4 text-slate-400" title={it.note}>{it.note}</span>
+        )}
+      </span>
+    </>
+  )
   return (
     <>
       {text ? (
@@ -423,7 +455,7 @@ function RowMenu({ items, label, text }) {
           aria-label={label}
           onKeyDown={onMenuKey}
           style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
-          className="menu-in z-[120] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl"
+          className="menu-in z-[120] origin-top-right overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl"
         >
           {items.map((it, i) => (
             it.sep ? <div key={`sep${i}`} role="separator" className="my-1 h-px bg-slate-100" />
@@ -438,7 +470,7 @@ function RowMenu({ items, label, text }) {
                   onClick={() => setOpen(false)}
                   className={ITEM}
                 >
-                  {it.icon}{it.label}
+                  {body(it)}
                 </a>
               ) : (
                 <button
@@ -449,8 +481,7 @@ function RowMenu({ items, label, text }) {
                   onClick={() => { setOpen(false); it.onClick() }}
                   className={ITEM}
                 >
-                  {it.icon}{it.label}
-                  {it.note && <span className="ml-auto min-w-0 truncate text-xs text-slate-400">{it.note}</span>}
+                  {body(it)}
                 </button>
               )
           ))}
@@ -760,13 +791,16 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
 // A candidate: click the row to open or close their letters. Their joining date and personal
 // email live here rather than on every letter, because they belong to the person — editing one
 // writes to all of their unlocked documents.
-function CandidateRow({ person: p, count, open, onToggle, onMerge, onAskOnboard, onAddDoc, onOpenOnboarding }) {
+function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard, onAddDoc, onOpenOnboarding }) {
   const { toast } = useToast()
+  const count = shown.length
+  // Counted over the rows on screen, not over every document the candidate has — otherwise a
+  // filtered block reads "2 documents" beside a tally of five.
   const summary = useMemo(() => {
     const by = {}
-    for (const d of p.all) { const k = statusOf(d); by[k] = (by[k] || 0) + 1 }
+    for (const d of shown) { const k = statusOf(d); by[k] = (by[k] || 0) + 1 }
     return STATUS.filter((o) => by[o.key]).map((o) => `${by[o.key]} ${o.label.toLowerCase()}`).join(' · ')
-  }, [p])
+  }, [shown])
 
   const items = [
     p.appDoc && { label: 'Add document…', icon: <FilePlus2 className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAddDoc(p) },
@@ -813,9 +847,18 @@ function CandidateRow({ person: p, count, open, onToggle, onMerge, onAskOnboard,
       </td>
       <td className={TD}>
         <div className="flex min-w-0 items-center gap-1">
-          {p.entities.length
-            ? p.entities.map((e) => <EntityChip key={e} value={e} />)
+          {p.entity
+            ? <EntityChip value={p.entity} />
             : <span className={cx('text-sm', EMPTY)}>—</span>}
+          {p.entityConflict && (
+            <span
+              className="shrink-0 cursor-help text-amber-700"
+              title={`${p.name} has documents on more than one entity (${p.entityConflict.join(', ')}). A candidate should hold documents from one entity only — the odd letter needs deleting or re-drafting.`}
+            >
+              <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+              <span className="sr-only">Documents on more than one entity</span>
+            </span>
+          )}
         </div>
       </td>
       <td className={TD}>
@@ -911,7 +954,14 @@ export default function OfferDocs() {
       p.anySent = p.all.some((x) => x.email_sent_at)
       p.appDoc = p.all.find((x) => x.application_id)
       p.newest = p.all.reduce((t, x) => Math.max(t, +new Date(x.created_at) || 0), 0)
-      p.entities = [...new Set(p.all.map((x) => x.entity).filter(Boolean))]
+      // A candidate belongs to ONE operating entity. Their first document establishes it;
+      // everything after must be issued on the same paper.
+      const inOrder = [...p.all].sort((a, b) => a.id - b.id)
+      p.entity = inOrder[0]?.entity || ''
+      // Documents that predate the rule can still disagree. Say so rather than picking one and
+      // pretending — the odd letter is on the wrong company's paper and somebody must decide.
+      const spread = [...new Set(p.all.map((x) => x.entity).filter(Boolean))]
+      p.entityConflict = spread.length > 1 ? spread : null
       // Their block's own span: when the first letter was drafted, and when anything last moved.
       // updated_at is NULL on documents drafted before the column existed, so created_at stands in.
       const made = p.all.map((x) => +new Date(x.created_at) || 0).filter(Boolean)
@@ -1090,6 +1140,17 @@ export default function OfferDocs() {
     return n
   })
 
+  // Which entity the form may NOT change. A candidate's first document settles their entity, so
+  // it is only unlocked while that first document is the one being drafted or re-drafted.
+  const entityLockFor = (f) => {
+    if (!f) return ''
+    const p = people.get(personKey(f.doc))
+    if (!p) return ''
+    const others = f.mode === 'edit' ? p.all.filter((d) => d.id !== f.doc.id) : p.all
+    if (!others.length) return ''
+    return [...others].sort((a, b) => a.id - b.id)[0]?.entity || ''
+  }
+
   const clearAll = () => { setQ(''); colFilters.clear(); setPage(0) }
   const TOOLBAR = cx('h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none',
     'transition-colors duration-150 ease-snappy hover:border-slate-300 focus:border-brand-500', focusRing)
@@ -1213,7 +1274,7 @@ export default function OfferDocs() {
                       <Fragment key={g.p.key}>
                         <CandidateRow
                           person={g.p}
-                          count={g.rows.length}
+                          shown={g.rows}
                           open={!collapsed.has(g.p.key)}
                           onToggle={() => toggleGroup(g.p.key)}
                           onMerge={mergeDoc}
@@ -1339,6 +1400,7 @@ export default function OfferDocs() {
           doc={form.doc}
           mode={form.mode}
           templates={templates}
+          lockedEntity={entityLockFor(form)}
           onClose={() => setForm(null)}
           onDone={onFormDone}
         />

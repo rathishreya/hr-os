@@ -65,6 +65,56 @@ DOC_TYPES = set(TEMPLATES) | AI_DOC_TYPES
 _ENTITY_CHOICES = {"EZ", "AEZ"}
 
 
+def _entity_of(doc: models.Document) -> str:
+    """The operating entity a stored document is on. The template is authoritative; terms only
+    cover legacy/AI documents that were never drafted from one."""
+    tpl = TEMPLATES.get(doc.template_key)
+    return (tpl.entity if tpl else "") or (doc.terms or {}).get("entity") or "EZ"
+
+
+def _settled_entity(db: Session, candidate_id: int, exclude_doc_id: int | None = None) -> str:
+    """The entity this candidate is already on, or "" when they have no documents yet.
+
+    A candidate belongs to ONE operating entity: their FIRST document settles it and every later
+    one must be issued on the same company's paper. Taking the earliest document rather than, say,
+    the majority means the answer never moves as more documents are added — and it stays stable
+    for the handful of candidates created before this rule existed whose documents disagree.
+    """
+    first = db.scalars(
+        select(models.Document)
+        .where(models.Document.candidate_id == candidate_id)
+        .order_by(models.Document.id)
+    ).first() if exclude_doc_id is None else next(
+        (d for d in db.scalars(
+            select(models.Document)
+            .where(models.Document.candidate_id == candidate_id)
+            .order_by(models.Document.id)
+        ) if d.id != exclude_doc_id),
+        None,
+    )
+    return _entity_of(first) if first else ""
+
+
+def _require_candidate_entity(db: Session, candidate_id: int, template_key: str,
+                              terms: dict | None, exclude_doc_id: int | None = None) -> None:
+    """Refuse to put a second entity's letter into a candidate's file."""
+    settled = _settled_entity(db, candidate_id, exclude_doc_id)
+    if not settled:
+        return  # no documents yet — this one settles it
+    tpl = TEMPLATES.get(template_key)
+    wanted = (tpl.entity if tpl else "") or (terms or {}).get("entity") or settled
+    if wanted == settled:
+        return
+    cand = db.get(models.Candidate, candidate_id)
+    who = (cand.name if cand else None) or "This candidate"
+    raise HTTPException(
+        409,
+        f"{who} is on {settled}. A candidate can only hold documents from one entity, so a "
+        f"document on {wanted} cannot be added to their file. If they belong to {wanted}, delete "
+        f"their {settled} documents first.",
+    )
+
+
 def _require_entity_match(template_key: str, entity: str | None) -> None:
     """Refuse to draft an entity's letter from another entity's template — that would put the
     wrong legal name and clause wording on a signed document."""
@@ -173,6 +223,7 @@ def generate(req: schemas.GenerateDocumentRequest, db: Session = Depends(get_db)
 
     template_key = req.template_key or (req.doc_type if req.doc_type in TEMPLATES else default_template_for(req.doc_type))
     _require_entity_match(template_key, (req.terms or {}).get("entity"))
+    _require_candidate_entity(db, app.candidate_id, template_key, req.terms)
     if template_key in TEMPLATES:
         rendered = render_document(template_key, template_context(app, req.terms or {}))
         doc = models.Document(
@@ -212,6 +263,7 @@ def regenerate(doc_id: int, req: schemas.RegenerateDocumentRequest, db: Session 
         raise HTTPException(422, "Document has no application to regenerate from")
     template_key = req.template_key or doc.template_key or default_template_for(doc.doc_type)
     _require_entity_match(template_key, (req.terms or {}).get("entity"))
+    _require_candidate_entity(db, doc.candidate_id, template_key, req.terms, exclude_doc_id=doc.id)
     if template_key in TEMPLATES:
         rendered = render_document(template_key, template_context(app, req.terms or {}))
         doc.doc_type = rendered["doc_type"]
