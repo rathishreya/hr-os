@@ -1,9 +1,9 @@
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, ArrowRight, ArrowRightCircle, Building2, Check, ChevronDown, ChevronRight, Copy, Eye, FilePlus2,
-  FileText, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw, Rocket, RotateCcw, Search, Upload,
+  FileText, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw, Rocket, RotateCcw, Search, Upload, X,
 } from 'lucide-react'
 import { api } from '../api'
 import {
@@ -600,6 +600,19 @@ function PersonField({ person, field, label, placeholder, note: extraNote, onSav
   )
 }
 
+// A column heading with its filter attached. Every column has one: on a table that groups
+// twenty candidates' letters together, narrowing by hand is the only way to find anything.
+function FilterHead({ label, colKey, values, filters, onFilter, align }) {
+  return (
+    <th scope="col" className={cx(TH, align === 'right' && 'text-right')}>
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        {label}
+        <ColumnFilter label={label} values={values} excluded={filters[colKey] || []} onChange={onFilter(colKey)} />
+      </span>
+    </th>
+  )
+}
+
 // ── One document ────────────────────────────────────────────────────────────────────────────
 function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
   onEditLetter, onEmail, onDetails, onApprove, onEntity, onAskOnboard }) {
@@ -855,7 +868,6 @@ export default function OfferDocs() {
   const [busy, setBusy] = useState(false)
   const [q, setQ] = useState('')
   const [sortKey, setSortKey] = useState('recent')
-  const [status, setStatus] = useState('')          // '' = every status
   const [page, setPage] = useState(0)
   // Candidates open by default — everything is visible on arrival; clicking a name folds it away.
   const [collapsed, setCollapsed] = useState(() => new Set())
@@ -924,13 +936,46 @@ export default function OfferDocs() {
     ].some((v) => String(v || '').toLowerCase().includes(n)))
   }, [docs, nameOf, q])
 
-  const docValues = useMemo(() => distinctValues(docs || [], nameOf), [docs, nameOf])
-  const faceted = useMemo(() => colFilters.apply(searched, { document: nameOf }), [searched, colFilters, nameOf])
+  // What each column filters ON. These read the DISPLAYED value, so what a recruiter ticks in
+  // the dropdown is exactly what they can see in the column.
+  const accessors = useMemo(() => ({
+    candidate: (d) => d.candidate_name || '',
+    document: nameOf,
+    entity: (d) => d.entity || '',
+    status: (d) => STATUS.find((o) => o.key === statusOf(d))?.label || '',
+    joining: (d) => d.joining_date || '',
+    email: (d) => d.personal_email || d.email || '',
+    created: (d) => fmtShort(d.created_at),
+    updated: (d) => fmtShort(d.updated_at || ''),
+  }), [nameOf])
 
-  const filteredDocs = useMemo(
-    () => (status ? faceted.filter((d) => statusOf(d) === status) : faceted),
-    [faceted, status],
+  // Date columns are listed newest-first rather than alphabetically: sorted as text, "24 Aug"
+  // lands before "8 Aug", which is nonsense in a list of dates.
+  const colValues = useMemo(() => {
+    const all = docs || []
+    const byDate = (iso) => {
+      const seen = new Map()
+      for (const d of all) { const t = iso(d); seen.set(fmtShort(t) || '', +new Date(t) || 0) }
+      return [...seen.entries()].sort((a, b) => b[1] - a[1]).map(([label]) => label)
+    }
+    return {
+      candidate: distinctValues(all, accessors.candidate),
+      document: distinctValues(all, accessors.document),
+      entity: distinctValues(all, accessors.entity),
+      status: distinctValues(all, accessors.status),
+      joining: distinctValues(all, accessors.joining),
+      email: distinctValues(all, accessors.email),
+      created: byDate((d) => d.created_at),
+      updated: byDate((d) => d.updated_at || ''),
+    }
+  }, [docs, accessors])
+
+  const onFilter = useCallback(
+    (key) => (excluded) => { colFilters.setFilter(key, excluded); setPage(0) },
+    [colFilters],
   )
+
+  const filteredDocs = useMemo(() => colFilters.apply(searched, accessors), [searched, colFilters, accessors])
 
   // Which documents to draw and in what order. The API returns newest-first GLOBALLY, so without
   // regrouping a candidate's letters are scattered and their name prints over and over.
@@ -1045,7 +1090,7 @@ export default function OfferDocs() {
     return n
   })
 
-  const clearAll = () => { setQ(''); setStatus(''); colFilters.clear(); setPage(0) }
+  const clearAll = () => { setQ(''); colFilters.clear(); setPage(0) }
   const TOOLBAR = cx('h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none',
     'transition-colors duration-150 ease-snappy hover:border-slate-300 focus:border-brand-500', focusRing)
 
@@ -1083,17 +1128,36 @@ export default function OfferDocs() {
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
+            {/* Search leads: it is the control reached for first, so it sits where reading starts. */}
+            <label className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden />
+              <input value={q} onChange={(e) => { setQ(e.target.value); setPage(0) }} aria-label="Search candidates and documents"
+                placeholder="Search candidate or document…" className={cx(TOOLBAR, 'w-64 pl-8')} />
+              {q && (
+                <button type="button" onClick={() => { setQ(''); setPage(0) }} aria-label="Clear the search"
+                  className={cx('absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600', focusRing)}>
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </label>
             <p className="text-sm text-slate-500">
               <span className="font-medium tabular-nums text-slate-700">{total}</span>
               {total === 1 ? ' document' : ' documents'}
               {pages.length > 1 && <span className="tabular-nums"> · showing {from + 1}–{from + rows.length}</span>}
             </p>
+            {colFilters.active > 0 && (
+              <button
+                type="button"
+                onClick={() => { colFilters.clear(); setPage(0) }}
+                className={cx('inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-100', focusRing)}
+              >
+                <span className="tabular-nums">{colFilters.active}</span>
+                {colFilters.active === 1 ? ' column filtered' : ' columns filtered'}
+                <X className="h-3 w-3" aria-hidden />
+                <span className="sr-only">Clear every column filter</span>
+              </button>
+            )}
             <div className="ml-auto flex items-center gap-2">
-              <label className="sr-only" htmlFor="od-status">Filter by status</label>
-              <select id="od-status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(0) }} className={TOOLBAR}>
-                <option value="">All statuses</option>
-                {STATUS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-              </select>
               <label className="sr-only" htmlFor="od-sort">Sort candidates</label>
               <select id="od-sort" value={sortKey} onChange={(e) => { setSortKey(e.target.value); setPage(0) }} className={TOOLBAR}>
                 <option value="recent">Recent first</option>
@@ -1101,11 +1165,6 @@ export default function OfferDocs() {
                 <option value="waiting">Longest waiting</option>
                 <option value="name">Candidate A–Z</option>
               </select>
-              <label className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden />
-                <input value={q} onChange={(e) => { setQ(e.target.value); setPage(0) }} aria-label="Search candidates and documents"
-                  placeholder="Search candidate or document…" className={cx(TOOLBAR, 'w-56 pl-8')} />
-              </label>
             </div>
           </div>
 
@@ -1138,21 +1197,14 @@ export default function OfferDocs() {
                   </colgroup>
                   <thead className={cx(THEAD, 'sticky top-0 z-10')}>
                     <tr className={THEAD_ROW}>
-                      <th scope="col" className={TH}>Candidate</th>
-                      <th scope="col" className={TH}>
-                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                          Document
-                          <ColumnFilter label="Document" values={docValues}
-                            excluded={colFilters.filters.document || []}
-                            onChange={(a) => { colFilters.setFilter('document', a); setPage(0) }} />
-                        </span>
-                      </th>
-                      <th scope="col" className={TH}>Entity</th>
-                      <th scope="col" className={TH}>Status</th>
-                      <th scope="col" className={TH}>Joining date</th>
-                      <th scope="col" className={TH}>Email</th>
-                      <th scope="col" className={TH}>Created</th>
-                      <th scope="col" className={TH}>Updated</th>
+                      <FilterHead label="Candidate" colKey="candidate" values={colValues.candidate} filters={colFilters.filters} onFilter={onFilter} />
+                      <FilterHead label="Document" colKey="document" values={colValues.document} filters={colFilters.filters} onFilter={onFilter} />
+                      <FilterHead label="Entity" colKey="entity" values={colValues.entity} filters={colFilters.filters} onFilter={onFilter} />
+                      <FilterHead label="Status" colKey="status" values={colValues.status} filters={colFilters.filters} onFilter={onFilter} />
+                      <FilterHead label="Joining date" colKey="joining" values={colValues.joining} filters={colFilters.filters} onFilter={onFilter} />
+                      <FilterHead label="Email" colKey="email" values={colValues.email} filters={colFilters.filters} onFilter={onFilter} />
+                      <FilterHead label="Created" colKey="created" values={colValues.created} filters={colFilters.filters} onFilter={onFilter} />
+                      <FilterHead label="Updated" colKey="updated" values={colValues.updated} filters={colFilters.filters} onFilter={onFilter} />
                       <th scope="col" className={cx(TH, 'text-right')}>Actions</th>
                     </tr>
                   </thead>

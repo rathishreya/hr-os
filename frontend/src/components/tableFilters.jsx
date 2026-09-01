@@ -117,7 +117,9 @@ export function ColumnFilter({ label, values, excluded, onChange }) {
         onClick={(e) => { e.stopPropagation(); setQ(''); setOpen((o) => !o) }}
         className={cx(
           'relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
-          active ? 'text-brand-600' : 'text-slate-300 hover:text-slate-500',
+          // The header band is brand-100 now, on which slate-300 measured 1.25:1 — the funnel
+          // was there but could not be seen. brand-500 is 3.7:1, brand-700 is 6.1:1.
+          active ? 'text-brand-700' : 'text-brand-500 hover:text-brand-800',
         )}
       >
         <Filter className="h-3.5 w-3.5" />
