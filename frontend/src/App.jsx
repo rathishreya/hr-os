@@ -19,6 +19,7 @@ import OfferDocs from './pages/OfferDocs'
 import Onboarding from './pages/Onboarding'
 import ResetPassword from './pages/ResetPassword'
 import PartnerIntake from './pages/PartnerIntake'
+import OnboardingForm from './pages/OnboardingForm'
 import NotFound from './pages/NotFound'
 
 const Analytics = lazy(() => import('./pages/Analytics'))           // recharts
@@ -73,6 +74,9 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           {/* Public partner (vendor / college) self-registration form (no login) */}
           <Route path="/partner-intake" element={<PartnerIntake />} />
+          {/* The onboarding form: a signed per-candidate link, and a generic one. */}
+          <Route path="/onboarding-form" element={<OnboardingForm />} />
+          <Route path="/onboarding-form/:candidateId" element={<OnboardingForm />} />
           <Route path="/*" element={<RequireAuth><AppRoutes /></RequireAuth>} />
         </Routes>
       </AuthProvider>

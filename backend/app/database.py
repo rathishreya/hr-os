@@ -126,6 +126,8 @@ def _ensure_sqlite_columns() -> None:
         conn.execute(text("""UPDATE documents SET updated_at = MAX(created_at, COALESCE(approved_at, created_at), COALESCE(email_sent_at, created_at)) WHERE updated_at IS NULL"""))
 
 
+# onboarding_submissions / onboarding_uploads need no entry here: create_all builds tables
+# that do not exist yet. These helpers are only for columns added to a table already in prod.
 def _ensure_pg_columns() -> None:
     """Add new columns to existing Postgres tables (create_all won't ALTER them).
 

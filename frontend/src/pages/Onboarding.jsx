@@ -5,7 +5,8 @@ import {
 } from 'lucide-react'
 import { api } from '../api'
 import { Card, Badge, Button, Spinner, EmptyState, PageHeader, Modal, Field, inputClass, cx } from '../ui'
-import { THEAD, THEAD_ROW, TH_TYPE } from '../components/tableStyles'
+import { ROW_HOVER, TD, TH, THEAD, THEAD_ROW, TH_TYPE } from '../components/tableStyles'
+import SubmissionModal from '../components/onboarding/SubmissionModal'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useColumnFilters, ColumnFilter, distinctValues } from '../components/tableFilters'
@@ -348,6 +349,65 @@ function SessionsView({ plans, onStep }) {
   )
 }
 
+// Forms candidates have sent back. They arrive with the offer letter, long before a tracker
+// exists, so they are listed on their own rather than hung off a plan.
+function SubmissionsPanel() {
+  const [rows, setRows] = useState(null)
+  const [open, setOpen] = useState(null)
+  useEffect(() => { api.listOnboardingSubmissions().then(setRows).catch(() => setRows([])) }, [])
+
+  const merge = (up) => { setRows((l) => (l || []).map((r) => (r.id === up.id ? up : r))); setOpen(up) }
+  if (!rows || rows.length === 0) return null
+
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">Onboarding forms</h2>
+          <p className="text-xs text-slate-500">What new joiners have sent back. Click one to read or correct it.</p>
+        </div>
+        <span className="text-xs tabular-nums text-slate-500">{rows.length}</span>
+      </div>
+      <div className="overflow-auto">
+        <table className="w-full border-collapse text-left text-sm">
+          <thead className={cx(THEAD, 'sticky top-0 z-10')}>
+            <tr className={THEAD_ROW}>
+              <th scope="col" className={TH}>Reference</th>
+              <th scope="col" className={TH}>Name</th>
+              <th scope="col" className={TH}>Email</th>
+              <th scope="col" className={TH}>Type</th>
+              <th scope="col" className={TH}>Files</th>
+              <th scope="col" className={TH}>Sent</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr
+                key={r.id}
+                onClick={() => setOpen(r)}
+                className={cx('cursor-pointer border-b border-slate-100 last:border-0', ROW_HOVER)}
+              >
+                <td className={cx(TD, 'font-medium tabular-nums text-slate-800')}>{r.reference}</td>
+                <td className={TD}>
+                  <span className="block truncate">{r.legal_name || r.candidate_name || '—'}</span>
+                  {!r.candidate_id && <span className="text-xs text-amber-700">not attached to a candidate</span>}
+                </td>
+                <td className={cx(TD, 'text-slate-600')}><span className="block truncate">{r.email || '—'}</span></td>
+                <td className={cx(TD, 'text-slate-600')}>{r.variant}</td>
+                <td className={cx(TD, 'tabular-nums text-slate-600')}>{r.files.length}</td>
+                <td className={cx(TD, 'whitespace-nowrap text-xs text-slate-500')}>
+                  {new Date(r.submitted_at).toLocaleDateString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {open && <SubmissionModal submission={open} onClose={() => setOpen(null)} onSaved={merge} />}
+    </Card>
+  )
+}
+
 export default function Onboarding() {
   usePageTitle('Onboarding')
   const { toast } = useToast()
@@ -398,6 +458,8 @@ export default function Onboarding() {
         title="Onboarding"
         subtitle="The EZ Lab 100-day plan for every hire. A tracker appears once a candidate is marked “Move to onboarding” in Offer &amp; Docs."
       />
+
+      <SubmissionsPanel />
 
       {plans === null ? (
         <div className="flex items-center gap-2 text-sm text-slate-400"><Spinner /> Loading…</div>

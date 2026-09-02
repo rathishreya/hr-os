@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from .config import settings
 from .database import SessionLocal, init_db
-from .routers import admin, auth, assessments, candidates, careers, comms, distribution, documents, google_oauth, hiring_requests, interview_invite, interview_rounds, jobs, onboarding, outreach, pipeline, screening, tpos, users, video
+from .routers import admin, auth, assessments, candidates, careers, comms, distribution, documents, google_oauth, hiring_requests, interview_invite, interview_rounds, jobs, onboarding, onboarding_form, outreach, pipeline, screening, tpos, users, video
 from .services import embeddings, security
 from .services.ai import ai
 
@@ -76,10 +76,11 @@ app.add_middleware(
 # Require a valid token on every /api/* route except the public allowlist. Non-/api
 # paths (the careers pages, the static UI, the candidate video-interview flow) are
 # public by design. Sets request.state.user_id for the current_user dependency.
-_PUBLIC_API = {"/api/auth/login", "/api/auth/signup", "/api/auth/can-signup", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/company", "/api/ai-status", "/api/google/callback", "/api/tpos/intake"}
+_PUBLIC_API = {"/api/auth/login", "/api/auth/signup", "/api/auth/can-signup", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/company", "/api/ai-status", "/api/google/callback", "/api/tpos/intake", "/api/onboarding-form/submit"}
 
 
 _ASSESS_FILE_RE = re.compile(r"^/api/assessments/(\d+)/files?(?:/\d+)?$")
+_ONBOARD_FORM_RE = re.compile(r"^/api/onboarding-form/(\d+)/(prefill|submit)$")
 
 
 def _is_public_api(request: Request) -> bool:
@@ -94,6 +95,13 @@ def _is_public_api(request: Request) -> bool:
     m = _ASSESS_FILE_RE.match(path)
     if m and security.verify_resource(
         f"assessment:{m.group(1)}:file", request.query_params.get("t", ""), settings.SECRET_KEY
+    ):
+        return True
+    # A candidate's own onboarding form, reached from the link emailed with their offer letter.
+    # Public only with a matching signature; without one it falls through to the gate below.
+    m = _ONBOARD_FORM_RE.match(path)
+    if m and security.verify_resource(
+        f"onboarding:{m.group(1)}:form", request.query_params.get("t", ""), settings.SECRET_KEY
     ):
         return True
     return False
@@ -125,6 +133,7 @@ app.include_router(interview_invite.router)
 app.include_router(google_oauth.router)
 app.include_router(documents.router)
 app.include_router(onboarding.router)
+app.include_router(onboarding_form.router)
 app.include_router(assessments.router)
 app.include_router(users.router)
 app.include_router(tpos.router)

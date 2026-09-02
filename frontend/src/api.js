@@ -230,6 +230,37 @@ export const api = {
 
   // Offers & contracts (AI draft → human approval)
   listDocuments: (applicationId) => req(`/documents?application_id=${applicationId}`),
+  // ── Onboarding form (public for the candidate, gated for HR) ──
+  onboardingPrefill: (candidateId, t) =>
+    req(`/onboarding-form/${candidateId}/prefill?t=${encodeURIComponent(t)}`),
+  submitOnboardingForm: ({ candidateId, token, variant, answers, files }) => {
+    const fd = new FormData()
+    fd.append('answers', JSON.stringify(answers || {}))
+    fd.append('variant', variant)
+    // Prefixed so the server can tell an uploaded document from an ordinary form value.
+    for (const [key, file] of Object.entries(files || {})) if (file) fd.append(`file:${key}`, file, file.name)
+    const path = candidateId
+      ? `/onboarding-form/${candidateId}/submit?t=${encodeURIComponent(token || '')}`
+      : '/onboarding-form/submit'
+    // No auth header: this is the one call a candidate makes, and they are not signed in.
+    return fetch(BASE + path, { method: 'POST', body: fd }).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Could not send the form')
+      return r.json()
+    })
+  },
+  listOnboardingSubmissions: (candidateId) =>
+    req(`/onboarding-form${candidateId ? `?candidate_id=${candidateId}` : ''}`),
+  updateOnboardingSubmission: (id, body) =>
+    req(`/onboarding-form/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  onboardingUploadUrl: (uploadId) => `${BASE}/onboarding-form/uploads/${uploadId}`,
+  // The route is auth-gated, so a plain <a href> would 401 — fetch it with the header.
+  fetchOnboardingUpload: async (uploadId) => {
+    const r = await fetch(BASE + `/onboarding-form/uploads/${uploadId}`, { headers: authHeaders() })
+    if (!r.ok) { if (r.status === 401) onUnauthorized('/onboarding-form/uploads'); throw new Error('Could not load that file') }
+    return r.blob()
+  },
+  onboardingFormLink: (candidateId) => req(`/onboarding-form/${candidateId}/link`),
+
   listAllDocuments: () => req('/documents'),
   listDocumentTemplates: () => req('/documents/templates'),
   generateDocument: (body) => req('/documents/generate', { method: 'POST', body: JSON.stringify(body) }),

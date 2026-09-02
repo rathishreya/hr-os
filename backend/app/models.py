@@ -483,3 +483,47 @@ class AuditLog(Base):
     entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+class OnboardingSubmission(Base):
+    """A candidate's filled-in onboarding form.
+
+    Its own table rather than OnboardingPlan.details, because the form goes out WITH the offer
+    letter and an onboarding plan does not exist until HR presses "move to onboarding" weeks
+    later. candidate_id is nullable on purpose: the generic public link can be filled in by
+    someone who is not in the system yet, and HR attaches them afterwards.
+    """
+
+    __tablename__ = "onboarding_submissions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    candidate_id: Mapped[int | None] = mapped_column(ForeignKey("candidates.id"), nullable=True)
+    application_id: Mapped[int | None] = mapped_column(ForeignKey("applications.id"), nullable=True)
+    variant: Mapped[str] = mapped_column(String(20), default="individual")  # individual|freelancer|organization
+    email: Mapped[str] = mapped_column(String(200), default="")   # lifted out of answers so HR can search it
+    legal_name: Mapped[str] = mapped_column(String(200), default="")
+    answers: Mapped[dict] = mapped_column(JSON, default=dict)     # every non-file field, keyed as onboardingFields.js
+    status: Mapped[str] = mapped_column(String(20), default="submitted")  # submitted|reviewed
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=True)
+
+
+class OnboardingUpload(Base):
+    """One file from an onboarding form.
+
+    Stored in S3 when it is configured and streamed there so a 5 MB scan never sits in memory;
+    otherwise kept inline, which is what a developer machine on SQLite does. A candidate can send
+    eight of these, so putting them all in Postgres on purpose would grow the RDS backup for no
+    reason.
+    """
+
+    __tablename__ = "onboarding_uploads"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    submission_id: Mapped[int] = mapped_column(ForeignKey("onboarding_submissions.id"))
+    field_key: Mapped[str] = mapped_column(String(60))
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    mime: Mapped[str] = mapped_column(String(120), default="")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    s3_key: Mapped[str] = mapped_column(String(400), default="")
+    data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
