@@ -231,6 +231,23 @@ export const api = {
   // Offers & contracts (AI draft → human approval)
   listDocuments: (applicationId) => req(`/documents?application_id=${applicationId}`),
   // ── Onboarding form (public for the candidate, gated for HR) ──
+  // ── Onboarding module: the checklist, the session catalogue and the calendar ──
+  onboardingDefinitions: () => req('/onboarding-module/definitions'),
+  onboardingBoard: () => req('/onboarding-module/board'),
+  onboardingPlanDetail: (planId) => req(`/onboarding-module/plan/${planId}`),
+  onboardingStepPatch: (planId, stepKey, body) =>
+    req(`/onboarding-module/plan/${planId}/step/${stepKey}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  onboardingOccurrences: (entity) =>
+    req(`/onboarding-module/occurrences${entity ? `?entity=${entity}` : ''}`),
+  onboardingCreateOccurrence: (body) =>
+    req('/onboarding-module/occurrences', { method: 'POST', body: JSON.stringify(body) }),
+  onboardingUpdateOccurrence: (id, body) =>
+    req(`/onboarding-module/occurrences/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  onboardingAddAttendee: (id, body) =>
+    req(`/onboarding-module/occurrences/${id}/attendees`, { method: 'POST', body: JSON.stringify(body) }),
+  onboardingMarkAttendance: (attendeeId, attended) =>
+    req(`/onboarding-module/attendees/${attendeeId}`, { method: 'PATCH', body: JSON.stringify({ attended }) }),
+
   onboardingPrefill: (candidateId, t) =>
     req(`/onboarding-form/${candidateId}/prefill?t=${encodeURIComponent(t)}`),
   submitOnboardingForm: ({ candidateId, token, variant, answers, files }) => {
