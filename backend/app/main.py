@@ -76,7 +76,7 @@ app.add_middleware(
 # Require a valid token on every /api/* route except the public allowlist. Non-/api
 # paths (the careers pages, the static UI, the candidate video-interview flow) are
 # public by design. Sets request.state.user_id for the current_user dependency.
-_PUBLIC_API = {"/api/auth/login", "/api/auth/signup", "/api/auth/can-signup", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/company", "/api/ai-status", "/api/google/callback"}
+_PUBLIC_API = {"/api/auth/login", "/api/auth/signup", "/api/auth/can-signup", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/company", "/api/ai-status", "/api/google/callback", "/api/tpos/intake"}
 
 
 _ASSESS_FILE_RE = re.compile(r"^/api/assessments/(\d+)/files?(?:/\d+)?$")

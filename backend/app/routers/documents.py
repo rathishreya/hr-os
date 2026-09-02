@@ -383,46 +383,6 @@ def list_documents(application_id: int | None = None, candidate_id: int | None =
     return docs
 
 
-@router.get("/awaiting", response_model=list[schemas.AwaitingDocumentOut])
-def list_awaiting(db: Session = Depends(get_db)):
-    """Hired candidates who have no document yet.
-
-    Being hired is what puts someone on Offer & Docs; writing their first letter is a decision a
-    recruiter makes afterwards. Since nothing is drafted on hire, these rows are the only way such
-    a candidate is visible at all — without them a candidate could be marked Hired and vanish.
-
-    Scoped by APPLICATION, because a candidate hired onto a second role needs their own row for
-    that role's paperwork even if their first role already has letters.
-    """
-    drafted = select(models.Document.application_id).where(models.Document.application_id.is_not(None))
-    apps = db.scalars(
-        select(models.Application)
-        .where(models.Application.stage == "hired", models.Application.id.not_in(drafted))
-        .order_by(models.Application.id.desc())
-    ).all()
-
-    out: list[schemas.AwaitingDocumentOut] = []
-    for a in apps:
-        cand = a.candidate
-        hr = a.hiring_request
-        parsed = (cand.parsed or {}) if cand else {}
-        out.append(schemas.AwaitingDocumentOut(
-            application_id=a.id,
-            candidate_id=a.candidate_id,
-            candidate_name=(cand.name if cand else "") or str(parsed.get("name") or ""),
-            email=(cand.email if cand else "") or str(parsed.get("email") or ""),
-            contact=(cand.phone if cand else "") or str(parsed.get("phone") or ""),
-            position=hr.position if hr else "",
-            department=hr.department if hr else "",
-            # The resolved figure, not the band: see the note on d.compensation above.
-            compensation=str(comp.parse_ctc(hr.budget_ctc if hr else None) or ""),
-            location=hr.location if hr else "",
-            reporting_manager=(hr.hiring_manager if hr else "") or "",
-            hired_at=a.stage_changed_at,
-        ))
-    return out
-
-
 @router.delete("/{doc_id}", status_code=204)
 def delete_document(doc_id: int, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
     """Delete a document.

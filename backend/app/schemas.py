@@ -579,34 +579,6 @@ class DocumentTemplateOut(BaseModel):
     contract_type: str | None = None  # agency | freelance | trainee | full_time | professional_services
 
 
-class AwaitingDocumentOut(BaseModel):
-    """A hired candidate who has no document yet.
-
-    Offer & Docs is a list of documents, so before this existed a candidate reached Hired and
-    simply did not appear until something drafted a letter for them. Nothing drafts on hire any
-    more, so this carries the same display fields an enriched DocumentOut has — the table renders
-    it as a candidate with no letters, and "Add document" starts from it.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    application_id: int
-    candidate_id: int
-    candidate_name: str = ""
-    email: str = ""
-    contact: str = ""
-    personal_email: str = ""
-    position: str = ""
-    department: str = ""
-    compensation: str = ""
-    location: str = ""
-    joining_date: str = ""
-    entity: str = ""            # unset: their first document settles which entity they are on
-    reporting_manager: str = ""
-    approving_manager: str = ""
-    hired_at: datetime | None = None
-
-
 class DocumentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

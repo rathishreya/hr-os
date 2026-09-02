@@ -257,10 +257,9 @@ def move_stage(app_id: int, body: schemas.StageUpdate, db: Session = Depends(get
     recruitment.log(db, "application.stage_changed", "application", app.id, {"from": old, "to": body.stage}, actor="recruiter")
     db.commit()  # persist the stage change + audit FIRST so artifact generation can never undo it
     db.refresh(app)
-    # Entering "hired" no longer drafts anything. A candidate reaches Offer & Docs by being
-    # hired, and the first letter is written when a recruiter asks for it — the auto-draft
-    # guessed the template, guessed EZ, and put paper in the file that nobody had asked for.
-    # GET /api/documents/awaiting is what makes them visible with nothing drafted yet.
+    # Entering "hired" no longer drafts anything. The auto-draft guessed the template, guessed
+    # EZ, and put paper in a candidate's file that nobody had asked for. Their first letter is
+    # written when a recruiter asks for it, from the Offer tab on the candidate.
     return app
 
 

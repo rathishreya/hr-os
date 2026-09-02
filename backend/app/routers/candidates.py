@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..deps import current_user, require_roles
-from ..services import recruitment, resume_extract, resume_parser
+from ..services import designations, recruitment, resume_extract, resume_parser
 from ..services.ai import ai
 
 router = APIRouter(prefix="/api/candidates", tags=["candidates"])
@@ -189,8 +189,8 @@ def list_candidates(q: str = "", table: bool = False, limit: int = 500, db: Sess
     rows = rows[:limit]
     if not table:
         return [schemas.CandidateOut.model_validate(c) for c in rows]
-    # Embed every role once so the "suggested role" column is one batch, not N×roles calls.
-    role_vecs = recruitment.build_role_vectors(db)
+    # "AI suggested role" ranks the fixed EZ designation master list for each candidate (not open
+    # requisitions). Designation vectors are built/cached once inside the service.
     pos_by_hr = {hr.id: hr.position for hr in db.scalars(select(models.HiringRequest)).all()}
     _stage_rank = {"applied": 1, "screening": 2, "shortlisted": 3, "interview": 4, "offer": 5, "hired": 6}
     # One query for all candidates' applications instead of one-per-candidate (N+1).
@@ -220,7 +220,7 @@ def list_candidates(q: str = "", table: bool = False, limit: int = 500, db: Sess
                 c.resume_text or "", fallback_name=c.name or "", fallback_source=c.source or "")
             if (c.resume_text or "").strip() else {}
         )
-        best = recruitment.suggest_roles_for(c, role_vecs, limit=1)
+        best = designations.suggest_designations_for(c, limit=1)
         suggestion = best[0] if best else None
         out.append({
             **schemas.CandidateOut.model_validate(c).model_dump(),
@@ -233,8 +233,8 @@ def list_candidates(q: str = "", table: bool = False, limit: int = 500, db: Sess
             "primary_score": round((primary.score_overall or 0), 1) if primary else 0,
             "applied_by": primary.applied_by if primary else "",
             "sub_source": ((primary.applied_by if primary else "") or c.source or ""),
-            "suggested_role": suggestion["position"] if suggestion else "",
-            "suggested_role_id": suggestion["hiring_request_id"] if suggestion else None,
+            "suggested_role": suggestion["designation"] if suggestion else "",
+            "suggested_role_id": None,  # a designation from the master list, not a requisition — no link
             "suggested_role_score": suggestion["score"] if suggestion else None,
             **resume_extract.table_fields(parsed, c),
         })
