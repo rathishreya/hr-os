@@ -77,7 +77,11 @@ export default function OnboardingPanel({ app }) {
 
   // Group tasks by category, ordered.
   const groups = {}
-  tasks.forEach((t) => { const k = t.category && CATS[t.category] ? t.category : (t.category || 'Other'); (groups[k] ||= []).push(t) })
+  tasks.forEach((t) => {
+    const cat = t.group || t.category
+    const k = cat && CATS[cat] ? cat : (cat || 'Other')
+    ;(groups[k] ||= []).push(t)
+  })
   const orderedKeys = [
     ...CAT_ORDER.filter((k) => groups[k]),
     ...Object.keys(groups).filter((k) => !CAT_ORDER.includes(k)),
@@ -117,7 +121,7 @@ export default function OnboardingPanel({ app }) {
                 {items.map((t) => (
                   <label key={t.id} className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-colors duration-150 ease-snappy hover:border-brand-200 hover:bg-brand-50/40 focus-within:ring-2 focus-within:ring-brand-500/40">
                     <input type="checkbox" checked={!!t.done} onChange={(e) => toggle(t.id, e.target.checked)} className="h-4 w-4 shrink-0 accent-brand-600" />
-                    <span className={t.done ? 'text-slate-400 line-through' : 'text-slate-700'}>{t.title}</span>
+                    <span className={t.done ? 'text-slate-400 line-through' : 'text-slate-700'}>{t.label || t.title}</span>
                     {t.owner && <span className="ml-auto shrink-0 text-xs text-slate-400">{t.owner}</span>}
                   </label>
                 ))}
