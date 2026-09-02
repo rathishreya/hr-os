@@ -21,6 +21,7 @@ from ..services.documents import (
 )
 from ..services.documents import mail as doc_mail
 from ..services import mailer
+from . import onboarding_form
 from ..services.documents.registry import default_template_for
 from ..services.recruitment import log
 
@@ -532,7 +533,11 @@ def get_email_draft(doc_id: int, db: Session = Depends(get_db)):
     if not doc:
         raise HTTPException(404, "Document not found")
     to_email, full_name, role = _mail_context(db, doc)
-    draft = doc_mail.render(doc.template_key or "", full_name=full_name, role=role)
+    # The candidate's own signed form link, so the sentence promising one finally has one.
+    draft = doc_mail.render(
+        doc.template_key or "", full_name=full_name, role=role,
+        onboarding_link=onboarding_form.form_url(doc.candidate_id) if doc.candidate_id else "",
+    )
     return {
         **draft,
         "document_id": doc.id,

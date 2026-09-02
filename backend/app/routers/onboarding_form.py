@@ -154,6 +154,16 @@ async def submit_for_candidate(
     _check_token(candidate_id, t)
     if not db.get(models.Candidate, candidate_id):
         raise HTTPException(404, "Candidate not found")
+    # The signature never expires and cannot be revoked, so the link is a standing credential to
+    # file Aadhaar, PAN and bank details against one person. One submission closes it; a genuine
+    # correction goes through HR, who can edit what was sent.
+    if db.scalar(
+        select(models.OnboardingSubmission.id)
+        .where(models.OnboardingSubmission.candidate_id == candidate_id)
+        .limit(1)
+    ):
+        raise HTTPException(409, "This form has already been completed. Contact the People team if "
+                                 "something needs correcting.")
     form = await request.form()
     sub = _save(db, candidate_id=candidate_id, variant=variant,
                 payload=json.loads(answers or "{}"), files=_collect_files(form))

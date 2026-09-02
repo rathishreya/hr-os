@@ -57,7 +57,7 @@ _OFFER_BODY = _body(
     "{{Next day's Date}}.",
     "The link for the onboarding form is mentioned below; kindly fill out this form by "
     "{{Next day's Date}}.",
-    "Click here to fill out the onboarding form.",
+    "Fill it out here: {{Onboarding Link}}",
     "Feel free to let us know if you have any questions.",
 )
 
@@ -145,7 +145,8 @@ def _first_name(full: str) -> str:
     return parts[0] if parts else ""
 
 
-def render(template_key: str, *, full_name: str, role: str, today: date | None = None) -> dict:
+def render(template_key: str, *, full_name: str, role: str, today: date | None = None,
+           onboarding_link: str = "") -> dict:
     """Render the covering mail for a document. Returns {subject, body, cc, from_email, known}.
 
     `known` is False when the template has no People-team-approved draft, so the review step can
@@ -173,6 +174,9 @@ def render(template_key: str, *, full_name: str, role: str, today: date | None =
         "{{Full Name}}": full_name or "",
         "{{Role}}": role or "",
         "{{Next day's Date}}": tomorrow.strftime("%d %B %Y"),
+        # The caller supplies this: render() has no candidate and no settings, so it cannot build
+        # a URL. Left empty the sentence still reads, it just has nothing to click.
+        "{{Onboarding Link}}": onboarding_link or "",
     }
 
     def fill(text: str) -> str:
