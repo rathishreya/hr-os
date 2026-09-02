@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, ArrowRight, ArrowRightCircle, Building2, Check, ChevronDown, ChevronRight, Copy, Eye, FilePlus2,
-  FileText, Link as LinkIcon, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw, Rocket, RotateCcw,
+  ClipboardList, FileText, Link as LinkIcon, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw,
+  Rocket, RotateCcw,
   Search, Trash2, Upload, X,
 } from 'lucide-react'
 import { api } from '../api'
@@ -19,6 +20,7 @@ import DocumentPaper from '../components/docs/DocumentPaper'
 import { documentToPdfBlobUrl } from '../components/docs/pdfDocument'
 import { sanitizeHtml } from '../components/docs/docHtml'
 import EmailDocumentModal from '../components/docs/EmailDocumentModal'
+import OnboardingFormsModal from '../components/onboarding/OnboardingFormsModal'
 
 // doc_type -> label, the FALLBACK only. A document drafted from a template shows the template's
 // own name, because doc_type cannot tell an Offer Letter from a Traineeship Offer Letter — three
@@ -934,6 +936,7 @@ export default function OfferDocs() {
   const [q, setQ] = useState('')
   const [sortKey, setSortKey] = useState('recent')
   const [page, setPage] = useState(0)
+  const [formsOpen, setFormsOpen] = useState(false)
   // Candidates open by default — everything is visible on arrival; clicking a name folds it away.
   const [collapsed, setCollapsed] = useState(() => new Set())
   const [confirm, setConfirm] = useState(null)      // { p, body } — sending someone to onboarding
@@ -1257,6 +1260,15 @@ export default function OfferDocs() {
               </button>
             )}
             <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setFormsOpen(true)}
+                title="The onboarding form link, and everything candidates have sent back"
+                className={cx(TOOLBAR, 'inline-flex items-center gap-1.5 font-medium')}
+              >
+                <ClipboardList className="h-3.5 w-3.5 text-slate-500" aria-hidden />
+                Onboarding form
+              </button>
               <label className="sr-only" htmlFor="od-sort">Sort candidates</label>
               <select id="od-sort" value={sortKey} onChange={(e) => { setSortKey(e.target.value); setPage(0) }} className={TOOLBAR}>
                 <option value="recent">Recent first</option>
@@ -1435,6 +1447,8 @@ export default function OfferDocs() {
           </>
         )}
       </Modal>
+
+      <OnboardingFormsModal key={formsOpen ? 'forms-open' : 'forms-shut'} open={formsOpen} onClose={() => setFormsOpen(false)} />
 
       {form && (
         <DocFormModal
