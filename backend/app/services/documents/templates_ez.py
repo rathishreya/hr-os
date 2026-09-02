@@ -1278,11 +1278,41 @@ def full_contract(ctx: dict) -> dict:
                 ("Compensation", [
                     b.comp_custom(annexure["rows"], annexure["notes"], known=annexure["known"]),
                 ]),
-                ("Benefits", [b.p(
-                    "You shall be entitled to participate in all benefit plans of EZ Lab as may be "
-                    "made available to employees of EZ Lab from time to time for which you are "
-                    "eligible."
-                )]),
+                # The ESIC clause was added to the source contract after this template was first
+                # written. It is three paragraphs under a plain sub-heading, inside the Benefits
+                # row rather than as a row of its own — that is how the source lays it out.
+                ("Benefits", [
+                    b.p(
+                        "You shall be entitled to participate in all benefit plans of EZ Lab as may be "
+                        "made available to employees of EZ Lab from time to time for which you are "
+                        "eligible."
+                    ),
+                    b.p("ESIC Coverage and Group Insurance"),
+                    b.p(
+                        "Employees whose Basic Pay is ₹21,000 (Rupees Twenty-One Thousand) or below "
+                        "per month, or such other threshold as may be prescribed under the Employees’ "
+                        "State Insurance Act, 1948 (“**ESI Act**”) from time to time, shall be "
+                        "mandatorily covered under the Employees’ State Insurance Corporation "
+                        "(“**ESIC**”) Scheme. The employee and the Company shall make statutory "
+                        "contributions towards ESIC at the rates prescribed under applicable law, as "
+                        "amended from time to time."
+                    ),
+                    b.p(
+                        "Upon becoming eligible for ESIC coverage, the employee shall cease to be "
+                        "eligible for the Company’s Group Medical Insurance (GMC) and Group Personal "
+                        "Accident Insurance (GPA) benefits, unless otherwise expressly approved by the "
+                        "Company in writing. The employee shall thereafter be entitled to medical and "
+                        "other benefits available under the ESIC Scheme in accordance with the "
+                        "provisions of the ESI Act and applicable rules."
+                    ),
+                    b.p(
+                        "The Company reserves the right to enroll, modify, discontinue, or transition "
+                        "an employee’s insurance coverage to ensure compliance with applicable laws "
+                        "and statutory requirements. Any change in ESIC eligibility arising from "
+                        "revisions to salary structure or statutory thresholds shall automatically "
+                        "apply without requiring any further amendment to this Agreement."
+                    ),
+                ]),
                 ("Travel", [b.p(
                     "You will need to travel for work as required. You are required to maintain a "
                     "valid passport during your tenure at EZ Lab."

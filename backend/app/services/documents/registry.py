@@ -30,7 +30,7 @@ ENTITIES: dict[str, dict[str, str]] = {
     "EZ": {
         "short_name": "EZ Lab",
         "legal_entity": "EZ Lab Private Limited",
-        "company_address": "Technology and Innovation Hub: EZ, Sector-62, Gurugram, Haryana - 122102, INDIA",
+        "company_address": "Technology and Innovation Hub: EZ, 5th Floor, Imperia Mindspace, Golf Course Extension, Sector 62, Gurugram, Haryana – 122413, INDIA",
         "location": "EZ Lab Office, Sector 62, Gurugram, India",
     },
     "AEZ": {

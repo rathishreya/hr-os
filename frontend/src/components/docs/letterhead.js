@@ -27,12 +27,17 @@ export const C = {
 export const ENTITY = {
   EZ: {
     name: 'EZ Lab Private Limited',
-    addr: 'Technology and Innovation Hub: EZ, Sector-62, Gurugram, Haryana - 122102. INDIA',
+    // Two lines, broken where the source breaks them. Left as a wrapping string, each renderer
+    // would find its own break point and the two would disagree.
+    addr: [
+      'Technology and Innovation Hub: EZ, 5th Floor, Imperia Mindspace, Golf Course',
+      'Extension, Sector 62, Gurugram, Haryana – 122413, INDIA',
+    ],
     web: 'www.ez.works',
   },
   AEZ: {
     name: 'ArabEasy LLC',
-    addr: 'Registered Office: 10, Level 1, Sharjah Media City, Sharjah, UAE',
+    addr: ['Registered Office: 10, Level 1, Sharjah Media City, Sharjah, UAE'],
     web: 'www.ez.works',
   },
 }
@@ -77,7 +82,7 @@ export function letterheadHtml(entityKey, brandName) {
     <div class="lh-iso lh-iso1">ISO 27001:2022</div>
     <div class="lh-iso lh-iso2">ISO 9001:2015</div>
     <div class="lh-co">${esc(brandName || e.name)}</div>
-    <div class="lh-ad">${esc(e.addr)}</div>
+    <div class="lh-ad">${e.addr.map(esc).join('<br/>')}</div>
     <div class="lh-web">${esc(e.web)}</div>
     ${PIN_CHIP}
     ${GLOBE_CHIP}
@@ -110,7 +115,9 @@ export function chromeCss(mode) {
   .lh-iso{ left:12.70mm; font-size:9.7pt; line-height:1; }
   .lh-iso1{ top:17.06mm; }  .lh-iso2{ top:22.36mm; }
   .lh-co{ right:18.84mm; top:6.53mm; font-size:8.97pt; font-weight:700; line-height:1; }
-  .lh-ad{ right:18.59mm; top:10.90mm; font-size:9.07pt; line-height:1; }
+  /* The address runs to two lines, so it starts higher than the source's single-line y and
+     the pair sits in the same band. Leading is tight to keep line two clear of www.ez.works. */
+  .lh-ad{ right:18.59mm; top:10.05mm; text-align:right; font-size:9.07pt; line-height:1.20; }
   .lh-web{ right:18.42mm; top:18.10mm; font-size:9.76pt; font-weight:700; line-height:1; }
   .lh-chip{ right:7.06mm; width:9.53mm; background:${C.chip};
             border-radius:3.6mm 0 0 3.6mm; display:flex; align-items:center; padding-left:2.2mm; }

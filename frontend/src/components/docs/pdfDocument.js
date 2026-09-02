@@ -234,7 +234,9 @@ export const LH = {
   logo: { x: 36, y: 17.8, w: 128.2, h: 26.8 },
   iso: { x: 36, y1: 47.65, y2: 62.7, size: 9.7 },        // ink: x 36.8, w 68.4/61.6, y 49.6 and 64.4
   name: { inset: 53.4, y: 17.72, size: 8.97 },           // ink: right 542.6, w 89.3, y 19.4
-  addr: { inset: 52.7, y: 30.26, size: 9.07 },           // ink: right 543.3, w 332.4, y 31.9
+  addr: { inset: 52.7, y: 28.5, step: 10.9, size: 9.07 },  // ink: right 543.3, w 332.4, y 31.9
+  // ^ two lines now, so the block starts higher than the source's single-line y and each
+  //   line is placed on its own baseline rather than left to the wrap engine.
   web: { inset: 52.2, y: 50.68, size: 9.76 },            // ink: right 543.8, w 62.4, y 52.4
   chip: { inset: 20, w: 27, y1: 18.7, h1: 20.4, y2: 46.1, h2: 19.7 },
 }
@@ -254,7 +256,7 @@ function letterhead(entityKey, brandName) {
       { text: 'ISO 27001:2022', fontSize: LH.iso.size, color: '#000000', absolutePosition: { x: LH.iso.x, y: LH.iso.y1 } },
       { text: 'ISO 9001:2015', fontSize: LH.iso.size, color: '#000000', absolutePosition: { x: LH.iso.x, y: LH.iso.y2 } },
       right(LH.name.inset, LH.name.y, brandName || e.name, LH.name.size, true),
-      right(LH.addr.inset, LH.addr.y, e.addr, LH.addr.size),
+      ...e.addr.map((line, i) => right(LH.addr.inset, LH.addr.y + i * LH.addr.step, line, LH.addr.size)),
       right(LH.web.inset, LH.web.y, e.web, LH.web.size, true),
       { svg: PIN_SVG, width: LH.chip.w, absolutePosition: { x: PAGE_W - LH.chip.inset - LH.chip.w, y: LH.chip.y1 } },
       { svg: GLOBE_SVG, width: LH.chip.w, absolutePosition: { x: PAGE_W - LH.chip.inset - LH.chip.w, y: LH.chip.y2 } },
