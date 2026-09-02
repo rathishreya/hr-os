@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle, CalendarDays, Check, ChevronLeft, ChevronRight, ClipboardList, Clock, Filter,
-  Inbox, Mail, MapPin, PencilLine, Search, Send, Users, Video,
+  Inbox, Mail, MapPin, PencilLine, Plus, Search, Send, Users, Video,
 } from 'lucide-react'
 import { api } from '../api'
 import { Badge, Button, Card, EmptyState, IconButton, Modal, PageHeader, Spinner, cx, focusRing, inputClass } from '../ui'
@@ -382,7 +382,8 @@ function AudiencePicker({ value, onChange, occurrenceId, onSavedListsChanged }) 
   const { toast } = useToast()
   const [cat, setCat] = useState(null)
   const [people, setPeople] = useState(null)
-  const [open, setOpen] = useState(false)
+  const [showWho, setShowWho] = useState(false)
+  const [adding, setAdding] = useState(false)
   const [typed, setTyped] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -402,14 +403,29 @@ function AudiencePicker({ value, onChange, occurrenceId, onSavedListsChanged }) 
     return () => { live = false }
   }, [spec, occurrenceId])
 
-  const toggleGroup = (key) => onChange({
-    ...spec,
-    groups: spec.groups.includes(key) ? spec.groups.filter((g) => g !== key) : [...spec.groups, key],
-  })
-  const toggleSaved = (id) => onChange({
-    ...spec,
-    saved: spec.saved.includes(id) ? spec.saved.filter((s) => s !== id) : [...spec.saved, id],
-  })
+  // What is on the To line right now, as removable tokens.
+  const chosen = useMemo(() => {
+    const groups = (cat?.groups || []).filter((g) => spec.groups.includes(g.key))
+      .map((g) => ({ id: `g:${g.key}`, label: g.label, count: g.count,
+        drop: () => onChange({ ...spec, groups: spec.groups.filter((x) => x !== g.key) }) }))
+    const lists = (cat?.saved || []).filter((g) => spec.saved.includes(g.id))
+      .map((g) => ({ id: `s:${g.id}`, label: g.name, count: g.count,
+        drop: () => onChange({ ...spec, saved: spec.saved.filter((x) => x !== g.id) }) }))
+    const typedIn = spec.emails.map((e) => ({ id: `e:${e}`, label: e, count: null,
+      drop: () => onChange({ ...spec, emails: spec.emails.filter((x) => x !== e) }) }))
+    return [...groups, ...lists, ...typedIn]
+  }, [cat, spec, onChange])
+
+  // Everything not yet on the line, offered only when somebody asks to add.
+  const unchosen = useMemo(() => [
+    ...(cat?.groups || []).filter((g) => !spec.groups.includes(g.key))
+      .map((g) => ({ key: `g:${g.key}`, label: g.label, count: g.count, hint: g.source,
+        pick: () => onChange({ ...spec, groups: [...spec.groups, g.key] }) })),
+    ...(cat?.saved || []).filter((g) => !spec.saved.includes(g.id))
+      .map((g) => ({ key: `s:${g.id}`, label: g.name, count: g.count,
+        hint: g.note || 'A list somebody built by hand',
+        pick: () => onChange({ ...spec, saved: [...spec.saved, g.id] }) })),
+  ], [cat, spec, onChange])
 
   function addTyped() {
     const parts = typed.split(/[,;\s]+/).map((x) => x.trim()).filter((x) => x.includes('@'))
@@ -435,15 +451,54 @@ function AudiencePicker({ value, onChange, occurrenceId, onSavedListsChanged }) 
 
   return (
     <div className="rounded-xl border border-slate-200">
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2.5">
-        <Users className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
-        <span className="text-sm font-medium text-slate-800">
-          {count === 0 ? 'Nobody yet' : `Goes to ${count} ${count === 1 ? 'person' : 'people'}`}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2.5">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">To</span>
+        {chosen.map((c) => (
+          <span key={c.id} className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">
+            {c.label}
+            {c.count != null && <span className="tabular-nums opacity-60">{c.count}</span>}
+            <button type="button" onClick={c.drop} aria-label={`Remove ${c.label}`}
+              className={cx('rounded px-0.5 text-brand-500 hover:text-brand-900', focusRing)}>&times;</button>
+          </span>
+        ))}
+        <button type="button" onClick={() => setAdding((v) => !v)}
+          className={cx('inline-flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-xs text-slate-600',
+            'transition-colors duration-150 ease-snappy hover:border-slate-400 hover:text-slate-800', focusRing)}>
+          <Plus className="h-3 w-3" aria-hidden />{chosen.length ? 'Add' : 'Add someone'}
+        </button>
+      </div>
+
+      {adding && (
+        <div className="space-y-2 border-t border-slate-100 bg-slate-50/60 px-3 py-2.5">
+          <div className="flex flex-wrap gap-1.5">
+            {unchosen.map((g) => (
+              <button key={g.key} type="button" onClick={g.pick} title={g.hint}
+                className={cx('inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700',
+                  'transition-colors duration-150 ease-snappy hover:border-brand-300 hover:text-brand-800', focusRing)}>
+                {g.label}<span className="tabular-nums opacity-60">{g.count}</span>
+              </button>
+            ))}
+            {!unchosen.length && (
+              <span className="text-xs text-slate-500">Everything is already on the To line.</span>
+            )}
+          </div>
+          <input value={typed} onChange={(ev) => setTyped(ev.target.value)}
+            onKeyDown={(ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addTyped() } }}
+            onBlur={addTyped}
+            placeholder="Or type an address and press enter"
+            className={cx(TOOLBAR, 'h-8 w-full text-xs')} />
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-3 py-2">
+        <Users className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+        <span className="text-xs font-medium text-slate-700">
+          {count === 0 ? 'Reaches nobody yet' : `Reaches ${count} ${count === 1 ? 'person' : 'people'}`}
         </span>
         {count > 0 && (
-          <button type="button" onClick={() => setOpen((v) => !v)}
+          <button type="button" onClick={() => setShowWho((v) => !v)}
             className={cx('rounded px-1 text-xs font-medium text-brand-700 hover:text-brand-900', focusRing)}>
-            {open ? 'Hide who' : 'Show who'}
+            {showWho ? 'Hide who' : 'Show who'}
           </button>
         )}
         {count > 0 && (
@@ -454,8 +509,8 @@ function AudiencePicker({ value, onChange, occurrenceId, onSavedListsChanged }) 
         )}
       </div>
 
-      {open && (
-        <ul className="max-h-44 overflow-auto border-b border-slate-100 px-3 py-2 text-xs">
+      {showWho && (
+        <ul className="max-h-44 overflow-auto border-t border-slate-100 px-3 py-2 text-xs">
           {(people?.people || []).map((p) => (
             <li key={p.email} className="flex items-center justify-between gap-3 py-0.5">
               <span className="min-w-0 truncate text-slate-800">{p.name || p.email}</span>
@@ -466,57 +521,6 @@ function AudiencePicker({ value, onChange, occurrenceId, onSavedListsChanged }) 
           ))}
         </ul>
       )}
-
-      <div className="space-y-2.5 px-3 py-2.5">
-        <div className="flex flex-wrap gap-1.5">
-          {(cat?.groups || []).map((g) => {
-            const on = spec.groups.includes(g.key)
-            return (
-              <button key={g.key} type="button" onClick={() => toggleGroup(g.key)}
-                title={g.source}
-                className={cx('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium',
-                  'transition-colors duration-150 ease-snappy', focusRing,
-                  on ? 'border-brand-300 bg-brand-100 text-brand-900'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300')}>
-                {on && <Check className="h-3 w-3" aria-hidden />}
-                {g.label}
-                <span className="tabular-nums opacity-60">{g.count}</span>
-              </button>
-            )
-          })}
-          {(cat?.saved || []).map((g) => {
-            const on = spec.saved.includes(g.id)
-            return (
-              <button key={`s${g.id}`} type="button" onClick={() => toggleSaved(g.id)}
-                title={g.note || 'A list somebody built by hand'}
-                className={cx('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium',
-                  'transition-colors duration-150 ease-snappy', focusRing,
-                  on ? 'border-brand-300 bg-brand-100 text-brand-900'
-                    : 'border-dashed border-slate-300 bg-white text-slate-700 hover:border-slate-400')}>
-                {on && <Check className="h-3 w-3" aria-hidden />}
-                {g.name}
-                <span className="tabular-nums opacity-60">{g.count}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          {spec.emails.map((e) => (
-            <span key={e} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
-              {e}
-              <button type="button" aria-label={`Remove ${e}`}
-                onClick={() => onChange({ ...spec, emails: spec.emails.filter((x) => x !== e) })}
-                className={cx('rounded text-slate-400 hover:text-slate-700', focusRing)}>×</button>
-            </span>
-          ))}
-          <input value={typed} onChange={(ev) => setTyped(ev.target.value)}
-            onKeyDown={(ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addTyped() } }}
-            onBlur={addTyped}
-            placeholder="Add an address and press enter"
-            className={cx(TOOLBAR, 'h-8 min-w-56 flex-1 text-xs')} />
-        </div>
-      </div>
     </div>
   )
 }
@@ -533,6 +537,8 @@ function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, o
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [audience, setAudience] = useState({ groups: [], saved: [], emails: [] })
+  const [on, setOn] = useState('')
+  const [at, setAt] = useState('')
   const [sending, setSending] = useState(false)
 
   // Reading the draft is a fetch, and the fetch is the only thing that sets this window up, so it
@@ -542,6 +548,8 @@ function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, o
     setSubject(d.subject)
     setBody(d.body)
     setAudience(d.audience || { groups: [], saved: [], emails: [] })
+    setOn(d.on || '')
+    setAt(d.at || '')
   }, [])
 
   useEffect(() => {
@@ -551,12 +559,22 @@ function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey, templateKey, occurrenceId])
 
+  // Re-draft whenever the sitting, the date or the time changes: those three are what the letter
+  // says about WHEN, and a subject line still reading {{Session Date}} is the whole thing this
+  // window exists to prevent.
+  function redraft(next) {
+    const occ = next.sitting !== undefined ? next.sitting : sitting
+    const d = next.on !== undefined ? next.on : on
+    const t = next.at !== undefined ? next.at : at
+    api.onboardingSessionCatalogueMail(sessionKey, templateKey, occ ? Number(occ) : undefined, d, t)
+      .then(apply)
+      .catch((e) => toast(e.message, 'error'))
+  }
+
   function pickSitting(v) {
     setSitting(v)
     setDraft(null)
-    api.onboardingSessionCatalogueMail(sessionKey, templateKey, v ? Number(v) : undefined)
-      .then(apply)
-      .catch((e) => toast(e.message, 'error'))
+    redraft({ sitting: v, on: '', at: '' })
   }
 
   async function send() {
@@ -592,7 +610,25 @@ function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, o
               </select>
             </label>
             <span className="text-xs text-slate-500">{draft.session_name}</span>
+            <label className="flex items-center gap-1.5 text-xs text-slate-600">
+              Date
+              <input type="date" value={on}
+                onChange={(e) => { setOn(e.target.value); redraft({ on: e.target.value }) }}
+                className={cx(TOOLBAR, 'h-8')} />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-slate-600">
+              Time
+              <input type="time" value={at}
+                onChange={(e) => { setAt(e.target.value); redraft({ at: e.target.value }) }}
+                className={cx(TOOLBAR, 'h-8')} />
+            </label>
           </div>
+          {sitting && draft.on && on && on !== draft.on && (
+            <p className="text-xs text-amber-800">
+              This letter will say {on}, but the sitting itself is still on {draft.on}. Move it from
+              the calendar if the session really has changed.
+            </p>
+          )}
 
           {!!draft.missing?.length && (
             <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -872,6 +908,23 @@ function ChecklistModal({ planId, phases, onClose, onChanged }) {
                                         {all.length > 1 ? m.name : (m.sent_at ? `Sent ${fmtDate(m.sent_at)}` : 'Read & send')}
                                       </button>
                                     ))}
+                                  </span>
+                                )}
+                                {s.sitting && (
+                                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
+                                    <span className="inline-flex items-center gap-1 font-medium text-slate-700">
+                                      <CalendarDays className="h-3 w-3" aria-hidden />
+                                      {fmtDateTime(s.sitting.starts_at)}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1">
+                                      {s.sitting.mode === 'remote'
+                                        ? <Video className="h-3 w-3" aria-hidden />
+                                        : <MapPin className="h-3 w-3" aria-hidden />}
+                                      {s.sitting.location || (s.sitting.mode === 'remote' ? 'Online' : s.sitting.mode)}
+                                    </span>
+                                    {s.sitting.invites_sent_at
+                                      ? <span className="text-emerald-700">invite sent</span>
+                                      : <span className="text-amber-700">invite not sent</span>}
                                   </span>
                                 )}
                                 {s.note && <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">{s.note}</span>}

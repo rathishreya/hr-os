@@ -248,6 +248,30 @@ def session_context(occurrence: models.SessionOccurrence | None) -> dict:
     return out
 
 
+def when_context(on, at: str | None = None) -> dict:
+    """The date and time somebody typed, in the shape the templates read.
+
+    Only the parts that were actually given: passing a date without a time must not blank out the
+    time the sitting already knows, so an empty answer contributes nothing rather than an empty
+    string that would overwrite it."""
+    out: dict[str, str] = {}
+    d = _as_date(on)
+    if d:
+        out["Session Date"] = _pretty(d)
+        out["Week Day"] = _DAYS[d.weekday()]
+    text = (at or "").strip()
+    if text:
+        try:
+            h, _, m = text.partition(":")
+            hour, minute = int(h), int(m or 0)
+            suffix = "AM" if hour < 12 else "PM"
+            twelve = hour % 12 or 12
+            out["Session Time"] = f"{twelve}:{minute:02d} {suffix}"
+        except ValueError:
+            out["Session Time"] = text
+    return out
+
+
 def recipient(db: Session, plan: models.OnboardingPlan, to: str, ctx: dict) -> tuple[str, str]:
     """Who a template addresses, as (email, name). The candidate for most of them; the manager or
     the department head for the few that are written to them."""

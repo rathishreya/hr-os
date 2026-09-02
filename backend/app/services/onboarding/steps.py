@@ -173,4 +173,8 @@ def as_dict(s: Step) -> dict:
         "due_working_day": s.due_working_day, "attendance": s.attendance,
         "feedback_of": s.feedback_of, "source": s.source,
         "comment_slots": list(s.comment_slots), "upload": s.upload, "note": s.note,
+        # Whether this mail drafts itself or waits for a person. The checklist shows this on
+        # every mail row, and leaving it out of the payload made all of them read as though
+        # HR writes each one, regardless of what the People team decided.
+        "auto": s.auto,
     }

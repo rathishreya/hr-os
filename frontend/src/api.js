@@ -282,8 +282,14 @@ export const api = {
     req(`/onboarding-module/groups/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   onboardingDeleteGroup: (id) => req(`/onboarding-module/groups/${id}`, { method: 'DELETE' }),
 
-  onboardingSessionCatalogueMail: (sessionKey, templateKey, occId) =>
-    req(`/onboarding-module/sessions/${sessionKey}/mails/${templateKey}${occId ? `?occurrence_id=${occId}` : ''}`),
+  onboardingSessionCatalogueMail: (sessionKey, role, occId, on, at) => {
+    const q = new URLSearchParams()
+    if (occId) q.set('occurrence_id', occId)
+    if (on) q.set('on', on)
+    if (at) q.set('at', at)
+    const qs = q.toString()
+    return req(`/onboarding-module/sessions/${sessionKey}/mails/${role}${qs ? `?${qs}` : ''}`)
+  },
   onboardingSendSessionCatalogueMail: (sessionKey, templateKey, body) =>
     req(`/onboarding-module/sessions/${sessionKey}/mails/${templateKey}/send`,
       { method: 'POST', body: JSON.stringify(body) }),

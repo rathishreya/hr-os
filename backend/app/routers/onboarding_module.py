@@ -83,6 +83,65 @@ def _states_for(db: Session, plan_ids: list[int]) -> dict[int, dict[str, models.
     return out
 
 
+#: checklist step key -> session key, for the sessions that appear on a joiner's checklist.
+_STEP_TO_SESSION = {d.step_key: d.key for d in sess.CATALOGUE if d.step_key}
+
+
+def _sittings_for(db: Session, candidate_id: int) -> dict[str, dict]:
+    """The sitting each session step refers to, for one candidate, keyed by step.
+
+    A session can run many times; the one that matters to a joiner is the one they were invited to.
+    Where they are on more than one, the next one still to come wins, falling back to the most
+    recent that has already happened, because after the event the question changes from "when is
+    it" to "did they go".
+    """
+    rows = db.execute(
+        select(models.SessionAttendee, models.SessionOccurrence)
+        .join(models.SessionOccurrence,
+              models.SessionOccurrence.id == models.SessionAttendee.occurrence_id)
+        .where(models.SessionAttendee.candidate_id == candidate_id)
+    ).all()
+    now = datetime.now()
+    best: dict[str, tuple] = {}
+    for attendee, occ in rows:
+        key = occ.session_key
+        current = best.get(key)
+        if current is None:
+            best[key] = (attendee, occ)
+            continue
+        _prev_a, prev = current
+        # Prefer an upcoming sitting; among upcoming take the soonest, among past take the latest.
+        prev_future = bool(prev.starts_at and prev.starts_at >= now)
+        this_future = bool(occ.starts_at and occ.starts_at >= now)
+        if this_future and not prev_future:
+            best[key] = (attendee, occ)
+        elif this_future == prev_future and occ.starts_at and prev.starts_at:
+            better = occ.starts_at < prev.starts_at if this_future else occ.starts_at > prev.starts_at
+            if better:
+                best[key] = (attendee, occ)
+
+    out: dict[str, dict] = {}
+    for step_key, session_key in _STEP_TO_SESSION.items():
+        found = best.get(session_key)
+        if not found:
+            continue
+        attendee, occ = found
+        d = sess.BY_KEY.get(session_key)
+        out[step_key] = {
+            "occurrence_id": occ.id,
+            "session_key": session_key,
+            "session_name": d.name if d else session_key,
+            "starts_at": occ.starts_at,
+            "mode": occ.mode,
+            "location": occ.location,
+            "meet_link": occ.meet_link,
+            "invites_sent_at": occ.invites_sent_at,
+            "attended": attendee.attended,
+            "attendee_id": attendee.id,
+        }
+    return out
+
+
 def _progress(entity: str, states: dict) -> dict:
     """Done over everything that still counts. NA is excluded from the denominator, because a step
     marked not-applicable is not work anybody is going to do."""
@@ -150,6 +209,7 @@ def plan_detail(plan_id: int, db: Session = Depends(get_db), _user: models.User 
     states = _states(db, plan.id)
     joining = _joining_of(db, plan)
     due = schedule.due_dates(joining, st.steps_for(entity))
+    sittings = _sittings_for(db, plan.candidate_id)
     today = date.today()
 
     rows = []
@@ -167,6 +227,8 @@ def plan_detail(plan_id: int, db: Session = Depends(get_db), _user: models.User 
             "sent_at": state.sent_at if state else None,
             "due_on": d.isoformat() if d else None,
             "overdue": bool(d and d < today and status != "Done"),
+            # When this step is a session, the sitting on the calendar is where its date lives.
+            "sitting": sittings.get(s.key),
         })
     return {
         "plan_id": plan.id,
@@ -222,6 +284,14 @@ def update_step(plan_id: int, step_key: str, body: StepPatch, db: Session = Depe
         row.comments = dict(body.comments)
     if body.attended is not None:
         row.attended = body.attended
+        # Attendance is recorded in two places by nature: on the checklist a person is walking
+        # down, and on the sitting's register. Writing only one of them is how they end up
+        # disagreeing about whether somebody turned up, so a tick here reaches both.
+        sitting = _sittings_for(db, plan.candidate_id).get(step_key)
+        if sitting:
+            attendee = db.get(models.SessionAttendee, sitting["attendee_id"])
+            if attendee:
+                attendee.attended = body.attended
     if body.scheduled_at is not None:
         row.scheduled_at = body.scheduled_at
     if body.mark_sent:
@@ -983,6 +1053,7 @@ def _template_for_role(session_key: str, role: str, occ) -> "ml.MailTemplate":
 
 @router.get("/sessions/{session_key}/mails/{role}")
 def session_catalogue_mail(session_key: str, role: str, occurrence_id: int | None = None,
+                           on: date | None = None, at: str | None = None,
                            db: Session = Depends(get_db),
                            _user: models.User = Depends(current_user)):
     """A session mail drafted from the catalogue, so it can be sent without opening the calendar.
@@ -997,6 +1068,10 @@ def session_catalogue_mail(session_key: str, role: str, occurrence_id: int | Non
     occ = db.get(models.SessionOccurrence, occurrence_id) if occurrence_id else None
     t = _template_for_role(session_key, role, occ)
     ctx = ctxs.session_context(occ)
+    # A date typed into the composer wins over the sitting's. Somebody sending an invite for a
+    # session that is not on the calendar yet still needs to say when it is, and somebody
+    # correcting a time in the letter should not have to move the sitting first.
+    ctx.update(ctxs.when_context(on, at))
     # Every sitting of this session, so the composer can offer them.
     sittings = [
         {"id": o.id, "starts_at": o.starts_at, "mode": o.mode, "entity": o.entity,
@@ -1017,6 +1092,10 @@ def session_catalogue_mail(session_key: str, role: str, occurrence_id: int | Non
         "per_recipient": sorted(PER_RECIPIENT),
         "sittings": sittings,
         "occurrence_id": occ.id if occ else None,
+        # What the date and time boxes should show: the sitting's, unless one was typed.
+        "on": (on.isoformat() if on else
+               (occ.starts_at.date().isoformat() if occ and occ.starts_at else "")),
+        "at": (at or (occ.starts_at.strftime("%H:%M") if occ and occ.starts_at else "")),
         "audience": default_audience,
         "note": t.note,
     }
