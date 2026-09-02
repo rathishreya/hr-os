@@ -306,7 +306,7 @@ function StatusSelect({ doc: d, person: p, busy, title, onApprove, onEmail, onUp
     approved: !locked && d.status !== 'approved' ? () => onApprove(d) : null,
     sent: !locked ? () => onEmail(d) : null,
     signed: !locked ? onUpload : null,
-    onboarding: !locked && p.appDoc ? () => onOnboard(p) : null,
+    onboarding: !locked && p.appDoc?.id ? () => onOnboard(p) : null,
   }
   const why = {
     draft: 'A document cannot be moved back to draft',
@@ -810,7 +810,7 @@ function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard,
 
   const items = [
     p.appDoc && { label: 'Add document…', icon: <FilePlus2 className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAddDoc(p) },
-    !p.anyMoved && p.appDoc && { label: 'Send to onboarding…', icon: <ArrowRightCircle className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAskOnboard(p) },
+    !p.anyMoved && p.appDoc?.id && { label: 'Send to onboarding…', icon: <ArrowRightCircle className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAskOnboard(p) },
     p.anyMoved && { label: 'Open in Onboarding', icon: <Rocket className="h-3.5 w-3.5 text-slate-400" />, onClick: onOpenOnboarding },
     { sep: true },
     {

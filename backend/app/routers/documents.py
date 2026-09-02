@@ -15,6 +15,7 @@ from ..database import get_db
 from ..deps import current_user
 from ..services import onboarding_template
 from ..services.ai import ai
+from ..services.documents import comp
 from ..services.documents import (
     TEMPLATES, list_templates, render_document, settled_entity, template_supports_entity,
 )
@@ -186,7 +187,7 @@ def _enrich_doc(db: Session, d: models.Document) -> None:
     d.contact = t.get("contact") or (cand.phone if cand else "")
     d.position = t.get("designation") or (hr.position if hr else "")
     d.department = t.get("department") or (hr.department if hr else "")
-    d.compensation = str(t.get("annual_ctc") or (hr.budget_ctc if hr else "") or "")
+    d.compensation = str(comp.parse_ctc(t.get("annual_ctc") or (hr.budget_ctc if hr else "")) or "")
     d.location = t.get("location") or (hr.location if hr else "")
     d.joining_date = t.get("start_date") or ""
     # The template is authoritative for the operating entity; terms only cover legacy/AI docs
@@ -413,7 +414,8 @@ def list_awaiting(db: Session = Depends(get_db)):
             contact=(cand.phone if cand else "") or str(parsed.get("phone") or ""),
             position=hr.position if hr else "",
             department=hr.department if hr else "",
-            compensation=str(hr.budget_ctc if hr else "" or ""),
+            # The resolved figure, not the band: see the note on d.compensation above.
+            compensation=str(comp.parse_ctc(hr.budget_ctc if hr else None) or ""),
             location=hr.location if hr else "",
             reporting_manager=(hr.hiring_manager if hr else "") or "",
             hired_at=a.stage_changed_at,
