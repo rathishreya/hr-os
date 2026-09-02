@@ -527,3 +527,74 @@ class OnboardingUpload(Base):
     s3_key: Mapped[str] = mapped_column(String(400), default="")
     data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+class OnboardingStepState(Base):
+    """One candidate's answer on one checklist step.
+
+    A row per (plan, step) rather than a blob on the plan, because a step carries a status, a date,
+    comments, an attendance mark and sometimes a file, and because the three views all want to ask
+    "which steps are overdue" across candidates — a question a JSON column cannot answer without
+    reading every plan.
+
+    The step definitions themselves live in services/onboarding/steps.py, not here: they are the
+    People team's process, they change together, and a row that references a retired step should
+    simply stop being rendered rather than break a query.
+    """
+
+    __tablename__ = "onboarding_step_states"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("onboarding_plans.id"))
+    step_key: Mapped[str] = mapped_column(String(60))
+    status: Mapped[str] = mapped_column(String(12), default="Pending")  # Pending|Done|NA
+    value: Mapped[str] = mapped_column(Text, default="")        # a typed value, or a date as ISO
+    comments: Mapped[dict] = mapped_column(JSON, default=dict)  # slot -> note; "" is the default slot
+    attended: Mapped[bool | None] = mapped_column(nullable=True)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: When the automated mail actually went out, so nothing is sent twice.
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    upload_id: Mapped[int | None] = mapped_column(ForeignKey("onboarding_uploads.id"), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=True)
+
+
+class SessionOccurrence(Base):
+    """One sitting of a catalogue session: Brand EZ on the 14th, not Brand EZ in general.
+
+    The definition lives in services/onboarding/sessions.py. This is the date it actually runs, so
+    the calendar view has something to show and to move.
+    """
+
+    __tablename__ = "session_occurrences"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_key: Mapped[str] = mapped_column(String(60))
+    entity: Mapped[str] = mapped_column(String(8), default="EZ")
+    starts_at: Mapped[datetime] = mapped_column(DateTime)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    mode: Mapped[str] = mapped_column(String(10), default="both")   # campus|remote|both
+    location: Mapped[str] = mapped_column(String(200), default="")
+    meet_link: Mapped[str] = mapped_column(String(400), default="")
+    status: Mapped[str] = mapped_column(String(12), default="scheduled")  # scheduled|done|cancelled
+    invites_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=True)
+
+
+class SessionAttendee(Base):
+    """One person invited to one sitting, and whether they came.
+
+    Attendance drives who gets the feedback mail: the spec says "send email as per attendance", so
+    the list has to be per person and not a headcount.
+    """
+
+    __tablename__ = "session_attendees"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    occurrence_id: Mapped[int] = mapped_column(ForeignKey("session_occurrences.id"))
+    candidate_id: Mapped[int | None] = mapped_column(ForeignKey("candidates.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(160), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    invited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    attended: Mapped[bool | None] = mapped_column(nullable=True)
+    feedback_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
