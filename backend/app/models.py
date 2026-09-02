@@ -553,6 +553,10 @@ class OnboardingStepState(Base):
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     #: When the automated mail actually went out, so nothing is sent twice.
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: template key -> when it was sent. A step can carry more than one mail (the ISO course and
+    #: its quiz; the training form and the manager's), and a single timestamp cannot say which of
+    #: them has gone, which is how somebody gets the same mail twice.
+    sent_mails: Mapped[dict] = mapped_column(JSON, default=dict)
     upload_id: Mapped[int | None] = mapped_column(ForeignKey("onboarding_uploads.id"), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=True)
 

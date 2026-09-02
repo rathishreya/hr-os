@@ -248,6 +248,16 @@ export const api = {
   onboardingMarkAttendance: (attendeeId, attended) =>
     req(`/onboarding-module/attendees/${attendeeId}`, { method: 'PATCH', body: JSON.stringify({ attended }) }),
 
+  // Onboarding mails. Nothing sends itself: a draft is fetched, read, and sent by a person.
+  onboardingAllMails: () => req('/onboarding-module/mails'),
+  onboardingPlanMails: (planId) => req(`/onboarding-module/plan/${planId}/mails`),
+  onboardingMailDraft: (planId, key) => req(`/onboarding-module/plan/${planId}/mails/${key}`),
+  onboardingSendMail: (planId, key, body) =>
+    req(`/onboarding-module/plan/${planId}/mails/${key}/send`, { method: 'POST', body: JSON.stringify(body) }),
+  onboardingSessionMailDraft: (occId, key) => req(`/onboarding-module/occurrences/${occId}/mails/${key}`),
+  onboardingSendSessionMail: (occId, key, body) =>
+    req(`/onboarding-module/occurrences/${occId}/mails/${key}/send`, { method: 'POST', body: JSON.stringify(body) }),
+
   onboardingPrefill: (candidateId, t) =>
     req(`/onboarding-form/${candidateId}/prefill?t=${encodeURIComponent(t)}`),
   submitOnboardingForm: ({ candidateId, token, variant, answers, files }) => {

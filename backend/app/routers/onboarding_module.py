@@ -21,8 +21,9 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..database import get_db
 from ..deps import current_user
+from ..services import mailer
 from ..services.documents import settled_entity
-from ..services.onboarding import schedule, sessions as sess, steps as st
+from ..services.onboarding import context as ctxs, mails as ml, schedule, sessions as sess, steps as st
 from ..services.recruitment import log
 
 router = APIRouter(prefix="/api/onboarding-module", tags=["onboarding-module"])
@@ -40,6 +41,7 @@ def definitions(_user: models.User = Depends(current_user)):
         "sessions": [sess.as_dict(s) for s in sess.CATALOGUE],
         "frequencies": [{"id": f, "label": lbl} for f, lbl in sess.FREQUENCIES],
         "modes": [{"id": m, "label": lbl} for m, lbl in sess.MODES],
+        "mails": [ml.as_dict(t) for t in ml.TEMPLATES],
     }
 
 
@@ -343,3 +345,277 @@ def mark_attendance(attendee_id: int, body: AttendancePatch, db: Session = Depen
     p.attended = body.attended
     db.commit()
     return _occurrence_out(db, db.get(models.SessionOccurrence, p.occurrence_id))
+
+
+# ── the mails ───────────────────────────────────────────────────────────────────────────────
+# Nothing here sends by itself. Every mail is drafted, shown, and sent by a person pressing send.
+# A step the checklist marks as automatic is one the People team decided needs no judgement, so it
+# is queued ready-to-go rather than waiting for someone to compose it. The send is still theirs.
+
+def _plan_mail_context(db: Session, plan: models.OnboardingPlan) -> tuple[dict, str]:
+    joining = _joining_of(db, plan)
+    mode = ctxs.work_mode(db, plan)
+    return ctxs.merge_context(db, plan, joining=joining), mode
+
+
+#: Merge fields a session mail fills per person as it goes out, rather than once in the draft.
+PER_RECIPIENT = {"Name"}
+
+
+def _sent_map(state) -> dict:
+    return (state.sent_mails if state else {}) or {}
+
+
+@router.get("/plan/{plan_id}/mails")
+def plan_mails(plan_id: int, db: Session = Depends(get_db),
+               _user: models.User = Depends(current_user)):
+    """Every mail this candidate's checklist sends, in checklist order, with what is still missing
+    from each. The UI opens one, reads it, and sends it."""
+    plan = db.get(models.OnboardingPlan, plan_id)
+    if not plan:
+        raise HTTPException(404, "Onboarding plan not found")
+    cand = db.get(models.Candidate, plan.candidate_id)
+    entity = _plan_entity(db, plan)
+    states = _states(db, plan.id)
+    ctx, mode = _plan_mail_context(db, plan)
+    due = schedule.due_dates(_joining_of(db, plan), st.steps_for(entity))
+    today = date.today()
+
+    rows = []
+    for s in st.steps_for(entity):
+        for t in ml.for_step(s.key, mode):
+            sent = _sent_map(states.get(s.key)).get(t.key)
+            d = due.get(s.key)
+            missing = ml.unfilled(t.subject + "\n" + t.body, ctx)
+            rows.append({
+                "template_key": t.key, "name": t.name, "to": t.to, "mode": t.mode,
+                "step_key": s.key, "step_label": s.label,
+                "sending": "auto" if s.auto else "hr",
+                "due_on": d.isoformat() if d else None,
+                "sent_at": sent,
+                "missing": missing,
+                "state": ("Sent" if sent else
+                          "Overdue" if d and d < today else
+                          "Due" if d and d == today else "Waiting"),
+            })
+    return {"plan_id": plan.id, "candidate": (cand.name if cand else "") or "",
+            "entity": entity, "mode": mode, "mails": rows}
+
+
+@router.get("/plan/{plan_id}/mails/{template_key}")
+def mail_draft(plan_id: int, template_key: str, db: Session = Depends(get_db),
+               _user: models.User = Depends(current_user)):
+    """The draft exactly as it will go out. Read it, change what you want, then send it."""
+    plan = db.get(models.OnboardingPlan, plan_id)
+    if not plan:
+        raise HTTPException(404, "Onboarding plan not found")
+    t = ml.BY_KEY.get(template_key)
+    if not t:
+        raise HTTPException(404, "No such mail template")
+    ctx, _mode = _plan_mail_context(db, plan)
+    to_email, to_name = ctxs.recipient(db, plan, t.to, ctx)
+    state = _states(db, plan.id).get(t.step_key or "")
+    return {
+        "template_key": t.key, "name": t.name, "to_role": t.to,
+        "to": to_email, "to_name": to_name,
+        "cc": ctxs.cc_list(ctx, t.cc),
+        "subject": ml.render(t.subject, ctx),
+        "body": ml.render(t.body, ctx),
+        "missing": ml.unfilled(t.subject + "\n" + t.body, ctx),
+        "sent_at": _sent_map(state).get(t.key),
+        "note": t.note,
+    }
+
+
+class MailSend(BaseModel):
+    subject: str
+    body: str
+    to: str | None = None
+    cc: list[str] | None = None
+
+
+@router.post("/plan/{plan_id}/mails/{template_key}/send")
+def send_mail(plan_id: int, template_key: str, payload: MailSend, db: Session = Depends(get_db),
+              user: models.User = Depends(current_user)):
+    plan = db.get(models.OnboardingPlan, plan_id)
+    if not plan:
+        raise HTTPException(404, "Onboarding plan not found")
+    t = ml.BY_KEY.get(template_key)
+    if not t:
+        raise HTTPException(404, "No such mail template")
+    ctx, mode = _plan_mail_context(db, plan)
+    default_to, to_name = ctxs.recipient(db, plan, t.to, ctx)
+    to_email = (payload.to or default_to or "").strip()
+    if not to_email:
+        raise HTTPException(422, f"No address on file for the {t.to}. Add one before sending this.")
+
+    msg = mailer.compose(
+        db, to_email=to_email, to_name=to_name,
+        template=f"onboarding:{t.key}",
+        subject=payload.subject, body=payload.body,
+        cc=payload.cc if payload.cc is not None else ctxs.cc_list(ctx, t.cc),
+        candidate_id=plan.candidate_id, application_id=plan.application_id,
+        sender_user=user,
+    )
+
+    # Record it against the step, so the checklist and this queue never disagree about what went.
+    if t.step_key:
+        row = db.scalar(
+            select(models.OnboardingStepState)
+            .where(models.OnboardingStepState.plan_id == plan_id,
+                   models.OnboardingStepState.step_key == t.step_key)
+        )
+        if not row:
+            row = models.OnboardingStepState(plan_id=plan_id, step_key=t.step_key)
+            db.add(row)
+        stamp = datetime.now(timezone.utc)
+        row.sent_mails = {**(row.sent_mails or {}), t.key: stamp.isoformat()}
+        row.sent_at = stamp
+        # Only the LAST mail on a step completes it. The ISO step is not done when the course
+        # credentials go out; it is done when the quiz has gone too.
+        remaining = [x for x in ml.for_step(t.step_key, mode) if x.key not in (row.sent_mails or {})]
+        if not remaining and row.status != "Done":
+            row.status = "Done"
+
+    log(db, "onboarding.mail_sent", "onboarding_plan", plan_id,
+        {"template": t.key, "to": to_email, "by": getattr(user, "email", "")})
+    db.commit()
+    return {"ok": True, "email_id": msg.id, "status": msg.status, "to": to_email}
+
+
+@router.get("/occurrences/{occ_id}/mails/{template_key}")
+def session_mail_draft(occ_id: int, template_key: str, db: Session = Depends(get_db),
+                       _user: models.User = Depends(current_user)):
+    """A session mail, with the sitting's own date and time filled in. One draft goes to everyone
+    who was invited, so the preview shows the list rather than a single address."""
+    occ = db.get(models.SessionOccurrence, occ_id)
+    if not occ:
+        raise HTTPException(404, "No such sitting")
+    t = ml.BY_KEY.get(template_key)
+    if not t or t.session_key != occ.session_key:
+        raise HTTPException(404, "That mail does not belong to this session")
+    ctx = ctxs.session_context(occ)
+    people = db.scalars(
+        select(models.SessionAttendee).where(models.SessionAttendee.occurrence_id == occ.id)
+    ).all()
+    # The feedback mail goes only to the people who actually came; the invite goes to everyone.
+    wanted = people if t.session_role == "invite" else [p for p in people if p.attended]
+    return {
+        "template_key": t.key, "name": t.name, "session": occ.session_key,
+        "recipients": [{"id": p.id, "name": p.name, "email": p.email, "attended": p.attended}
+                       for p in wanted if p.email],
+        "subject": ml.render(t.subject, ctx),
+        "body": ml.render(t.body, ctx),
+        # {{Name}} is filled per person as the mail goes out, so it is not something HR supplies
+        # here. Listing it as missing would send them hunting for a field that does not exist.
+        "missing": [f for f in ml.unfilled(t.subject + "\n" + t.body, ctx)
+                    if f not in PER_RECIPIENT],
+        "per_recipient": sorted(PER_RECIPIENT),
+        "sent_at": occ.invites_sent_at if t.session_role == "invite" else None,
+        "note": t.note,
+    }
+
+
+@router.post("/occurrences/{occ_id}/mails/{template_key}/send")
+def send_session_mail(occ_id: int, template_key: str, payload: MailSend,
+                      db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+    occ = db.get(models.SessionOccurrence, occ_id)
+    if not occ:
+        raise HTTPException(404, "No such sitting")
+    t = ml.BY_KEY.get(template_key)
+    if not t or t.session_key != occ.session_key:
+        raise HTTPException(404, "That mail does not belong to this session")
+    people = db.scalars(
+        select(models.SessionAttendee).where(models.SessionAttendee.occurrence_id == occ.id)
+    ).all()
+    wanted = people if t.session_role == "invite" else [p for p in people if p.attended]
+    wanted = [p for p in wanted if (p.email or "").strip()]
+    if not wanted:
+        raise HTTPException(422, "Nobody on this sitting has an address to send to.")
+
+    stamp = datetime.now(timezone.utc)
+    sent = 0
+    for p in wanted:
+        # One draft, many people: the greeting is filled in for each of them rather than going out
+        # as a literal {{Name}}, which is the whole point of not treating this as a single mail.
+        person = {"Name": p.name or ""}
+        mailer.compose(
+            db, to_email=p.email, to_name=p.name or "",
+            template=f"onboarding:{t.key}",
+            subject=ml.render(payload.subject, person),
+            body=ml.render(payload.body, person),
+            candidate_id=p.candidate_id, sender_user=user,
+        )
+        sent += 1
+        if t.session_role != "invite":
+            p.feedback_sent_at = stamp
+    if t.session_role == "invite":
+        occ.invites_sent_at = stamp
+    log(db, "onboarding.session_mail_sent", "session_occurrence", occ.id,
+        {"template": t.key, "count": sent, "by": getattr(user, "email", "")})
+    db.commit()
+    return {"ok": True, "sent": sent}
+
+
+@router.get("/mails")
+def all_mails(db: Session = Depends(get_db), _user: models.User = Depends(current_user)):
+    """Every onboarding mail in the system in one place: the ones that draft themselves, the ones
+    a person writes, who each is for, when it falls due, and whether it has gone.
+
+    This is the answer to "what is about to go out in my name" — a question nobody should have to
+    open twelve candidates to answer."""
+    today = date.today()
+    rows = []
+
+    for plan in db.scalars(select(models.OnboardingPlan).order_by(models.OnboardingPlan.id.desc())):
+        cand = db.get(models.Candidate, plan.candidate_id)
+        entity = _plan_entity(db, plan)
+        states = _states(db, plan.id)
+        ctx, mode = _plan_mail_context(db, plan)
+        due = schedule.due_dates(_joining_of(db, plan), st.steps_for(entity))
+        for s in st.steps_for(entity):
+            for t in ml.for_step(s.key, mode):
+                sent = _sent_map(states.get(s.key)).get(t.key)
+                d = due.get(s.key)
+                rows.append({
+                    "kind": "Candidate",
+                    "template_key": t.key, "name": t.name,
+                    "sending": "Automatic" if s.auto else "HR reviews",
+                    "to": t.to, "entity": entity, "mode": t.mode,
+                    "who": (cand.name if cand else "") or "",
+                    "plan_id": plan.id, "occurrence_id": None,
+                    "step_key": s.key, "step_label": s.label,
+                    "due_on": d.isoformat() if d else None,
+                    "sent_at": sent,
+                    "state": ("Sent" if sent else
+                              "Overdue" if d and d < today else
+                              "Due today" if d and d == today else "Waiting"),
+                    "missing": ml.unfilled(t.subject + "\n" + t.body, ctx),
+                })
+
+    for occ in db.scalars(select(models.SessionOccurrence).order_by(models.SessionOccurrence.starts_at)):
+        d = sess.BY_KEY.get(occ.session_key)
+        if not d:
+            continue
+        invite_on = schedule.invite_date(occ.starts_at, d.invite_weeks_before, d.invite_weekday)
+        for t in ml.for_session(occ.session_key, occ.mode or ml.CAMPUS):
+            is_invite = t.session_role == "invite"
+            on = invite_on if is_invite else (occ.starts_at.date() if occ.starts_at else None)
+            sent = occ.invites_sent_at if is_invite else None
+            rows.append({
+                "kind": "Session",
+                "template_key": t.key, "name": t.name,
+                # A session mail goes to a room full of people, so it always gets read first.
+                "sending": "HR reviews",
+                "to": t.to, "entity": occ.entity, "mode": t.mode,
+                "who": d.name,
+                "plan_id": None, "occurrence_id": occ.id,
+                "step_key": None, "step_label": ml.BY_KEY[t.key].session_role or "",
+                "due_on": on.isoformat() if on else None,
+                "sent_at": sent,
+                "state": ("Sent" if sent else
+                          "Overdue" if on and on < today else
+                          "Due today" if on and on == today else "Waiting"),
+                "missing": [],
+            })
+    return rows

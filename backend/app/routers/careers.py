@@ -757,6 +757,17 @@ def _phone_field(v: dict) -> str:
     )
 
 
+def _linkedin_field(v: dict) -> str:
+    """Asked here rather than on the onboarding form, because onboarding wants it on day one and
+    by then nobody wants to chase a link the applicant already had to hand. Optional: a good
+    candidate without a LinkedIn profile should not be stopped at the door."""
+    return (
+        '<div class="field"><label class="lbl">LinkedIn profile</label>'
+        f'<input class="inp" type="url" name="linkedin" value="{_e(v.get("linkedin"))}" '
+        'placeholder="https://linkedin.com/in/…"></div>'
+    )
+
+
 def _location_fields(v: dict) -> str:
     """City / Country / PIN — captured separately, combined into one stored Location."""
     return (
@@ -802,6 +813,7 @@ def _apply_form(job: models.Job, *, values: dict | None = None, error: str = "",
         f'<div class="field"><label class="lbl">Email <span class="req">*</span></label>'
         f'<input class="inp" type="email" name="email" value="{_e(v.get("email"))}" required></div>'
         f'{_phone_field(v)}'
+        f'{_linkedin_field(v)}'
         f'{_gender_field(v, required=True)}'
         f'{_location_fields(v)}'
         f'{_comp_field("Current Annual Total Compensation", "current_ctc", v, required=True)}'
@@ -846,6 +858,7 @@ async def submit_application(
     city: str = Form(""),
     country: str = Form(""),
     pin: str = Form(""),
+    linkedin: str = Form(""),
     resume_text: str = Form(""),
     current_ctc_amount: str = Form(""),
     current_ctc_currency: str = Form("INR"),
@@ -866,7 +879,7 @@ async def submit_application(
     full_phone = _compose_phone(phone_code, phone)
     values = {
         "name": name, "email": email, "phone": phone, "phone_code": phone_code, "gender": gender,
-        "city": city, "country": country, "pin": pin, "resume_text": resume_text,
+        "city": city, "country": country, "pin": pin, "linkedin": linkedin, "resume_text": resume_text,
         "current_ctc_amount": current_ctc_amount, "current_ctc_currency": current_ctc_currency,
         "expected_ctc_amount": expected_ctc_amount, "expected_ctc_currency": expected_ctc_currency,
         "notice_period": notice_period, "source_choice": source_choice,
@@ -940,6 +953,9 @@ async def submit_application(
             "city": city.strip(),
             "country": country.strip(),
             "pin": pin.strip(),
+            # Only overwrite when they typed one: an empty box must not erase a
+            # profile the resume parser already found.
+            **({"linkedin": linkedin.strip()} if linkedin.strip() else {}),
             "location": _compose_location(city, country, pin) or (cand.parsed or {}).get("location") or "",
         }
         # "Applied by" for a public application = the channel they came through (Careers,
@@ -996,6 +1012,7 @@ def _general_apply_form(*, values: dict | None = None, error: str = "", src: str
         f'<div class="field"><label class="lbl">Email <span class="req">*</span></label>'
         f'<input class="inp" type="email" name="email" value="{_e(v.get("email"))}" required></div>'
         f'{_phone_field(v)}'
+        f'{_linkedin_field(v)}'
         f'{_gender_field(v, required=True)}'
         f'<div class="field"><label class="lbl">Role you&rsquo;re interested in</label>'
         f'<input class="inp" name="desired_role" list="role_list" value="{_e(v.get("desired_role"))}" '
@@ -1040,6 +1057,7 @@ async def submit_general_application(
     city: str = Form(""),
     country: str = Form(""),
     pin: str = Form(""),
+    linkedin: str = Form(""),
     resume_text: str = Form(""),
     current_ctc_amount: str = Form(""),
     current_ctc_currency: str = Form("INR"),
@@ -1056,7 +1074,7 @@ async def submit_general_application(
     full_phone = _compose_phone(phone_code, phone)
     values = {
         "name": name, "email": email, "phone": phone, "phone_code": phone_code, "gender": gender,
-        "desired_role": desired_role, "city": city, "country": country, "pin": pin,
+        "desired_role": desired_role, "city": city, "country": country, "pin": pin, "linkedin": linkedin,
         "resume_text": resume_text,
         "current_ctc_amount": current_ctc_amount, "current_ctc_currency": current_ctc_currency,
         "expected_ctc_amount": expected_ctc_amount, "expected_ctc_currency": expected_ctc_currency,
@@ -1114,6 +1132,9 @@ async def submit_general_application(
             "city": city.strip(),
             "country": country.strip(),
             "pin": pin.strip(),
+            # Only overwrite when they typed one: an empty box must not erase a
+            # profile the resume parser already found.
+            **({"linkedin": linkedin.strip()} if linkedin.strip() else {}),
             "location": _compose_location(city, country, pin) or (cand.parsed or {}).get("location") or "",
             "sub_source": _norm_source(src),
         }

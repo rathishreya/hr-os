@@ -108,8 +108,9 @@ STEPS: list[Step] = [
     Step("poster_ez_life", "Poster on the EZ Life group", "day_one", "status"),
 
     # ── First month ─────────────────────────────────────────────────────────────────────────
-    Step("linkedin_update", "LinkedIn profile updated", "first_month", "source", source="form",
-         note="Answered on the onboarding form."),
+    Step("linkedin_update", "LinkedIn profile updated", "first_month", "source",
+         source="application",
+         note="From the application form, where they already had the link to hand."),
     Step("hiring_feedback_form", "Hiring feedback form", "first_month", "status"),
     Step("mbti", "MBTI test submitted", "first_month", "status", comments=True,
          note="Record the personality type in the comment."),
