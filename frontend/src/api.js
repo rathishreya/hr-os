@@ -231,6 +231,8 @@ export const api = {
   // Offers & contracts (AI draft → human approval)
   listDocuments: (applicationId) => req(`/documents?application_id=${applicationId}`),
   listAllDocuments: () => req('/documents'),
+  // Hired candidates with no document yet. They are not documents, so they come separately.
+  listAwaitingDocuments: () => req('/documents/awaiting'),
   listDocumentTemplates: () => req('/documents/templates'),
   generateDocument: (body) => req('/documents/generate', { method: 'POST', body: JSON.stringify(body) }),
   regenerateDocument: (id, body) => req(`/documents/${id}/regenerate`, { method: 'POST', body: JSON.stringify(body) }),

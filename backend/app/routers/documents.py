@@ -121,19 +121,46 @@ def _context(app: models.Application, terms: dict) -> dict:
     }
 
 
+def _candidate_address(cand: models.Candidate | None) -> str:
+    """The best postal address we hold for a candidate.
+
+    The résumé parser gives city / pin / country rather than a street line, so this is a partial
+    address that the recruiter completes in the form. That is safe because nothing drafts a
+    document on its own any more — a human always sees these values before the letter exists.
+    """
+    p = (cand.parsed or {}) if cand else {}
+    seen: set[str] = set()
+    parts: list[str] = []
+    for raw in (p.get("address"), p.get("city"), p.get("pin"), p.get("country")):
+        text = str(raw or "").strip()
+        if text and text.lower() not in seen:
+            seen.add(text.lower())
+            parts.append(text)
+    return ", ".join(parts) or str(p.get("location") or "").strip()
+
+
 def _autofill(app: models.Application) -> dict:
-    """Everything we can fill from existing candidate + role data; HR overrides the rest via terms."""
+    """Everything we can fill from existing candidate + role data; HR overrides the rest via terms.
+
+    Deliberately absent: start_date. A joining date is negotiated, never inferred — guessing one
+    onto an employment contract states a fact nobody agreed to. It stays the recruiter's to type.
+    """
     cand = app.candidate
     hr = app.hiring_request
     job = hr.job if hr else None
+    parsed = (cand.parsed or {}) if cand else {}
     return {
-        "name": (cand.name if cand else "") or "",
-        "email": (cand.email if cand else "") or "",
-        "contact": (cand.phone if cand else "") or "",
+        "name": (cand.name if cand else "") or str(parsed.get("name") or ""),
+        "email": (cand.email if cand else "") or str(parsed.get("email") or ""),
+        "contact": (cand.phone if cand else "") or str(parsed.get("phone") or ""),
+        "address": _candidate_address(cand),
         "designation": hr.position if hr else "",
         "department": hr.department if hr else "",
         "location": hr.location if hr else "",
-        "annual_ctc": hr.budget_ctc if hr else "",  # display + parsed into the comp table
+        # A range ("INR 10-20 LPA") resolves to the top of the band in comp.parse_ctc; the
+        # recruiter sees and can change the figure in the form before the letter is drafted.
+        "annual_ctc": hr.budget_ctc if hr else "",
+        "manager": (hr.hiring_manager if hr else "") or "",
         "responsibilities": (list(job.responsibilities) if job and job.responsibilities else None),
         "entity": "EZ",
         "company": settings.COMPANY_NAME,
@@ -353,6 +380,45 @@ def list_documents(application_id: int | None = None, candidate_id: int | None =
     for d in docs:  # enrich (transient attrs) so the Offer & Docs table can show every field
         _enrich_doc(db, d)
     return docs
+
+
+@router.get("/awaiting", response_model=list[schemas.AwaitingDocumentOut])
+def list_awaiting(db: Session = Depends(get_db)):
+    """Hired candidates who have no document yet.
+
+    Being hired is what puts someone on Offer & Docs; writing their first letter is a decision a
+    recruiter makes afterwards. Since nothing is drafted on hire, these rows are the only way such
+    a candidate is visible at all — without them a candidate could be marked Hired and vanish.
+
+    Scoped by APPLICATION, because a candidate hired onto a second role needs their own row for
+    that role's paperwork even if their first role already has letters.
+    """
+    drafted = select(models.Document.application_id).where(models.Document.application_id.is_not(None))
+    apps = db.scalars(
+        select(models.Application)
+        .where(models.Application.stage == "hired", models.Application.id.not_in(drafted))
+        .order_by(models.Application.id.desc())
+    ).all()
+
+    out: list[schemas.AwaitingDocumentOut] = []
+    for a in apps:
+        cand = a.candidate
+        hr = a.hiring_request
+        parsed = (cand.parsed or {}) if cand else {}
+        out.append(schemas.AwaitingDocumentOut(
+            application_id=a.id,
+            candidate_id=a.candidate_id,
+            candidate_name=(cand.name if cand else "") or str(parsed.get("name") or ""),
+            email=(cand.email if cand else "") or str(parsed.get("email") or ""),
+            contact=(cand.phone if cand else "") or str(parsed.get("phone") or ""),
+            position=hr.position if hr else "",
+            department=hr.department if hr else "",
+            compensation=str(hr.budget_ctc if hr else "" or ""),
+            location=hr.location if hr else "",
+            reporting_manager=(hr.hiring_manager if hr else "") or "",
+            hired_at=a.stage_changed_at,
+        ))
+    return out
 
 
 @router.post("/{doc_id}/upload", response_model=schemas.DocumentOut)

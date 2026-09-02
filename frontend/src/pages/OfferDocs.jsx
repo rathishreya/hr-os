@@ -669,7 +669,9 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
 
   const entityTitle = templateBacked
     ? `${ENTITY_LEGAL[d.entity] || d.entity} — set by the ${name} template`
-    : `${ENTITY_LEGAL[d.entity] || d.entity} — change it from this row’s menu`
+    : p.all.length === 1
+      ? `${ENTITY_LEGAL[d.entity] || d.entity} — change it from this row’s menu while it is ${p.name}’s only document`
+      : `${ENTITY_LEGAL[d.entity] || d.entity} — settled: ${p.name} holds documents on this entity`
 
   const menuItems = [
     !locked && isDraft && step !== 'approve' && {
@@ -701,7 +703,7 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
       label: 'Copy letter text', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />,
       onClick: () => { navigator.clipboard.writeText(d.content || ''); toast('Copied to clipboard') },
     },
-    !locked && !templateBacked && {
+    !locked && !templateBacked && p.all.length === 1 && {
       label: `Switch entity to ${d.entity === 'EZ' ? 'AEZ' : 'EZ'}`,
       icon: <Building2 className="h-3.5 w-3.5 text-slate-400" />,
       onClick: () => onEntity(d, d.entity === 'EZ' ? 'AEZ' : 'EZ'),
@@ -802,6 +804,10 @@ function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard,
     return STATUS.filter((o) => by[o.key]).map((o) => `${by[o.key]} ${o.label.toLowerCase()}`).join(' · ')
   }, [shown])
 
+  // Hired, nothing drafted. The row exists so they are not invisible; the only move is to start
+  // their first letter, so that is what it offers.
+  const empty = count === 0
+
   const items = [
     p.appDoc && { label: 'Add document…', icon: <FilePlus2 className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAddDoc(p) },
     !p.anyMoved && p.appDoc && { label: 'Send to onboarding…', icon: <ArrowRightCircle className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAskOnboard(p) },
@@ -829,7 +835,9 @@ function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard,
             aria-expanded={open}
             aria-label={`${open ? 'Hide' : 'Show'} ${p.name}’s documents`}
             onClick={onToggle}
-            className={cx('inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200/70 hover:text-slate-600', focusRing)}
+            disabled={empty}
+            className={cx('inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200/70 hover:text-slate-600',
+              empty && 'invisible', focusRing)}
           >
             <ChevronRight className={cx('h-4 w-4 transition-transform duration-150 ease-snappy', open && 'rotate-90')} />
           </button>
@@ -840,7 +848,7 @@ function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard,
             <span className="block truncate text-sm font-semibold text-slate-900">{p.name}</span>
             <span className="block truncate text-xs text-slate-500" title={p.email}>
               {p.email || '—'}
-              <span className="text-slate-400"> · <span className="tabular-nums">{count}</span> {count === 1 ? 'document' : 'documents'}</span>
+              <span className="text-slate-400"> · {empty ? 'hired, no documents yet' : <><span className="tabular-nums">{count}</span> {count === 1 ? 'document' : 'documents'}</>}</span>
             </span>
           </span>
         </div>
@@ -863,7 +871,18 @@ function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard,
       </td>
       <td className={TD}>
         <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate text-xs text-slate-500">{summary}</span>
+          {empty ? (
+            <button
+              type="button"
+              onClick={() => onAddDoc(p)}
+              className={cx('inline-flex shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-100', focusRing)}
+            >
+              <FilePlus2 className="h-3 w-3" aria-hidden />
+              Add the first document
+            </button>
+          ) : (
+            <span className="min-w-0 truncate text-xs text-slate-500">{summary}</span>
+          )}
           {p.anyMoved ? (
             <Badge size="sm" tone="gray" className="shrink-0"><Rocket className="mr-1 h-3 w-3" aria-hidden />Onboarding</Badge>
           ) : p.allSigned ? (
@@ -902,6 +921,9 @@ export default function OfferDocs() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const [docs, setDocs] = useState(null)
+  // Hired candidates with nothing drafted yet. Being hired is what puts someone on this page;
+  // their first letter is written when a recruiter asks for it.
+  const [awaiting, setAwaiting] = useState([])
   const [templates, setTemplates] = useState([])
   const [view, setView] = useState(null)
   const [editing, setEditing] = useState(false)     // rich-editor mode for the viewed document
@@ -922,7 +944,10 @@ export default function OfferDocs() {
   const openEditor = (d) => { setView(d); setEditing(true) }
   const closeView = () => { setEditing(false); setView(null) }
 
-  const load = () => api.listAllDocuments().then(setDocs).catch(() => setDocs([]))
+  const load = () => {
+    api.listAwaitingDocuments().then(setAwaiting).catch(() => setAwaiting([]))
+    return api.listAllDocuments().then(setDocs).catch(() => setDocs([]))
+  }
   useEffect(() => { load() }, [])
   useEffect(() => { api.listDocumentTemplates().then(setTemplates).catch(() => setTemplates([])) }, [])
 
@@ -940,11 +965,19 @@ export default function OfferDocs() {
   // write to only the rows that happen to be visible.
   const people = useMemo(() => {
     const m = new Map()
-    for (const d of docs || []) {
+    const person = (d) => {
       const k = personKey(d)
       let p = m.get(k)
       if (!p) m.set(k, (p = { key: k, name: d.candidate_name || 'Candidate', email: d.email || '', contact: d.contact || '', all: [] }))
-      p.all.push(d)
+      return p
+    }
+    for (const d of docs || []) person(d).all.push(d)
+    // A hired candidate with no letters still belongs on this page. Their row carries no
+    // documents; `pending` is what "Add document" starts from, standing in for the document
+    // that would otherwise have been drafted for them.
+    for (const a of awaiting) {
+      const p = person(a)
+      if (!p.all.length) p.pending = a
     }
     for (const p of m.values()) {
       p.live = p.all.filter((x) => !x.move_to_onboarding)
@@ -952,7 +985,7 @@ export default function OfferDocs() {
       p.anyMoved = p.all.some((x) => x.move_to_onboarding)
       p.allSigned = p.live.length > 0 && p.live.every((x) => x.has_upload)
       p.anySent = p.all.some((x) => x.email_sent_at)
-      p.appDoc = p.all.find((x) => x.application_id)
+      p.appDoc = p.all.find((x) => x.application_id) || p.pending || null
       p.newest = p.all.reduce((t, x) => Math.max(t, +new Date(x.created_at) || 0), 0)
       // A candidate belongs to ONE operating entity. Their first document establishes it;
       // everything after must be issued on the same paper.
@@ -976,7 +1009,7 @@ export default function OfferDocs() {
       p.twin = (x) => seen.get(identOf(x)) > 1
     }
     return m
-  }, [docs, identOf])
+  }, [docs, awaiting, identOf])
 
   const searched = useMemo(() => {
     const n = q.trim().toLowerCase()
@@ -1036,6 +1069,11 @@ export default function OfferDocs() {
       if (!blocks.has(k)) blocks.set(k, [])
       blocks.get(k).push(d)
     }
+    // Candidates with nothing drafted have no rows to group, so they would never reach the
+    // table. Add them, unless a filter is narrowing to documents they cannot have.
+    if (!colFilters.active && !q.trim()) {
+      for (const p of people.values()) if (p.pending && !blocks.has(p.key)) blocks.set(p.key, [])
+    }
     const list = [...blocks.entries()].map(([k, shown]) => ({ p: people.get(k), shown })).filter((b) => b.p)
     const cmp = {
       recent: (a, b) => b.p.newest - a.p.newest,
@@ -1048,7 +1086,7 @@ export default function OfferDocs() {
       p,
       rows: [...shown].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
     }))
-  }, [filteredDocs, people, sortKey])
+  }, [filteredDocs, people, sortKey, colFilters.active, q])
 
   // A page holds whole candidates: splitting someone's letters across a page break would leave
   // their name, joining date and email on one page and the rest of their documents on the next.
@@ -1058,9 +1096,12 @@ export default function OfferDocs() {
     let cur = []
     let n = 0
     for (const g of groups) {
-      if (n && n + g.rows.length > PER_PAGE) { out.push(cur); cur = []; n = 0 }
+      // A candidate heading occupies a line whether or not it has letters under it, so a page
+      // full of hired-but-undrafted candidates fills up like any other.
+      const height = Math.max(1, g.rows.length)
+      if (n && n + height > PER_PAGE) { out.push(cur); cur = []; n = 0 }
       cur.push(g)
-      n += g.rows.length
+      n += height
     }
     if (cur.length) out.push(cur)
     return out.length ? out : [[]]
@@ -1229,7 +1270,7 @@ export default function OfferDocs() {
             </div>
           </div>
 
-          {rows.length === 0 ? (
+          {pages[pageIdx].length === 0 ? (
             <EmptyState
               icon={Search}
               title="Nothing matches these filters"
@@ -1396,7 +1437,7 @@ export default function OfferDocs() {
 
       {form && (
         <DocFormModal
-          key={`${form.mode}-${form.doc.id}`}
+          key={`${form.mode}-${form.doc.id ?? 'new-' + form.doc.application_id}`}
           doc={form.doc}
           mode={form.mode}
           templates={templates}
