@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Rocket, CheckCircle2, Pencil, Check, ListChecks, Users, Clock, CalendarDays,
-  ChevronUp, ChevronDown, ExternalLink, RotateCcw, Mail,
+  ChevronUp, ChevronDown, ExternalLink, RotateCcw, Mail, Link as LinkIcon,
 } from 'lucide-react'
 import { api } from '../api'
 import { Card, Badge, Button, Spinner, EmptyState, PageHeader, Modal, Field, inputClass, cx } from '../ui'
@@ -352,22 +352,42 @@ function SessionsView({ plans, onStep }) {
 // Forms candidates have sent back. They arrive with the offer letter, long before a tracker
 // exists, so they are listed on their own rather than hung off a plan.
 function SubmissionsPanel() {
+  const { toast } = useToast()
   const [rows, setRows] = useState(null)
   const [open, setOpen] = useState(null)
   useEffect(() => { api.listOnboardingSubmissions().then(setRows).catch(() => setRows([])) }, [])
 
   const merge = (up) => { setRows((l) => (l || []).map((r) => (r.id === up.id ? up : r))); setOpen(up) }
-  if (!rows || rows.length === 0) return null
+  const formUrl = `${window.location.origin}/onboarding-form`
 
   return (
     <Card className="overflow-hidden p-0">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-slate-900">Onboarding forms</h2>
           <p className="text-xs text-slate-500">What new joiners have sent back. Click one to read or correct it.</p>
         </div>
-        <span className="text-xs tabular-nums text-slate-500">{rows.length}</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { navigator.clipboard.writeText(formUrl); toast('Form link copied') }}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:text-brand-700"
+          >
+            <LinkIcon className="h-3.5 w-3.5 text-slate-400" aria-hidden /> Copy the form link
+          </button>
+          <span className="text-xs tabular-nums text-slate-500">{rows?.length ?? 0}</span>
+        </div>
       </div>
+      {rows && rows.length === 0 ? (
+        <div className="px-4 py-8 text-center">
+          <p className="text-sm text-slate-600">Nothing has come back yet.</p>
+          <p className="mx-auto mt-1.5 max-w-lg text-xs leading-relaxed text-slate-500">
+            Every offer-letter email carries the candidate’s own link, and it lands here the moment
+            they send it. To ask someone who is not on an offer yet, share{' '}
+            <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px] text-slate-700">{formUrl}</code>.
+          </p>
+        </div>
+      ) : (
       <div className="overflow-auto">
         <table className="w-full border-collapse text-left text-sm">
           <thead className={cx(THEAD, 'sticky top-0 z-10')}>
@@ -403,6 +423,7 @@ function SubmissionsPanel() {
           </tbody>
         </table>
       </div>
+      )}
       {open && <SubmissionModal submission={open} onClose={() => setOpen(null)} onSaved={merge} />}
     </Card>
   )

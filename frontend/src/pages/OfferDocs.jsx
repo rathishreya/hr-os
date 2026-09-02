@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, ArrowRight, ArrowRightCircle, Building2, Check, ChevronDown, ChevronRight, Copy, Eye, FilePlus2,
-  FileText, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw, Rocket, RotateCcw, Search, Trash2, Upload, X,
+  FileText, Link as LinkIcon, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw, Rocket, RotateCcw,
+  Search, Trash2, Upload, X,
 } from 'lucide-react'
 import { api } from '../api'
 import {
@@ -816,6 +817,17 @@ function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard,
     !p.anyMoved && p.appDoc?.id && { label: 'Send to onboarding…', icon: <ArrowRightCircle className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAskOnboard(p) },
     p.anyMoved && { label: 'Open in Onboarding', icon: <Rocket className="h-3.5 w-3.5 text-slate-400" />, onClick: onOpenOnboarding },
     { sep: true },
+    p.appDoc?.candidate_id && {
+      label: 'Copy onboarding form link', icon: <LinkIcon className="h-3.5 w-3.5 text-slate-400" />,
+      note: 'their own, prefilled',
+      onClick: async () => {
+        try {
+          const { url } = await api.onboardingFormLink(p.appDoc.candidate_id)
+          navigator.clipboard.writeText(url)
+          toast('Onboarding form link copied')
+        } catch (e) { toast(e.message, 'error') }
+      },
+    },
     {
       label: 'Copy work email', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />, note: p.email,
       onClick: () => { navigator.clipboard.writeText(p.email || ''); toast('Work email copied') },
