@@ -61,6 +61,11 @@ class Step:
     #: Extra comment boxes beyond the single default one.
     comment_slots: tuple[str, ...] = ()
     upload: bool = False
+    #: Whether this mail goes out on its own or waits for a person.
+    #: Boilerplate with merge fields sends itself; anything carrying a judgement, going to a
+    #: manager, or depending on who turned up waits in the queue for HR to read and send.
+    #: A default, not a rule — it can be flipped per candidate on the row.
+    auto: bool = False
     note: str = ""
 
 
@@ -85,13 +90,13 @@ STEPS: list[Step] = [
     Step("documents_verification", "Documents verification", "before", "status", comments=True),
 
     # ── Day one ─────────────────────────────────────────────────────────────────────────────
-    Step("welcome_mail", "Welcome to EZ mail", "day_one", "mail", due_working_day=1),
+    Step("welcome_mail", "Welcome to EZ mail", "day_one", "mail", due_working_day=1, auto=True),
     Step("hod_mail", "Mail to HOD / manager", "day_one", "mail", due_working_day=1),
-    Step("culture_mail", "Mail: culture and life at EZ", "day_one", "mail", due_working_day=1),
+    Step("culture_mail", "Mail: culture and life at EZ", "day_one", "mail", due_working_day=1, auto=True),
     Step("first_day_mail", "Mail: first day overview and dive deeper", "day_one", "mail",
-         due_working_day=1),
+         due_working_day=1, auto=True),
     Step("policy_faq_mail", "Policy and FAQ mail, with the NDA", "day_one", "mail",
-         due_working_day=1),
+         due_working_day=1, auto=True),
     Step("induction_session", "Induction session", "day_one", "date",
          note="Date set by hand."),
     Step("go_to_person", "Go-to-person", "day_one", "text", entities=(EZ,),
@@ -112,7 +117,7 @@ STEPS: list[Step] = [
     Step("manager_expectations_mail", "Mail to the manager to share expectations", "first_month",
          "mail", due_working_day=7),
     Step("induction_feedback", "Induction and onboarding feedback form", "first_month", "mail",
-         due_working_day=15, comments=False, note="Mail goes out, then the form is chased."),
+         due_working_day=15, comments=False, note="Mail goes out, then the form is chased.", auto=True),
     Step("hr_checkin_1", "Monthly HR check-in", "first_month", "meeting", due_working_day=30,
          comments=True),
 
@@ -134,7 +139,7 @@ STEPS: list[Step] = [
 
     # ── Certification and close ─────────────────────────────────────────────────────────────
     Step("certification_form_mail", "Certification detail form", "close", "mail",
-         due_working_day=45),
+         due_working_day=45, auto=True),
     Step("training_manager_feedback", "Training and manager feedback forms", "close", "mail",
          due_working_day=90,
          note="Goes to the manager and the employee together."),

@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from .config import settings
 from .database import SessionLocal, init_db
-from .routers import admin, auth, assessments, candidates, careers, comms, distribution, documents, google_oauth, hiring_requests, interview_invite, interview_rounds, jobs, onboarding, onboarding_form, outreach, pipeline, screening, tpos, users, video
+from .routers import admin, auth, assessments, candidates, careers, comms, distribution, documents, google_oauth, hiring_requests, interview_invite, interview_rounds, jobs, onboarding, onboarding_form, onboarding_module, outreach, pipeline, screening, tpos, users, video
 from .services import embeddings, security
 from .services.ai import ai
 
@@ -134,6 +134,7 @@ app.include_router(google_oauth.router)
 app.include_router(documents.router)
 app.include_router(onboarding.router)
 app.include_router(onboarding_form.router)
+app.include_router(onboarding_module.router)
 app.include_router(assessments.router)
 app.include_router(users.router)
 app.include_router(tpos.router)
