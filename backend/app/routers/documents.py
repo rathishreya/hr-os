@@ -423,6 +423,34 @@ def list_awaiting(db: Session = Depends(get_db)):
     return out
 
 
+@router.delete("/{doc_id}", status_code=204)
+def delete_document(doc_id: int, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+    """Delete a document.
+
+    Until now nothing could remove one, which made every mistake permanent: a letter drafted from
+    the wrong template, or settled on the wrong entity, had no way back. The refusals below are the
+    two cases where the document is a record of something that actually happened rather than a
+    draft — those must not be erasable from this screen.
+    """
+    doc = db.get(models.Document, doc_id)
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if doc.move_to_onboarding:
+        raise HTTPException(409, "This document moved the candidate to onboarding and cannot be deleted.")
+    if doc.upload_file is not None:
+        raise HTTPException(409, "A signed copy is filed against this document. Remove it before deleting.")
+
+    log(db, "document.deleted", "document", doc.id, {
+        "template_key": doc.template_key, "doc_type": doc.doc_type, "status": doc.status,
+        "candidate_id": doc.candidate_id, "application_id": doc.application_id,
+        "was_emailed": doc.email_sent_at is not None,
+        "by": getattr(user, "email", "") or getattr(user, "name", ""),
+    })
+    db.delete(doc)
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.post("/{doc_id}/upload", response_model=schemas.DocumentOut)
 def upload_document_file(doc_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
     """Attach a recruiter-uploaded file (e.g. the signed offer PDF) to this entry."""

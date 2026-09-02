@@ -236,6 +236,7 @@ export const api = {
   listDocumentTemplates: () => req('/documents/templates'),
   generateDocument: (body) => req('/documents/generate', { method: 'POST', body: JSON.stringify(body) }),
   regenerateDocument: (id, body) => req(`/documents/${id}/regenerate`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteDocument: (id) => req(`/documents/${id}`, { method: 'DELETE' }),
   approveDocument: (id, by = 'recruiter') => req(`/documents/${id}/approve`, { method: 'POST', body: JSON.stringify({ by }) }),
   uploadDocumentFile: (id, formData) =>
     fetch(BASE + `/documents/${id}/upload`, { method: 'POST', headers: authHeaders(), body: formData }).then(async (r) => {

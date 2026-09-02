@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, ArrowRight, ArrowRightCircle, Building2, Check, ChevronDown, ChevronRight, Copy, Eye, FilePlus2,
-  FileText, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw, Rocket, RotateCcw, Search, Upload, X,
+  FileText, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw, Rocket, RotateCcw, Search, Trash2, Upload, X,
 } from 'lucide-react'
 import { api } from '../api'
 import {
@@ -645,7 +645,7 @@ function FilterHead({ label, colKey, values, filters, onFilter, align }) {
 }
 
 // ── One document ────────────────────────────────────────────────────────────────────────────
-function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
+function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview, onAskDelete,
   onEditLetter, onEmail, onDetails, onApprove, onEntity, onAskOnboard }) {
   const { toast } = useToast()
   const locked = !!d.move_to_onboarding
@@ -707,6 +707,12 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview,
       label: `Switch entity to ${d.entity === 'EZ' ? 'AEZ' : 'EZ'}`,
       icon: <Building2 className="h-3.5 w-3.5 text-slate-400" />,
       onClick: () => onEntity(d, d.entity === 'EZ' ? 'AEZ' : 'EZ'),
+    },
+    !locked && !d.has_upload && { sep: true },
+    !locked && !d.has_upload && {
+      label: 'Delete this document', icon: <Trash2 className="h-3.5 w-3.5 text-rose-500" />,
+      note: d.email_sent_at ? 'already emailed' : undefined,
+      onClick: () => onAskDelete(d),
     },
   ].filter(Boolean)
 
@@ -1138,11 +1144,26 @@ export default function OfferDocs() {
   async function runConfirm() {
     setBarBusy(true)
     try {
-      mergeDoc(await api.moveDocumentToOnboarding(confirm.p.appDoc.id, true))
-      toast('Sent to onboarding')
+      if (confirm.kind === 'delete') {
+        await api.deleteDocument(confirm.doc.id)
+        setDocs((list) => (list || []).filter((x) => x.id !== confirm.doc.id))
+        // Deleting a candidate's last letter puts them back among the hired-but-undrafted.
+        api.listAwaitingDocuments().then(setAwaiting).catch(() => {})
+        toast('Document deleted')
+      } else {
+        mergeDoc(await api.moveDocumentToOnboarding(confirm.p.appDoc.id, true))
+        toast('Sent to onboarding')
+      }
       setConfirm(null)
     } catch (e) { toast(e.message, 'error') } finally { setBarBusy(false) }
   }
+
+  const askDelete = (d) => setConfirm({
+    kind: 'delete',
+    doc: d,
+    title: `Delete the ${nameOf(d)}?`,
+    body: `This removes the ${nameOf(d)} for ${d.candidate_name || 'this candidate'}${d.email_sent_at ? ', which has already been emailed' : ''}. There is no undo.`,
+  })
 
   async function copy(d) {
     await navigator.clipboard.writeText(d.content || '')
@@ -1338,6 +1359,7 @@ export default function OfferDocs() {
                             onApprove={approveDoc}
                             onEntity={setEntity}
                             onAskOnboard={askOnboard}
+                            onAskDelete={askDelete}
                           />
                         ))}
                       </Fragment>
@@ -1378,7 +1400,10 @@ export default function OfferDocs() {
                   <p role="status" className="min-w-0 flex-1 text-xs text-slate-700">{confirm.body}</p>
                   <Button variant="ghost" size="sm" onClick={() => setConfirm(null)} disabled={barBusy}>Cancel</Button>
                   <Button size="sm" onClick={runConfirm} disabled={barBusy}>
-                    {barBusy ? <Spinner className="h-3.5 w-3.5" /> : <ArrowRightCircle className="h-3.5 w-3.5" />} Send to onboarding
+                    {barBusy ? <Spinner className="h-3.5 w-3.5" />
+                      : confirm.kind === 'delete' ? <Trash2 className="h-3.5 w-3.5" />
+                        : <ArrowRightCircle className="h-3.5 w-3.5" />}
+                    {confirm.kind === 'delete' ? 'Delete document' : 'Send to onboarding'}
                   </Button>
                 </div>
               )}
