@@ -47,12 +47,15 @@ function PhoneInput({ id, value, bad, onChange }) {
     <div className={`flex items-stretch overflow-hidden rounded-xl border transition-[border-color,box-shadow] duration-150 ease-snappy focus-within:ring-4 ${
       bad ? 'border-rose-400 focus-within:border-rose-500 focus-within:ring-rose-500/12'
         : 'border-slate-300 hover:border-slate-400 focus-within:border-brand-500 focus-within:ring-brand-500/12'}`}>
+      {/* A native select is as wide as its widest option, so full country names here swallowed the
+          whole row and left no room for the number. "IN +91" is short, still unmistakable, and
+          typing the two letters jumps to it. */}
       <select
         aria-label="Country code" value={code} onChange={(e) => set(e.target.value, number)}
-        className="h-11 shrink-0 border-0 border-r border-slate-200 bg-slate-50 pl-3 pr-2 text-sm text-slate-700 outline-none"
+        className="h-11 w-[6.5rem] shrink-0 border-0 border-r border-slate-200 bg-slate-50 pl-3 pr-1 text-sm text-slate-700 outline-none"
       >
         {DIAL_CODES.map((d) => (
-          <option key={d.iso} value={d.code}>{d.code} · {d.name}</option>
+          <option key={d.iso} value={d.code} title={d.name}>{d.iso} {d.code}</option>
         ))}
       </select>
       <input

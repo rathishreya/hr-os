@@ -80,7 +80,7 @@ export const FIELDS = [
   {
     key: 'mobile', label: 'Mobile number', type: 'tel', required: true,
     labels: { organization: 'Contact number of your SPOC' }, section: 'you',
-    help: 'Include the country code.',
+
   },
   {
     key: 'whatsapp', label: 'WhatsApp number', type: 'tel', required: false,
