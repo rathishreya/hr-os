@@ -204,6 +204,7 @@ const MODAL_SIZES = {
   lg: 'max-w-2xl',
   xl: 'max-w-4xl',
   doc: 'max-w-[900px]',  // near-A4 width for document previews
+  wide: 'max-w-7xl',     // a table that needs its columns, not a dialog that needs reading
 }
 
 export function Modal({ open, onClose, title, children, footer, size = 'md' }) {
