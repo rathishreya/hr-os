@@ -70,6 +70,17 @@ def _states(db: Session, plan_id: int) -> dict[str, models.OnboardingStepState]:
     return {r.step_key: r for r in rows}
 
 
+def _states_for(db: Session, plan_ids: list[int]) -> dict[int, dict[str, models.OnboardingStepState]]:
+    """The same thing for many plans in one query, for the views that read every plan at once."""
+    if not plan_ids:
+        return {}
+    out: dict[int, dict[str, models.OnboardingStepState]] = {}
+    for r in db.scalars(select(models.OnboardingStepState)
+                        .where(models.OnboardingStepState.plan_id.in_(plan_ids))):
+        out.setdefault(r.plan_id, {})[r.step_key] = r
+    return out
+
+
 def _progress(entity: str, states: dict) -> dict:
     """Done over everything that still counts. NA is excluded from the denominator, because a step
     marked not-applicable is not work anybody is going to do."""
@@ -93,11 +104,15 @@ def board(db: Session = Depends(get_db), _user: models.User = Depends(current_us
     """Everyone on onboarding: where they are, and what is overdue. View 1's list."""
     today = date.today()
     out = []
-    for plan in db.scalars(select(models.OnboardingPlan).order_by(models.OnboardingPlan.id.desc())):
-        cand = db.get(models.Candidate, plan.candidate_id)
-        entity = _plan_entity(db, plan)
-        states = _states(db, plan.id)
-        joining = _joining_of(db, plan)
+    plans = list(db.scalars(select(models.OnboardingPlan).order_by(models.OnboardingPlan.id.desc())))
+    prefetched = ctxs.bulk_contexts(db, plans)
+    all_states = _states_for(db, [p.id for p in plans])
+    for plan in plans:
+        pre = prefetched.get(plan.id) or {}
+        cand = pre.get("candidate")
+        entity = pre.get("entity") or "EZ"
+        states = all_states.get(plan.id, {})
+        joining = pre.get("joining") or ""
         due = schedule.due_dates(joining, st.steps_for(entity))
         overdue = [
             k for k, d in due.items()
@@ -567,12 +582,20 @@ def all_mails(db: Session = Depends(get_db), _user: models.User = Depends(curren
     today = date.today()
     rows = []
 
-    for plan in db.scalars(select(models.OnboardingPlan).order_by(models.OnboardingPlan.id.desc())):
-        cand = db.get(models.Candidate, plan.candidate_id)
-        entity = _plan_entity(db, plan)
-        states = _states(db, plan.id)
-        ctx, mode = _plan_mail_context(db, plan)
-        due = schedule.due_dates(_joining_of(db, plan), st.steps_for(entity))
+    # Everything about every plan up front. Asked one plan at a time this cost about thirteen
+    # queries per joiner and grew linearly, which against a database across the internet is the
+    # difference between a page that opens and one that hangs.
+    plans = list(db.scalars(select(models.OnboardingPlan).order_by(models.OnboardingPlan.id.desc())))
+    prefetched = ctxs.bulk_contexts(db, plans)
+    all_states = _states_for(db, [p.id for p in plans])
+
+    for plan in plans:
+        pre = prefetched.get(plan.id) or {}
+        cand = pre.get("candidate")
+        entity = pre.get("entity") or "EZ"
+        states = all_states.get(plan.id, {})
+        ctx, mode = pre.get("ctx") or {}, pre.get("mode") or ml.CAMPUS
+        due = schedule.due_dates(pre.get("joining") or "", st.steps_for(entity))
         for s in st.steps_for(entity):
             for t in ml.for_step(s.key, mode):
                 sent = _sent_map(states.get(s.key)).get(t.key)

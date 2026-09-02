@@ -763,8 +763,10 @@ def _linkedin_field(v: dict) -> str:
     candidate without a LinkedIn profile should not be stopped at the door."""
     return (
         '<div class="field"><label class="lbl">LinkedIn profile</label>'
-        f'<input class="inp" type="url" name="linkedin" value="{_e(v.get("linkedin"))}" '
-        'placeholder="https://linkedin.com/in/…"></div>'
+        # NOT type="url": the browser then refuses "linkedin.com/in/asha" and blocks the whole
+        # application over a missing "https://", which is not a reason to lose a candidate.
+        f'<input class="inp" type="text" name="linkedin" value="{_e(v.get("linkedin"))}" '
+        'placeholder="linkedin.com/in/your-profile"></div>'
     )
 
 
