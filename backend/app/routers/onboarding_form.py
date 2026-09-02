@@ -28,6 +28,7 @@ from ..config import settings
 from ..database import get_db
 from ..deps import current_user
 from ..services import security, storage
+from ..services.documents import TEMPLATES
 from ..services.recruitment import log
 
 router = APIRouter(prefix="/api/onboarding-form", tags=["onboarding-form"])
@@ -50,6 +51,34 @@ def form_url(candidate_id: int) -> str:
     """The link to put in an email. Absolute, because it is opened outside the app."""
     base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
     return f"{base}/onboarding-form/{int(candidate_id)}?t={form_token(candidate_id)}"
+
+
+def variant_for(db: Session, candidate_id: int) -> str:
+    """Which kind of respondent this candidate is, worked out rather than asked.
+
+    A recruiter has already answered this when they picked a template: every template is stamped
+    with a party_type and a contract_type, so an agency contract means an organisation and a
+    freelance or professional-services contract means a freelancer. Asking the candidate to
+    classify themselves again invites them to disagree with their own paperwork.
+
+    Their EARLIEST document decides it, the same rule that settles their entity, so the answer
+    does not move as more letters are drafted.
+    """
+    docs = db.scalars(
+        select(models.Document)
+        .where(models.Document.candidate_id == candidate_id)
+        .order_by(models.Document.id)
+    ).all()
+    for d in docs:
+        tpl = TEMPLATES.get(d.template_key)
+        if not tpl:
+            continue
+        if tpl.party_type == "agency":
+            return "organization"
+        if str(tpl.contract_type) in {"freelance", "professional_services"}:
+            return "freelancer"
+        return "individual"
+    return "individual"
 
 
 def _check_token(candidate_id: int, t: str) -> None:
@@ -79,6 +108,8 @@ def prefill(candidate_id: int, t: str = "", db: Session = Depends(get_db)):
         "legal_name": cand.name or "",
         "email": cand.email or "",
         "already_submitted": bool(done),
+        # Taken from their paperwork, so the form does not ask them to classify themselves.
+        "variant": variant_for(db, cand.id),
     }
 
 
@@ -165,7 +196,9 @@ async def submit_for_candidate(
         raise HTTPException(409, "This form has already been completed. Contact the People team if "
                                  "something needs correcting.")
     form = await request.form()
-    sub = _save(db, candidate_id=candidate_id, variant=variant,
+    # Derived, not accepted from the client: the candidate is never asked, so a posted value
+    # could only have been typed by someone editing the request.
+    sub = _save(db, candidate_id=candidate_id, variant=variant_for(db, candidate_id),
                 payload=json.loads(answers or "{}"), files=_collect_files(form))
     return {"id": sub.id, "reference": f"ONB-{sub.id:05d}"}
 

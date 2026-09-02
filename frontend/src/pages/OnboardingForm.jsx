@@ -1,95 +1,85 @@
 // The onboarding form a candidate fills in after accepting an offer. Public: it renders outside
 // the app shell and nobody signs in to reach it.
 //
-// Two ways in, both landing here:
-//   /onboarding-form/:candidateId?t=…   the signed link sent with an offer letter. Arrives knowing
-//                                       who it is for, so the first fields are already filled.
-//   /onboarding-form                    the generic link, for somebody not in the system yet.
+//   /onboarding-form/:candidateId?t=…   the signed link sent with an offer letter. It arrives
+//                                       knowing who it is for, so the first fields are filled and
+//                                       nobody is asked to classify themselves — their paperwork
+//                                       already said whether they are staff, freelance or a company.
+//   /onboarding-form                    the generic link, for somebody not in the system yet. That
+//                                       one has to ask, because there is nothing to read it from.
+//
+// Layout note: the label, then the control, then the help or the error. Help text between a label
+// and its input is what made the first version look uneven — every field with a hint pushed its
+// input a line lower than the field beside it, so nothing lined up across the row.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, Check, FileUp, Loader2, Paperclip, X } from 'lucide-react'
 import { api } from '../api'
+import { DIAL_CODES, splitDial } from '../dialCodes'
 import {
   SECTIONS, VARIANTS, fieldsFor, isFile, isRequired, labelFor, validate, MAX_FILE_BYTES,
 } from '../onboardingFields'
 
-const inputCx = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-500 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100'
-const badCx = 'border-rose-400 focus:border-rose-400 focus:ring-rose-100'
-const labelCx = 'block text-sm font-medium text-slate-800'
+// One control height and one focus treatment everywhere, so a row of mixed inputs reads as a row.
+const CTRL = 'h-11 w-full rounded-xl border bg-white px-3.5 text-sm text-slate-900 outline-none transition-[border-color,box-shadow] duration-150 ease-snappy placeholder:text-slate-500'
+const CTRL_OK = 'border-slate-300 hover:border-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/12'
+const CTRL_BAD = 'border-rose-400 focus:border-rose-500 focus:ring-4 focus:ring-rose-500/12'
+const ctrl = (bad) => `${CTRL} ${bad ? CTRL_BAD : CTRL_OK}`
 
 const fmtSize = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`)
 
-/** One field, drawn from its definition. */
-function Field({ field, variant, value, file, error, onChange, onFile }) {
-  const label = labelFor(field, variant)
-  const req = isRequired(field, value?.__all || {})
-  const id = `f-${field.key}`
-  const cx = (extra) => `${inputCx} ${error ? badCx : ''} ${extra || ''}`
+function Hint({ error, help }) {
+  if (error) {
+    return (
+      <p role="alert" className="mt-1.5 flex items-start gap-1.5 text-xs leading-relaxed text-rose-700">
+        <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />{error}
+      </p>
+    )
+  }
+  return help ? <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{help}</p> : null
+}
 
+/** A phone number: the country code is chosen, never typed. */
+function PhoneInput({ id, value, bad, onChange }) {
+  const { code, number } = splitDial(value)
+  const set = (c, n) => onChange(`${c} ${n}`.trim())
   return (
-    <div className={field.type === 'textarea' || field.type === 'file' ? 'sm:col-span-2' : ''}>
-      <label htmlFor={id} className={labelCx}>
-        {label} {req ? <span className="text-rose-600" aria-label="required">*</span>
-          : <span className="font-normal text-slate-400">(optional)</span>}
-      </label>
-      {field.help && <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{field.help}</p>}
-
-      <div className="mt-1.5">
-        {field.type === 'textarea' ? (
-          <textarea id={id} rows={3} className={cx()} value={value?.v || ''} onChange={(e) => onChange(e.target.value)} />
-        ) : field.type === 'select' ? (
-          <select id={id} className={cx()} value={value?.v || ''} onChange={(e) => onChange(e.target.value)}>
-            <option value="">Choose…</option>
-            {field.options.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
-        ) : field.type === 'radio' ? (
-          <div className="flex flex-wrap gap-2">
-            {field.options.map((o) => (
-              <button
-                key={o} type="button" onClick={() => onChange(o)}
-                className={`rounded-lg border px-3 py-1.5 text-sm transition-colors duration-150 ${
-                  value?.v === o ? 'border-brand-500 bg-brand-50 font-medium text-brand-700'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}
-              >
-                {o}
-              </button>
-            ))}
-          </div>
-        ) : field.type === 'file' ? (
-          <FileInput id={id} field={field} file={file} onFile={onFile} bad={!!error} />
-        ) : (
-          <input
-            id={id} type={field.type === 'date' ? 'date' : field.type === 'number' ? 'text' : field.type}
-            className={cx()} value={value?.v || ''} onChange={(e) => onChange(e.target.value)}
-            inputMode={field.type === 'tel' ? 'tel' : undefined}
-          />
-        )}
-      </div>
-      {error && (
-        <p role="alert" className="mt-1 flex items-center gap-1 text-xs text-rose-700">
-          <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />{error}
-        </p>
-      )}
+    <div className={`flex items-stretch overflow-hidden rounded-xl border transition-[border-color,box-shadow] duration-150 ease-snappy focus-within:ring-4 ${
+      bad ? 'border-rose-400 focus-within:border-rose-500 focus-within:ring-rose-500/12'
+        : 'border-slate-300 hover:border-slate-400 focus-within:border-brand-500 focus-within:ring-brand-500/12'}`}>
+      <select
+        aria-label="Country code" value={code} onChange={(e) => set(e.target.value, number)}
+        className="h-11 shrink-0 border-0 border-r border-slate-200 bg-slate-50 pl-3 pr-2 text-sm text-slate-700 outline-none"
+      >
+        {DIAL_CODES.map((d) => (
+          <option key={d.iso} value={d.code}>{d.code} · {d.name}</option>
+        ))}
+      </select>
+      <input
+        id={id} type="tel" inputMode="tel" value={number} onChange={(e) => set(code, e.target.value)}
+        placeholder="98765 43210"
+        className="h-11 min-w-0 flex-1 border-0 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-500"
+      />
     </div>
   )
 }
 
-function FileInput({ id, field, file, onFile, bad }) {
+function FileInput({ id, field, file, bad, onFile }) {
   const ref = useRef(null)
   return (
-    <div className={`flex items-center gap-2 rounded-lg border border-dashed px-3 py-2.5 ${
-      bad ? 'border-rose-400 bg-rose-50/40' : file ? 'border-brand-300 bg-brand-50/40' : 'border-slate-300 bg-slate-50/60'}`}>
-      <input
-        ref={ref} id={id} type="file" accept={field.accept} className="sr-only"
-        onChange={(e) => onFile(e.target.files?.[0] || null)}
-      />
+    <div className={`flex h-11 items-center gap-2.5 rounded-xl border border-dashed px-3.5 transition-colors duration-150 ease-snappy ${
+      bad ? 'border-rose-400 bg-rose-50/50'
+        : file ? 'border-brand-400 bg-brand-50/50' : 'border-slate-300 bg-slate-50/70 hover:border-slate-400'}`}>
+      <input ref={ref} id={id} type="file" accept={field.accept} className="sr-only"
+        onChange={(e) => onFile(e.target.files?.[0] || null)} />
       {file ? (
         <>
           <Paperclip className="h-4 w-4 shrink-0 text-brand-600" aria-hidden />
-          <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{file.name}</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{file.name}</span>
           <span className="shrink-0 text-xs tabular-nums text-slate-500">{fmtSize(file.size)}</span>
-          <button type="button" onClick={() => { onFile(null); if (ref.current) ref.current.value = '' }}
-            className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-200/60 hover:text-slate-700" aria-label="Remove this file">
+          <button type="button" aria-label="Remove this file"
+            onClick={() => { onFile(null); if (ref.current) ref.current.value = '' }}
+            className="shrink-0 rounded-lg p-1 text-slate-400 transition-colors duration-150 hover:bg-slate-200/70 hover:text-slate-700">
             <X className="h-3.5 w-3.5" />
           </button>
         </>
@@ -97,10 +87,58 @@ function FileInput({ id, field, file, onFile, bad }) {
         <>
           <FileUp className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
           <button type="button" onClick={() => ref.current?.click()}
-            className="text-sm font-medium text-brand-700 hover:underline">Choose a file</button>
-          <span className="text-xs text-slate-500">PDF or image, up to 5 MB</span>
+            className="rounded text-sm font-medium text-brand-700 hover:underline">Choose a file</button>
+          <span className="truncate text-xs text-slate-500">PDF or image, up to 5 MB</span>
         </>
       )}
+    </div>
+  )
+}
+
+function Field({ field, variant, answers, file, error, onChange, onFile }) {
+  const label = labelFor(field, variant)
+  const req = isRequired(field, answers)
+  const id = `f-${field.key}`
+  const value = answers[field.key] || ''
+  const wide = field.type === 'textarea' || field.type === 'file'
+
+  return (
+    <div className={wide ? 'sm:col-span-2' : ''}>
+      <label htmlFor={id} className="mb-1.5 flex items-baseline gap-1.5 text-sm font-medium text-slate-800">
+        <span>{label}</span>
+        {req ? <span aria-hidden className="text-rose-600">*</span>
+          : <span className="text-xs font-normal text-slate-500">optional</span>}
+      </label>
+
+      {field.type === 'textarea' ? (
+        <textarea id={id} rows={3} value={value} onChange={(e) => onChange(e.target.value)}
+          className={`${ctrl(!!error)} h-auto py-2.5 leading-relaxed`} />
+      ) : field.type === 'select' ? (
+        <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className={ctrl(!!error)}>
+          <option value="">Choose…</option>
+          {field.options.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : field.type === 'radio' ? (
+        <div className="flex flex-wrap gap-2">
+          {field.options.map((o) => (
+            <button key={o} type="button" onClick={() => onChange(o)}
+              className={`h-11 rounded-xl border px-4 text-sm transition-colors duration-150 ease-snappy ${
+                value === o ? 'border-brand-500 bg-brand-50 font-medium text-brand-800'
+                  : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400'}`}>
+              {o}
+            </button>
+          ))}
+        </div>
+      ) : field.type === 'tel' ? (
+        <PhoneInput id={id} value={value} bad={!!error} onChange={onChange} />
+      ) : field.type === 'file' ? (
+        <FileInput id={id} field={field} file={file} bad={!!error} onFile={onFile} />
+      ) : (
+        <input id={id} type={field.type === 'date' ? 'date' : field.type} value={value}
+          onChange={(e) => onChange(e.target.value)} className={ctrl(!!error)} />
+      )}
+
+      <Hint error={error} help={field.help} />
     </div>
   )
 }
@@ -109,6 +147,7 @@ export default function OnboardingForm() {
   const { candidateId } = useParams()
   const [search] = useSearchParams()
   const token = search.get('t') || ''
+  const signed = !!(candidateId && token)
 
   const [variant, setVariant] = useState('individual')
   const [answers, setAnswers] = useState({})
@@ -116,19 +155,22 @@ export default function OnboardingForm() {
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(null)
-  const [linkErr, setLinkErr] = useState('')
+  const [failure, setFailure] = useState('')
   const [already, setAlready] = useState(false)
+  const [ready, setReady] = useState(!signed)
 
-  // A signed link already knows who this is; fill in what we hold so they are not retyping it.
+  // A signed link already knows who this is, and what kind of engagement they are on.
   useEffect(() => {
-    if (!candidateId || !token) return
+    if (!signed) return
     api.onboardingPrefill(candidateId, token)
       .then((p) => {
         setAnswers((a) => ({ legal_name: p.legal_name || '', email: p.email || '', ...a }))
+        if (p.variant) setVariant(p.variant)
         setAlready(!!p.already_submitted)
+        setReady(true)
       })
-      .catch((e) => setLinkErr(e.message))
-  }, [candidateId, token])
+      .catch((e) => { setFailure(e.message); setReady(true) })
+  }, [signed, candidateId, token])
 
   const fields = useMemo(() => fieldsFor(variant), [variant])
   const bySection = useMemo(
@@ -137,32 +179,31 @@ export default function OnboardingForm() {
     [fields],
   )
 
+  const answered = (f) => !!(isFile(f) ? files[f.key] : answers[f.key])
+  const need = fields.filter((f) => isRequired(f, answers))
+  const doneCount = need.filter(answered).length
+  const pct = need.length ? Math.round((doneCount / need.length) * 100) : 0
+
   const setAnswer = (key, v) => setAnswers((a) => ({ ...a, [key]: v }))
-  const setFile = (key, f) => setFiles((m) => {
-    const next = { ...m }
-    if (f) next[key] = f; else delete next[key]
-    return next
-  })
+  const clearErr = (key) => setErrors((e) => { const n = { ...e }; delete n[key]; return n })
 
   async function submit(e) {
     e.preventDefault()
     const errs = validate(variant, answers, files)
     setErrors(errs)
     if (Object.keys(errs).length) {
-      const first = document.getElementById(`f-${Object.keys(errs)[0]}`)
-      first?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      document.getElementById(`f-${Object.keys(errs)[0]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return
     }
     setBusy(true)
     try {
-      // Only the fields this respondent was actually shown, so a variant switch cannot smuggle
-      // an answer to a question they were never asked.
       const payload = {}
       for (const f of fields) if (!isFile(f) && answers[f.key]) payload[f.key] = answers[f.key]
-      const res = await api.submitOnboardingForm({ candidateId, token, variant, answers: payload, files })
-      setDone(res)
+      setDone(await api.submitOnboardingForm({
+        candidateId: signed ? candidateId : null, token, variant, answers: payload, files,
+      }))
     } catch (err) {
-      setLinkErr(err.message)
+      setFailure(err.message)
     } finally {
       setBusy(false)
     }
@@ -171,116 +212,150 @@ export default function OnboardingForm() {
   if (done) {
     return (
       <Shell>
-        <div className="text-center">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
-            <Check className="h-6 w-6 text-emerald-700" aria-hidden />
+        <div className="px-8 py-14 text-center">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100">
+            <Check className="h-7 w-7 text-emerald-700" aria-hidden />
           </span>
-          <h1 className="mt-4 text-xl font-semibold text-slate-900">That’s everything, thank you.</h1>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+          <h1 className="mt-5 text-xl font-semibold tracking-tight text-slate-900">That’s everything, thank you.</h1>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-600">
             Your details are with the People team. Your reference is{' '}
-            <span className="font-semibold tabular-nums text-slate-900">{done.reference}</span> — quote it
-            if you need to get in touch. We will come back to you if anything is missing.
+            <span className="font-semibold tabular-nums text-slate-900">{done.reference}</span> —
+            quote it if you need to get in touch. We will come back to you if anything is missing.
           </p>
         </div>
       </Shell>
     )
   }
 
-  if (linkErr && !Object.keys(answers).length) {
+  if (!ready) {
     return (
       <Shell>
-        <div className="text-center">
-          <AlertTriangle className="mx-auto h-8 w-8 text-amber-600" aria-hidden />
-          <h1 className="mt-3 text-lg font-semibold text-slate-900">This link isn’t working</h1>
-          <p className="mt-2 text-sm text-slate-600">{linkErr}</p>
+        <div className="flex items-center justify-center gap-2 px-8 py-20 text-sm text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading your form…
+        </div>
+      </Shell>
+    )
+  }
+
+  if (failure && signed && !Object.keys(answers).length) {
+    return (
+      <Shell>
+        <div className="px-8 py-14 text-center">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
+            <AlertTriangle className="h-7 w-7 text-amber-700" aria-hidden />
+          </span>
+          <h1 className="mt-5 text-xl font-semibold tracking-tight text-slate-900">This link isn’t working</h1>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-600">{failure}</p>
         </div>
       </Shell>
     )
   }
 
   return (
-    <Shell wide>
-      <header className="border-b border-slate-200 pb-5">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Welcome to EZ Lab</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-          A few details before your first day, so payroll, your provident fund and your paperwork are
-          ready when you arrive. It takes about ten minutes. Everything here is private to the People team.
+    <Shell>
+      <header className="bg-brand-700 px-6 py-8 text-white sm:px-9">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-200">EZ Lab · People team</p>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Before your first day</h1>
+        <p className="mt-2 max-w-xl text-sm leading-relaxed text-brand-100">
+          A few details so payroll, your provident fund and your paperwork are ready when you arrive.
+          It takes about ten minutes, and everything here stays with the People team.
         </p>
-        {already && (
-          <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-800">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-            You have already sent this form once. Filling it in again will send a second copy.
-          </p>
-        )}
       </header>
 
-      <form onSubmit={submit} className="mt-6 space-y-8">
-        <fieldset>
-          <legend className={labelCx}>Which of these are you?</legend>
-          <div className="mt-2 grid gap-2 sm:grid-cols-3">
-            {VARIANTS.map((v) => (
-              <button
-                key={v.value} type="button" onClick={() => { setVariant(v.value); setErrors({}) }}
-                className={`rounded-xl border p-3 text-left transition-colors duration-150 ${
-                  variant === v.value ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-              >
-                <span className={`block text-sm font-semibold ${variant === v.value ? 'text-brand-800' : 'text-slate-800'}`}>{v.label}</span>
-                <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">{v.blurb}</span>
-              </button>
-            ))}
+      {/* Progress sits below the band and stays visible: a 38-field form needs to show its end. */}
+      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-3 backdrop-blur-sm sm:px-9">
+        <div className="flex items-center gap-3">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200">
+            <div className="h-full rounded-full bg-brand-600 transition-[width] duration-300 ease-snappy"
+              style={{ width: `${pct}%` }} />
           </div>
-        </fieldset>
+          <span className="shrink-0 text-xs font-medium tabular-nums text-slate-600">
+            {doneCount} of {need.length}
+          </span>
+        </div>
+      </div>
 
-        {bySection.map((s) => (
-          <section key={s.id}>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-800">{s.title}</h2>
-            <p className="mt-0.5 text-xs text-slate-500">{s.blurb}</p>
-            <div className="mt-4 grid gap-x-5 gap-y-4 sm:grid-cols-2">
-              {s.fields.map((f) => (
-                <Field
-                  key={f.key} field={f} variant={variant}
-                  value={{ v: answers[f.key], __all: answers }}
-                  file={files[f.key]} error={errors[f.key]}
-                  onChange={(v) => setAnswer(f.key, v)}
-                  onFile={(file) => {
-                    if (file && file.size > MAX_FILE_BYTES) {
-                      setErrors((e) => ({ ...e, [f.key]: 'That file is over 5 MB.' }))
-                      return
-                    }
-                    setErrors((e) => { const n = { ...e }; delete n[f.key]; return n })
-                    setFile(f.key, file)
-                  }}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
-
-        {linkErr && (
-          <p role="alert" className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />{linkErr}
+      <div className="px-6 py-7 sm:px-9">
+        {already && (
+          <p className="mb-6 flex items-start gap-2 rounded-xl bg-amber-50 px-3.5 py-3 text-xs leading-relaxed text-amber-900">
+            <AlertTriangle className="mt-px h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+            You have already sent this form. If something needs correcting, reply to the People team
+            rather than filling it in again.
           </p>
         )}
 
-        <div className="flex items-center gap-3 border-t border-slate-200 pt-5">
-          <button
-            type="submit" disabled={busy}
-            className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-brand-700 disabled:opacity-60"
-          >
-            {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-            {busy ? 'Sending…' : 'Send my details'}
-          </button>
-          <p className="text-xs text-slate-500">Fields marked <span className="text-rose-600">*</span> are needed.</p>
-        </div>
-      </form>
+        <form onSubmit={submit} className="space-y-9">
+          {/* Only the generic link has to ask. A signed one reads it off their paperwork. */}
+          {!signed && (
+            <fieldset>
+              <legend className="mb-2 text-sm font-medium text-slate-800">Which of these are you?</legend>
+              <div className="grid gap-2.5 sm:grid-cols-3">
+                {VARIANTS.map((v) => (
+                  <button key={v.value} type="button"
+                    onClick={() => { setVariant(v.value); setErrors({}) }}
+                    className={`rounded-xl border p-3.5 text-left transition-colors duration-150 ease-snappy ${
+                      variant === v.value ? 'border-brand-500 bg-brand-50' : 'border-slate-300 bg-white hover:border-slate-400'}`}>
+                    <span className={`block text-sm font-semibold ${variant === v.value ? 'text-brand-800' : 'text-slate-800'}`}>{v.label}</span>
+                    <span className="mt-1 block text-xs leading-relaxed text-slate-500">{v.blurb}</span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
+
+          {bySection.map((s, i) => (
+            <section key={s.id}>
+              <div className="mb-4 flex items-baseline gap-2.5 border-b border-slate-200 pb-2.5">
+                <span className="text-xs font-semibold tabular-nums text-brand-600">{String(i + 1).padStart(2, '0')}</span>
+                <h2 className="text-base font-semibold tracking-tight text-slate-900">{s.title}</h2>
+              </div>
+              <p className="-mt-2 mb-4 text-xs leading-relaxed text-slate-500">{s.blurb}</p>
+              <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
+                {s.fields.map((f) => (
+                  <Field
+                    key={f.key} field={f} variant={variant} answers={answers}
+                    file={files[f.key]} error={errors[f.key]}
+                    onChange={(v) => { setAnswer(f.key, v); clearErr(f.key) }}
+                    onFile={(file) => {
+                      if (file && file.size > MAX_FILE_BYTES) {
+                        setErrors((e) => ({ ...e, [f.key]: 'That file is over 5 MB.' }))
+                        return
+                      }
+                      clearErr(f.key)
+                      setFiles((m) => { const n = { ...m }; if (file) n[f.key] = file; else delete n[f.key]; return n })
+                    }}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+
+          {failure && (
+            <p role="alert" className="flex items-start gap-2 rounded-xl bg-rose-50 px-3.5 py-3 text-sm leading-relaxed text-rose-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" aria-hidden />{failure}
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-200 pt-6">
+            <button type="submit" disabled={busy}
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand-600 px-5 text-sm font-semibold text-white transition-[background-color,transform] duration-150 ease-snappy hover:bg-brand-700 active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+              {busy ? 'Sending…' : 'Send my details'}
+            </button>
+            <p className="text-xs text-slate-500">
+              Fields marked <span className="text-rose-600">*</span> are needed. Nothing is sent until you press the button.
+            </p>
+          </div>
+        </form>
+      </div>
     </Shell>
   )
 }
 
-function Shell({ children, wide }) {
+function Shell({ children }) {
   return (
-    <div className="min-h-screen bg-[#f6f7fb] px-4 py-10">
-      <div className={`mx-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 ${wide ? 'max-w-3xl' : 'max-w-lg'}`}>
+    <div className="min-h-screen bg-[#f6f7fb] px-4 py-8 sm:py-12">
+      <div className="mx-auto max-w-3xl overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_12px_32px_-12px_rgba(16,24,40,0.12)]">
         {children}
       </div>
     </div>
