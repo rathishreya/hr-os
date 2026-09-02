@@ -7,14 +7,15 @@
 // Every list filters through the same faceted machinery the rest of the app uses, and everything
 // is entity-scoped: the API returns only the steps a candidate's entity has, so ArabEasy simply
 // does not have a go-to-person row to hide.
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
-  AlertTriangle, CalendarDays, Check, ChevronLeft, ChevronRight, ClipboardList, Clock, Filter,
-  Inbox, Mail, MapPin, PencilLine, Search, Send, Users, Video,
+  AlertTriangle, CalendarDays, Check, ChevronRight, ClipboardList, Clock, Filter, Inbox,
+  Mail, MapPin, MoreHorizontal, PencilLine, Search, Send, Users, Video,
 } from 'lucide-react'
 import { api } from '../api'
-import { Badge, Button, Card, EmptyState, IconButton, Modal, PageHeader, Spinner, cx, focusRing, inputClass } from '../ui'
-import { EMPTY, ROW_HOVER, TABLE_WRAP, TD, TH, THEAD, THEAD_ROW } from '../components/tableStyles'
+import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, cx, focusRing, inputClass } from '../ui'
+import { EMPTY, ROW, ROW_GROUP, ROW_HOVER, TABLE_WRAP, TD, TH, TH_TYPE, THEAD, THEAD_ROW } from '../components/tableStyles'
 import { ColumnFilter, distinctValues, useColumnFilters } from '../components/tableFilters'
 import { useToast } from '../components/Toast'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -74,10 +75,8 @@ const BOARD_COLUMNS = [
   { key: 'next', label: 'Next due', get: (r) => (r.next_due ? fmtDate(r.next_due.on) : '') },
 ]
 
-function CandidatesView({ rows, onOpen, mails, onChanged }) {
+function CandidatesView({ rows, onOpen }) {
   const [q, setQ] = useState('')
-  const [chosen, setChosen] = useState(() => new Set())
-  const [mailing, setMailing] = useState(false)
   const colFilters = useColumnFilters()
 
   const searched = useMemo(() => {
@@ -89,26 +88,6 @@ function CandidatesView({ rows, onOpen, mails, onChanged }) {
   const shown = useMemo(() => colFilters.apply(searched, accessors), [searched, colFilters, accessors])
   const values = useMemo(
     () => Object.fromEntries(BOARD_COLUMNS.map((c) => [c.key, distinctValues(rows, c.get)])), [rows])
-
-  // Selecting follows what you can see: tick the header box after filtering and you get the
-  // filtered people, not everyone.
-  const allShown = shown.length > 0 && shown.every((r) => chosen.has(r.plan_id))
-  function toggle(id) {
-    setChosen((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-  function toggleAll() {
-    setChosen((prev) => {
-      const next = new Set(prev)
-      if (allShown) shown.forEach((r) => next.delete(r.plan_id))
-      else shown.forEach((r) => next.add(r.plan_id))
-      return next
-    })
-  }
 
   if (!rows.length) {
     return (
@@ -139,11 +118,6 @@ function CandidatesView({ rows, onOpen, mails, onChanged }) {
           <table className="w-full min-w-[900px] border-collapse text-left text-sm">
             <thead className={cx(THEAD, 'sticky top-0 z-10')}>
               <tr className={THEAD_ROW}>
-                <th scope="col" className={cx(TH, 'w-9')}>
-                  <input type="checkbox" checked={allShown} onChange={toggleAll}
-                    aria-label={allShown ? 'Clear selection' : 'Select everyone shown'}
-                    className={cx('h-4 w-4 rounded border-slate-300 accent-brand-600', focusRing)} />
-                </th>
                 {BOARD_COLUMNS.map((c) => (
                   <th key={c.key} scope="col" className={TH}>
                     <span className="inline-flex items-center gap-1 whitespace-nowrap">
@@ -160,14 +134,7 @@ function CandidatesView({ rows, onOpen, mails, onChanged }) {
             <tbody>
               {shown.map((r) => (
                 <tr key={r.plan_id} onClick={() => onOpen(r)}
-                  className={cx('cursor-pointer border-b border-slate-100 last:border-0', ROW_HOVER,
-                    chosen.has(r.plan_id) && 'bg-brand-50/50')}>
-                  <td className={TD} onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={chosen.has(r.plan_id)}
-                      onChange={() => toggle(r.plan_id)}
-                      aria-label={`Select ${r.candidate_name}`}
-                      className={cx('h-4 w-4 rounded border-slate-300 accent-brand-600', focusRing)} />
-                  </td>
+                  className={cx('cursor-pointer border-b border-slate-100 last:border-0', ROW_HOVER)}>
                   <td className={TD}>
                     <span className="block truncate font-medium text-slate-800">{r.candidate_name}</span>
                     <span className="block truncate text-xs text-slate-500">{r.email}</span>
@@ -205,172 +172,11 @@ function CandidatesView({ rows, onOpen, mails, onChanged }) {
           </table>
         </div>
       </div>
-
-      {chosen.size > 0 && (
-        <div className="sticky bottom-4 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 shadow-card">
-          <span className="text-sm font-medium text-slate-800">{chosen.size} selected</span>
-          <button type="button" onClick={() => setChosen(new Set())}
-            className={cx('rounded px-1 text-xs text-slate-500 hover:text-slate-800', focusRing)}>
-            Clear
-          </button>
-          <div className="ml-auto">
-            <Button size="sm" onClick={() => setMailing(true)}>
-              <Send className="h-3.5 w-3.5" /> Send a mail
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {mailing && (
-        <BulkMailModal planIds={[...chosen]} templates={mails || []}
-          onClose={() => setMailing(false)}
-          onSent={() => { setChosen(new Set()); onChanged?.() }} />
-      )}
     </div>
   )
 }
 
-/** Send one mail to several joiners at once.
- *
- * The mail is the same; the letters are not. Each one is rendered from that person's own
- * paperwork, so this shows a real draft for the first of them rather than a template with the
- * tokens still in, and says plainly who will not be getting it and why. The commonest reason is
- * that they work remotely and there is a remote version of the same mail. */
-function BulkMailModal({ planIds, templates, onClose, onSent }) {
-  const { toast } = useToast()
-  const [key, setKey] = useState('')
-  const [preview, setPreview] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [sending, setSending] = useState(false)
-
-  // Only the mails that belong to a step: a session's invite goes out from the calendar, where
-  // the sitting and its date live.
-  const choices = useMemo(
-    () => templates.filter((t) => t.step_key).sort((a, b) => a.name.localeCompare(b.name)),
-    [templates])
-
-  // Fetched when the choice is made rather than in an effect: the preview answers a click, not a
-  // render, and doing it here keeps the two in step without a cascade.
-  async function pick(next) {
-    setKey(next)
-    setPreview(null)
-    if (!next) return
-    setLoading(true)
-    try {
-      setPreview(await api.onboardingBulkMailPreview(planIds, next))
-    } catch (e) { toast(e.message, 'error') } finally { setLoading(false) }
-  }
-
-  async function send() {
-    setSending(true)
-    try {
-      const res = await api.onboardingBulkMailSend(planIds, key)
-      toast(`Sent to ${res.sent.length} ${res.sent.length === 1 ? 'person' : 'people'}`,
-        res.sent.length ? 'success' : 'error')
-      if (res.failed?.length) toast(`${res.failed.length} did not go out`, 'error')
-      onSent?.()
-      onClose()
-    } catch (e) { toast(e.message, 'error') } finally { setSending(false) }
-  }
-
-  const going = preview?.recipients?.length || 0
-
-  return (
-    <Modal open onClose={onClose} size="wide"
-      title={`Send a mail to ${planIds.length} ${planIds.length === 1 ? 'joiner' : 'joiners'}`}>
-      <div className="space-y-4">
-        <label className="block">
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">
-            Which mail
-          </span>
-          <select value={key} onChange={(e) => pick(e.target.value)}
-            className={cx(inputClass, 'h-9 text-sm')}>
-            <option value="">Choose one…</option>
-            {choices.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
-          </select>
-        </label>
-
-        {loading && (
-          <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
-            <Spinner className="h-4 w-4" /> Working out who it reaches…
-          </div>
-        )}
-
-        {preview && !loading && (
-          <>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                  Goes to {going}
-                </p>
-                <ul className="mt-1.5 space-y-1 text-xs text-slate-700">
-                  {preview.recipients.map((r) => (
-                    <li key={r.plan_id} className="flex items-center justify-between gap-2">
-                      <span className="truncate">{r.name}</span>
-                      {r.sent_at
-                        ? <span className="shrink-0 text-[11px] text-amber-700">already sent</span>
-                        : <span className="shrink-0 truncate text-[11px] text-slate-400">{r.to}</span>}
-                    </li>
-                  ))}
-                  {!going && <li className="text-slate-500">Nobody, for the reasons opposite.</li>}
-                </ul>
-              </div>
-              <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                  Not going to {preview.skipped.length}
-                </p>
-                <ul className="mt-1.5 space-y-1 text-xs text-slate-600">
-                  {preview.skipped.map((s) => (
-                    <li key={s.plan_id}>
-                      <span className="font-medium text-slate-800">{s.name}</span> — {s.why}
-                    </li>
-                  ))}
-                  {!preview.skipped.length && <li className="text-slate-500">Everyone gets it.</li>}
-                </ul>
-              </div>
-            </div>
-
-            {preview.recipients.some((r) => r.sent_at) && (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                Some of these have had this mail already. Sending again sends a second copy.
-              </p>
-            )}
-
-            {preview.sample && (
-              <div className="rounded-xl border border-slate-200">
-                <div className="border-b border-slate-100 px-3 py-2">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                    What {preview.sample.for} will get
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-600">
-                    To {preview.sample.to}
-                    {preview.sample.cc?.length ? ` · Cc ${preview.sample.cc.join(', ')}` : ''}
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-slate-900">{preview.sample.subject}</p>
-                </div>
-                <pre className="max-h-64 overflow-auto whitespace-pre-wrap px-3 py-2.5 font-sans text-xs leading-relaxed text-slate-700">
-                  {preview.sample.body}
-                </pre>
-                <p className="border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500">
-                  Everyone else gets the same letter with their own name, date and manager in it.
-                </p>
-              </div>
-            )}
-          </>
-        )}
-
-        <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={send} disabled={sending || !going}>
-            {sending ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
-            Send {going ? `to ${going}` : ''}
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
+/** One candidate's checklist, grouped by phase. */
 /** Read a mail, change what you want, send it.
  *
  * The same window serves a candidate's mail and a session's, because they differ only in who is
@@ -803,437 +609,455 @@ function SessionsView({ sessions, frequencies, modes, onSchedule }) {
 
 // ── View 3: the calendar ────────────────────────────────────────────────────────────────────
 
-// ── View 3: the calendar ────────────────────────────────────────────────────────────────────
-//
-// A month grid, because "what is happening when" is a question about shape: which week is heavy,
-// which is empty, what falls on the same day. A list can only answer it one row at a time.
-//
-// Deliberately NOT split by entity. A room holds whoever is in it and the People team runs one
-// schedule; filtering the month by entity hid half of what was actually happening that week. Each
-// sitting still says which entity it belongs to.
-
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
-const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1)
-const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1)
-const dayKey = (d) => (d instanceof Date && !Number.isNaN(d.getTime())
-  ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  : '')
-const sameDay = (a, b) => dayKey(a) === dayKey(b)
-
-/** Monday-first index, because the working week starts on Monday here. */
-const mondayIndex = (d) => (d.getDay() + 6) % 7
-
-/** The 5 or 6 weeks a month grid needs, each a run of 7 dates. */
-function weeksOf(month) {
-  const first = startOfMonth(month)
-  const start = new Date(first)
-  start.setDate(first.getDate() - mondayIndex(first))
-  const last = new Date(month.getFullYear(), month.getMonth() + 1, 0)
-  const weeks = []
-  const cur = new Date(start)
-  while (cur <= last || weeks.length === 0 || mondayIndex(cur) !== 0) {
-    const week = []
-    for (let i = 0; i < 7; i += 1) {
-      week.push(new Date(cur))
-      cur.setDate(cur.getDate() + 1)
-    }
-    weeks.push(week)
-    if (cur > last && mondayIndex(cur) === 0) break
-  }
-  return weeks
+const monthKey = (v) => {
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? 'Unscheduled'
+    : d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 }
 
-/** What a sitting most needs somebody to notice, in one word. */
-function sittingState(o, today) {
-  const start = new Date(o.starts_at)
-  if (!Number.isNaN(start.getTime()) && start < today) return 'past'
-  if (o.invites_sent_at) return 'invited'
-  const due = o.invite_due ? new Date(o.invite_due) : null
-  if (due && due <= today) return 'overdue'
-  return 'upcoming'
+// The five columns, in one place, so the header strip and every row cannot drift apart.
+// Below md the grid collapses to a single column and each row stacks; nothing scrolls sideways.
+const CAL_COLS = 'md:grid-cols-[5.75rem_minmax(0,1fr)_8rem_5.25rem_10.5rem]'
+
+const dayKey = (v) => {
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? 'nodate' : `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 }
 
-const CHIP_TONE = {
-  past: 'border-slate-200 bg-slate-50 text-slate-500',
-  invited: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  overdue: 'border-amber-300 bg-amber-50 text-amber-900',
-  upcoming: 'border-brand-200 bg-brand-50 text-brand-800',
+const fmtDay = (v) => {
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? 'No date set'
+    : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
-const STATE_WORD = {
-  past: 'Done',
-  invited: 'Invites sent',
-  overdue: 'Invite overdue',
-  upcoming: 'Invite not sent yet',
-}
-
-const hhmm = (v) => {
+const fmtTime = (v) => {
   const d = new Date(v)
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
-function CalendarView({ occurrences, onReschedule, onOpen, onMail, onChanged }) {
-  const { toast } = useToast()
-  const [month, setMonth] = useState(() => startOfMonth(new Date()))
-  const [picking, setPicking] = useState(false)          // selection mode
-  const [chosen, setChosen] = useState(() => new Set())
-  const [openDay, setOpenDay] = useState(null)           // a Date
-  const [moving, setMoving] = useState(false)            // bulk reschedule modal
-  const [busy, setBusy] = useState(false)
+const parseDay = (v) => {
+  if (!v) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v))
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime()
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
 
-  const today = useMemo(() => {
-    const d = new Date()
-    d.setHours(0, 0, 0, 0)
-    return d
-  }, [])
+const shortDay = (v) => {
+  const t = parseDay(v)
+  return t == null ? String(v || '')
+    : new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
 
-  // Sittings keyed by the day they fall on, so a cell is a lookup rather than a scan.
-  const byDay = useMemo(() => {
-    const m = new Map()
-    for (const o of occurrences) {
-      const k = dayKey(new Date(o.starts_at))
-      if (!k) continue
-      if (!m.has(k)) m.set(k, [])
-      m.get(k).push(o)
+const shortStamp = (v) => {
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? String(v || '')
+    : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
+const startOfToday = () => {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+function whereLabel(o) {
+  if (o.mode === 'remote') return o.meet_link ? 'Google Meet' : 'Online'
+  if (o.mode === 'both') return o.location ? `${o.location} and online` : 'On campus and online'
+  return o.location || 'On campus'
+}
+
+function inviteState(o, today) {
+  if (o.invites_sent_at) {
+    return {
+      key: 'sent', icon: Check, iconClass: 'text-emerald-600', textClass: 'text-slate-600',
+      label: `Sent ${shortStamp(o.invites_sent_at)}`,
+      full: `Invite sent ${shortStamp(o.invites_sent_at)}`,
     }
-    for (const list of m.values()) list.sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
-    return m
-  }, [occurrences])
+  }
+  const due = parseDay(o.invite_due)
+  if (due == null) return { key: 'none' }
+  if (due <= today) {
+    const isToday = due === today
+    return {
+      key: 'now', icon: AlertTriangle, iconClass: 'text-amber-700', textClass: 'font-medium text-amber-800',
+      label: isToday ? 'Due today' : `Overdue since ${shortDay(o.invite_due)}`,
+      full: isToday ? 'Invite due today' : `Invite overdue since ${shortDay(o.invite_due)}`,
+    }
+  }
+  return {
+    key: 'due', icon: Clock, iconClass: 'text-slate-500', textClass: 'text-slate-600',
+    label: `Due ${shortDay(o.invite_due)}`,
+    full: `Invite due ${shortDay(o.invite_due)}`,
+  }
+}
 
-  const weeks = useMemo(() => weeksOf(month), [month])
-  const inMonth = useMemo(
-    () => occurrences.filter((o) => {
-      const d = new Date(o.starts_at)
-      return !Number.isNaN(d.getTime()) && d.getMonth() === month.getMonth()
-        && d.getFullYear() === month.getFullYear()
-    }),
-    [occurrences, month],
+const needsInvite = (o, today) => {
+  if (o.invites_sent_at) return false
+  const due = parseDay(o.invite_due)
+  return due != null && due <= today
+}
+
+function attendanceLabel(o) {
+  const list = o.attendees || []
+  if (!list.length) return { text: 'Nobody yet', dim: true }
+  const marked = list.filter((a) => a.attended != null).length
+  if (!marked) return { text: `${list.length} invited`, dim: false }
+  return { text: `${list.filter((a) => a.attended).length} of ${list.length} came`, dim: false }
+}
+
+function primaryFor(o, past, inv, run) {
+  if (inv.key !== 'sent') return { label: 'Send invite', icon: Mail, onSelect: run.mail }
+  if (past && !(o.attendees || []).some((a) => a.attended != null)) {
+    return { label: 'Mark who came', icon: ClipboardList, onSelect: run.came }
+  }
+  return { label: 'Open mails', icon: Mail, onSelect: run.mail }
+}
+
+function RowMenu({ label, items }) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef(null)
+  const popRef = useRef(null)
+  const [pos, setPos] = useState(null)
+
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return
+    const r = btnRef.current.getBoundingClientRect()
+    const W = 208
+    const H = items.length * 36 + 8
+    const left = Math.min(Math.max(8, r.right - W), Math.max(8, window.innerWidth - W - 8))
+    const below = r.bottom + 6
+    const top = below + H > window.innerHeight - 8 ? Math.max(8, r.top - 6 - H) : below
+    setPos({ top, left, width: W })
+  }, [open, items.length])
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e) => {
+      if (popRef.current?.contains(e.target) || btnRef.current?.contains(e.target)) return
+      setOpen(false)
+    }
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      setOpen(false)
+      btnRef.current?.focus()
+    }
+    const onMove = () => setOpen(false)
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('scroll', onMove, true)
+    window.addEventListener('resize', onMove)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('scroll', onMove, true)
+      window.removeEventListener('resize', onMove)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (open && pos) popRef.current?.querySelector('[role="menuitem"]')?.focus()
+  }, [open, pos])
+
+  const onMenuKey = (e) => {
+    const all = [...(popRef.current?.querySelectorAll('[role="menuitem"]') || [])]
+    if (!all.length) return
+    const i = all.indexOf(document.activeElement)
+    if (e.key === 'ArrowDown') { e.preventDefault(); all[(i + 1) % all.length]?.focus() }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); all[(i - 1 + all.length) % all.length]?.focus() }
+    else if (e.key === 'Home') { e.preventDefault(); all[0]?.focus() }
+    else if (e.key === 'End') { e.preventDefault(); all[all.length - 1]?.focus() }
+    else if (e.key === 'Tab') setOpen(false)
+  }
+
+  const itemClass = cx(
+    'flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-slate-700',
+    'transition-colors duration-150 ease-snappy hover:bg-brand-50 hover:text-brand-800', focusRing,
   )
 
-  const chosenList = useMemo(
-    () => occurrences.filter((o) => chosen.has(o.id)), [occurrences, chosen])
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`More for ${label}`}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => { if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true) } }}
+        className={cx(
+          'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500',
+          'transition-colors duration-150 ease-snappy hover:bg-slate-100 hover:text-slate-800',
+          focusRing, open && 'bg-slate-100 text-slate-800',
+        )}
+      >
+        <MoreHorizontal className="h-4 w-4" aria-hidden />
+      </button>
+      {open && pos && createPortal(
+        <div
+          ref={popRef}
+          role="menu"
+          aria-label={`Actions for ${label}`}
+          onKeyDown={onMenuKey}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
+          className="menu-in z-[120] origin-top-right rounded-xl border border-slate-200 bg-white p-1 shadow-lg"
+        >
+          {items.map((it) => {
+            const Icon = it.icon
+            return it.href ? (
+              <a key={it.key} role="menuitem" href={it.href} target="_blank" rel="noreferrer"
+                onClick={() => setOpen(false)} className={itemClass}>
+                <Icon className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />{it.label}
+              </a>
+            ) : (
+              <button key={it.key} type="button" role="menuitem"
+                onClick={() => { setOpen(false); it.onSelect() }} className={itemClass}>
+                <Icon className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />{it.label}
+              </button>
+            )
+          })}
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
 
-  function toggle(id) {
-    setChosen((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
+function SittingRow({ o, showDay, endsDay, today, now, onMail, onOpen, onReschedule }) {
+  const start = new Date(o.starts_at)
+  const valid = !Number.isNaN(start.getTime())
+  const past = valid && start.getTime() < now
 
-  function leavePicking() {
-    setPicking(false)
-    setChosen(new Set())
-  }
+  const inv = inviteState(o, today)
+  const came = attendanceLabel(o)
+  const run = { mail: () => onMail(o), came: () => onOpen(o), move: () => onReschedule(o) }
+  const primary = primaryFor(o, past, inv, run)
 
-  async function sendInvites() {
-    setBusy(true)
-    try {
-      const res = await api.onboardingBulkSessionMail([...chosen], 'invite')
-      const people = res.sent.reduce((n, s) => n + s.count, 0)
-      toast(res.sent.length
-        ? `Invites sent for ${res.sent.length} sitting${res.sent.length === 1 ? '' : 's'}, ${people} in all`
-        : 'Nothing to send', res.sent.length ? 'success' : 'error')
-      if (res.skipped?.length) {
-        toast(res.skipped.map((s) => `${s.name}: ${s.why}`).join(' · '), 'error')
-      }
-      leavePicking()
-      onChanged?.()
-    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
-  }
+  const PrimaryIcon = primary.icon
+  const InviteIcon = inv.icon
+  const ModeIcon = o.mode === 'remote' ? Video : MapPin
 
-  const monthLabel = month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  const items = [
+    { key: 'mail', label: 'Open mails', icon: Mail, onSelect: run.mail },
+    { key: 'came', label: 'Mark who came', icon: ClipboardList, onSelect: run.came },
+    { key: 'move', label: 'Move this sitting', icon: CalendarDays, onSelect: run.move },
+  ]
+  if (o.meet_link) items.push({ key: 'link', label: 'Open the meet link', icon: Video, href: o.meet_link })
 
   return (
-    <div className="space-y-3">
-      {/* Toolbar: where you are, how to move, and the one mode switch. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1">
-          <IconButton aria-label="Previous month" onClick={() => setMonth(addMonths(month, -1))}>
-            <ChevronLeft className="h-4 w-4" aria-hidden />
-          </IconButton>
-          <IconButton aria-label="Next month" onClick={() => setMonth(addMonths(month, 1))}>
-            <ChevronRight className="h-4 w-4" aria-hidden />
-          </IconButton>
-        </div>
-        <h3 className="text-base font-semibold tracking-tight text-slate-900">{monthLabel}</h3>
-        <button type="button" onClick={() => setMonth(startOfMonth(new Date()))}
-          className={cx(TOOLBAR, 'h-8')}>Today</button>
+    <li
+      className={cx(
+        'grid grid-cols-1 gap-y-1 px-3 py-2.5',
+        'md:items-center md:gap-x-3 md:gap-y-0', CAL_COLS,
+        ROW_HOVER, endsDay ? ROW_GROUP : ROW, 'last:border-b-0',
+      )}
+    >
+      {/* Sitting */}
+      <div className="min-w-0 md:col-start-2 md:row-start-1">
+        <p className="flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 truncate text-sm font-medium text-slate-900">{o.name}</span>
+          {o.entity && (
+            <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-px text-[11px] font-medium text-slate-600">
+              {o.entity}
+            </span>
+          )}
+        </p>
+        <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-slate-600">
+          <ModeIcon className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
+          <span className="min-w-0 truncate">{whereLabel(o)}</span>
+        </p>
+      </div>
 
-        <span className="ml-auto text-xs tabular-nums text-slate-500">
-          {inMonth.length} sitting{inMonth.length === 1 ? '' : 's'} this month
+      {/* When. On a phone every row carries its own day; on a wide screen the day is set once. */}
+      <div className="md:col-start-1 md:row-start-1">
+        <span className="flex items-center gap-1.5 text-[11px] text-slate-600 md:hidden">
+          <Clock className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
+          {valid ? `${fmtDay(o.starts_at)} · ${fmtTime(o.starts_at)}` : 'No date set'}
         </span>
-        {picking ? (
-          <button type="button" onClick={leavePicking} className={cx(TOOLBAR, 'h-8')}>Done selecting</button>
+        <span className="hidden md:block">
+          {showDay && (
+            <span className={cx('block text-[13px] font-semibold leading-tight',
+              past ? 'text-slate-600' : 'text-slate-900')}>
+              {fmtDay(o.starts_at)}
+            </span>
+          )}
+          {valid && (
+            <span className="block text-xs leading-tight tabular-nums text-slate-600">
+              {fmtTime(o.starts_at)}
+            </span>
+          )}
+        </span>
+      </div>
+
+      {/* Invite */}
+      <div className="md:col-start-3 md:row-start-1">
+        {inv.key === 'none' ? (
+          <span className="text-[11px] text-slate-500">No invite date</span>
         ) : (
-          <button type="button" onClick={() => setPicking(true)} className={cx(TOOLBAR, 'h-8')}>
-            Select several
-          </button>
+          <span className={cx('flex items-start gap-1.5 text-[11px] leading-tight md:text-xs', inv.textClass)}>
+            <InviteIcon className={cx('mt-px h-3.5 w-3.5 shrink-0', inv.iconClass)} aria-hidden />
+            <span className="md:hidden">{inv.full}</span>
+            <span className="hidden md:inline">{inv.label}</span>
+          </span>
         )}
       </div>
 
-      {picking && (
-        <p className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-900">
-          Pick the sittings you want to act on. They can be in different weeks; move to another
-          month and your choices are kept.
-        </p>
-      )}
-
-      {/* The month. */}
-      <div className={TABLE_WRAP}>
-        <div className="grid grid-cols-7 border-b border-brand-200 bg-brand-100">
-          {WEEKDAYS.map((w) => (
-            <div key={w} className="px-2 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-800">
-              <span className="hidden sm:inline">{w}</span>
-              <span className="sm:hidden">{w[0]}</span>
-            </div>
-          ))}
-        </div>
-        <div>
-          {weeks.map((week) => (
-            <div key={dayKey(week[0])} className="grid grid-cols-7 border-b border-slate-100 last:border-0">
-              {week.map((d) => {
-                const list = byDay.get(dayKey(d)) || []
-                const outside = d.getMonth() !== month.getMonth()
-                const isToday = sameDay(d, today)
-                return (
-                  <div key={dayKey(d)}
-                    className={cx('min-h-[92px] border-r border-slate-100 p-1.5 last:border-r-0 sm:min-h-[116px]',
-                      outside && 'bg-slate-50/60')}>
-                    <div className="mb-1 flex items-center justify-between">
-                      <button type="button"
-                        onClick={() => list.length && setOpenDay(d)}
-                        disabled={!list.length}
-                        aria-label={list.length
-                          ? `${list.length} sitting${list.length === 1 ? '' : 's'} on ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}`
-                          : undefined}
-                        className={cx('inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs tabular-nums',
-                          'transition-colors duration-150 ease-snappy', focusRing,
-                          isToday ? 'bg-brand-600 font-semibold text-white'
-                            : outside ? 'text-slate-400'
-                              : 'font-medium text-slate-700',
-                          list.length && !isToday && 'hover:bg-brand-50')}>
-                        {d.getDate()}
-                      </button>
-                      {list.length > 2 && (
-                        <button type="button" onClick={() => setOpenDay(d)}
-                          className={cx('rounded px-1 text-[10px] font-medium text-slate-500 hover:text-brand-700', focusRing)}>
-                          +{list.length - 2}
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="space-y-1">
-                      {list.slice(0, 2).map((o) => {
-                        const state = sittingState(o, today)
-                        const isChosen = chosen.has(o.id)
-                        return (
-                          <button key={o.id} type="button"
-                            onClick={() => (picking ? toggle(o.id) : setOpenDay(d))}
-                            title={`${o.name} · ${hhmm(o.starts_at)} · ${STATE_WORD[state]}`}
-                            className={cx('flex w-full items-center gap-1 rounded-md border px-1.5 py-1 text-left',
-                              'transition-colors duration-150 ease-snappy', focusRing, CHIP_TONE[state],
-                              picking && isChosen && 'ring-2 ring-brand-500 ring-offset-1')}>
-                            {picking && (
-                              <span className={cx('flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] border',
-                                isChosen ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-400 bg-white')}>
-                                {isChosen && <Check className="h-2.5 w-2.5" aria-hidden />}
-                              </span>
-                            )}
-                            <span className="shrink-0 text-[10px] font-medium tabular-nums opacity-80">{hhmm(o.starts_at)}</span>
-                            <span className="min-w-0 flex-1 truncate text-[11px] font-medium">{o.name}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ))}
-        </div>
+      {/* Who came */}
+      <div className="md:col-start-4 md:row-start-1">
+        <span className={cx('text-[11px] leading-tight tabular-nums',
+          came.dim ? 'text-slate-500' : 'text-slate-600')}>
+          {came.text}
+        </span>
       </div>
 
-      {/* What the colours mean, said once rather than guessed at. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-0.5 text-[11px] text-slate-500">
-        {['upcoming', 'overdue', 'invited', 'past'].map((k) => (
-          <span key={k} className="inline-flex items-center gap-1.5">
-            <span className={cx('h-2.5 w-2.5 rounded-sm border', CHIP_TONE[k])} aria-hidden />
-            {STATE_WORD[k]}
-          </span>
-        ))}
+      {/* Next step */}
+      <div className="mt-1 flex items-center gap-1 md:col-start-5 md:row-start-1 md:mt-0 md:justify-end">
+        <Button size="sm" variant="ghost" onClick={primary.onSelect}
+          className="min-w-[7.5rem] justify-center whitespace-nowrap">
+          <PrimaryIcon className="h-3.5 w-3.5" aria-hidden />{primary.label}
+        </Button>
+        <RowMenu label={o.name} items={items} />
+      </div>
+    </li>
+  )
+}
+
+function CalendarView({ occurrences, onReschedule, onOpen, onMail }) {
+  const [month, setMonth] = useState('')
+  const [q, setQ] = useState('')
+  const [onlyDue, setOnlyDue] = useState(false)
+
+  const today = useMemo(() => startOfToday(), [])
+  const now = Date.now()
+
+  const months = useMemo(
+    () => [...new Set(occurrences.map((o) => monthKey(o.starts_at)))], [occurrences])
+
+  const dueCount = useMemo(
+    () => occurrences.filter((o) => needsInvite(o, today)).length, [occurrences, today])
+
+  const shown = useMemo(() => {
+    const n = q.trim().toLowerCase()
+    return occurrences
+      .filter((o) => (!month || monthKey(o.starts_at) === month))
+      .filter((o) => !onlyDue || needsInvite(o, today))
+      .filter((o) => !n || [o.name, o.location, o.entity, whereLabel(o)]
+        .some((v) => String(v || '').toLowerCase().includes(n)))
+      .sort((a, b) => {
+        const ta = new Date(a.starts_at).getTime()
+        const tb = new Date(b.starts_at).getTime()
+        if (Number.isNaN(ta)) return Number.isNaN(tb) ? 0 : 1
+        if (Number.isNaN(tb)) return -1
+        return ta - tb
+      })
+  }, [occurrences, month, q, onlyDue, today])
+
+  const byMonth = useMemo(() => {
+    const m = new Map()
+    for (const o of shown) {
+      const key = monthKey(o.starts_at)
+      if (!m.has(key)) m.set(key, [])
+      m.get(key).push(o)
+    }
+    return [...m.entries()]
+  }, [shown])
+
+  const reset = () => { setQ(''); setMonth(''); setOnlyDue(false) }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="relative min-w-0 flex-1 sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden />
+          <input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search sittings"
+            placeholder="Search a sitting…" className={cx(TOOLBAR, 'h-9 w-full pl-8 text-sm')} />
+        </label>
+
+        <select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Show one month"
+          className={cx(TOOLBAR, 'h-9')}>
+          <option value="">Every month</option>
+          {months.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+
+        {/* The only task on the page, so the only warm colour on it. A filter, not a badge. */}
+        {(dueCount > 0 || onlyDue) && (
+          <button type="button" aria-pressed={onlyDue} onClick={() => setOnlyDue((v) => !v)}
+            className={cx(
+              'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium',
+              'transition-colors duration-150 ease-snappy', focusRing,
+              onlyDue ? 'border-amber-400 bg-amber-100 text-amber-900'
+                : 'border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100',
+            )}>
+            <Mail className="h-3.5 w-3.5" aria-hidden />
+            <span className="tabular-nums">{dueCount}</span>
+            {dueCount === 1 ? 'invite to send' : 'invites to send'}
+          </button>
+        )}
+
+        <span className="ml-auto shrink-0 text-xs tabular-nums text-slate-600">
+          {shown.length === occurrences.length
+            ? `${occurrences.length} sitting${occurrences.length === 1 ? '' : 's'}`
+            : `${shown.length} of ${occurrences.length}`}
+        </span>
       </div>
 
-      {!occurrences.length && (
+      {!occurrences.length ? (
         <EmptyState icon={CalendarDays} title="Nothing is scheduled yet"
           description="Pick a session on the Sessions tab and schedule a sitting; it appears here." />
-      )}
+      ) : (
+        <>
+          <div className={TABLE_WRAP}>
+            <div className={cx('hidden gap-x-3 border-b border-brand-200 bg-brand-100 px-3 py-2 md:grid', CAL_COLS)}>
+              <span className={TH_TYPE}>When</span>
+              <span className={TH_TYPE}>Sitting</span>
+              <span className={TH_TYPE}>Invite</span>
+              <span className={TH_TYPE}>Who came</span>
+              <span className={cx(TH_TYPE, 'text-right')}>Next step</span>
+            </div>
 
-      {/* Bulk bar. Sits above the fold of the page so it cannot be missed while scrolling. */}
-      {picking && chosen.size > 0 && (
-        <div className="sticky bottom-4 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 shadow-card">
-          <span className="text-sm font-medium text-slate-800">
-            {chosen.size} sitting{chosen.size === 1 ? '' : 's'} selected
-          </span>
-          <span className="hidden truncate text-xs text-slate-500 sm:inline">
-            {chosenList.slice(0, 3).map((o) => o.name).join(', ')}{chosen.size > 3 ? ` +${chosen.size - 3}` : ''}
-          </span>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setMoving(true)}>
-              <CalendarDays className="h-3.5 w-3.5" /> Reschedule
-            </Button>
-            <Button size="sm" onClick={sendInvites} disabled={busy}>
-              {busy ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} Send invites
-            </Button>
+            {!shown.length ? (
+              <div className="px-4 py-12 text-center">
+                <p className="text-sm text-slate-600">No sittings match that.</p>
+                <button type="button" onClick={reset}
+                  className={cx('mt-2 rounded px-1 py-0.5 text-xs font-medium text-brand-700 underline underline-offset-2',
+                    'transition-colors duration-150 ease-snappy hover:text-brand-800', focusRing)}>
+                  Clear the filters
+                </button>
+              </div>
+            ) : byMonth.map(([m, list], mi) => (
+              <section key={m}>
+                <h3 className={cx('flex items-baseline justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2',
+                  mi > 0 && 'border-t')}>
+                  <span className="text-[13px] font-semibold text-brand-900">{m}</span>
+                  <span className="shrink-0 text-[11px] tabular-nums text-slate-600">
+                    {list.length} {list.length === 1 ? 'sitting' : 'sittings'}
+                  </span>
+                </h3>
+                <ul>
+                  {list.map((o, i) => (
+                    <SittingRow
+                      key={o.id}
+                      o={o}
+                      showDay={i === 0 || dayKey(o.starts_at) !== dayKey(list[i - 1].starts_at)}
+                      endsDay={i === list.length - 1 || dayKey(o.starts_at) !== dayKey(list[i + 1].starts_at)}
+                      today={today}
+                      now={now}
+                      onMail={onMail}
+                      onOpen={onOpen}
+                      onReschedule={onReschedule}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ))}
           </div>
-        </div>
-      )}
 
-      {openDay && (
-        <DayModal date={openDay} sittings={byDay.get(dayKey(openDay)) || []} today={today}
-          onClose={() => setOpenDay(null)}
-          onMail={onMail} onAttendance={onOpen} onReschedule={onReschedule} />
-      )}
-      {moving && (
-        <BulkRescheduleModal sittings={chosenList} onClose={() => setMoving(false)}
-          onDone={() => { setMoving(false); leavePicking(); onChanged?.() }} />
+          <p className="text-xs leading-relaxed text-slate-600">
+            Every invite is due on the Friday a week before its sitting. Open the mails on a row to send it.
+          </p>
+        </>
       )}
     </div>
-  )
-}
-
-/** One day, opened from the grid: everything on it, with what each one still needs. */
-function DayModal({ date, sittings, today, onClose, onMail, onAttendance, onReschedule }) {
-  const title = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-  return (
-    <Modal open onClose={onClose} title={title}>
-      <div className="space-y-3">
-        {sittings.map((o) => {
-          const state = sittingState(o, today)
-          const came = o.attendees.filter((a) => a.attended).length
-          const marked = o.attendees.some((a) => a.attended != null)
-          return (
-            <div key={o.id} className="rounded-xl border border-slate-200 p-3.5">
-              <div className="flex flex-wrap items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900">{o.name}</p>
-                  <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
-                    <span className="inline-flex items-center gap-1">
-                      <Clock className="h-3 w-3" aria-hidden />{hhmm(o.starts_at)}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      {o.mode === 'remote' ? <Video className="h-3 w-3" aria-hidden /> : <MapPin className="h-3 w-3" aria-hidden />}
-                      {o.location || (o.mode === 'remote' ? 'Online' : o.mode)}
-                    </span>
-                    <span className="inline-flex items-center rounded border border-slate-200 bg-slate-50 px-1.5 py-px text-[11px] font-medium text-slate-600">
-                      {o.entity}
-                    </span>
-                  </p>
-                </div>
-                <span className={cx('shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium', CHIP_TONE[state])}>
-                  {STATE_WORD[state]}
-                </span>
-              </div>
-
-              <p className="mt-2 text-xs text-slate-600">
-                {o.attendees.length} invited{marked && ` · ${came} came`}
-                {o.invite_due && !o.invites_sent_at && (
-                  <span className={state === 'overdue' ? 'font-medium text-amber-800' : 'text-slate-500'}>
-                    {' · '}invite due {fmtDate(o.invite_due)}
-                  </span>
-                )}
-                {o.invites_sent_at && <span className="text-slate-500">{' · '}sent {fmtDate(o.invites_sent_at)}</span>}
-              </p>
-
-              <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                <Button size="sm" onClick={() => { onClose(); onMail(o) }}>
-                  <Mail className="h-3.5 w-3.5" /> Mails
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => { onClose(); onAttendance(o) }}>Attendance</Button>
-                <Button size="sm" variant="ghost" onClick={() => { onClose(); onReschedule(o) }}>
-                  <CalendarDays className="h-3.5 w-3.5" /> Reschedule
-                </Button>
-                {o.meet_link && (
-                  <a href={o.meet_link} target="_blank" rel="noreferrer"
-                    className={cx('inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50', focusRing)}>
-                    <Video className="h-3.5 w-3.5" aria-hidden /> Join link
-                  </a>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </Modal>
-  )
-}
-
-/** Move several sittings at once: slide them all, or put them all on one date. */
-function BulkRescheduleModal({ sittings, onClose, onDone }) {
-  const { toast } = useToast()
-  const [how, setHow] = useState('shift')
-  const [days, setDays] = useState(7)
-  const [when, setWhen] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  async function go() {
-    setBusy(true)
-    try {
-      const body = how === 'shift' ? { shift_days: Number(days) } : { move_to: when }
-      const res = await api.onboardingBulkReschedule(sittings.map((s) => s.id), body)
-      toast(`Moved ${res.moved.length} sitting${res.moved.length === 1 ? '' : 's'}`, 'success')
-      onDone()
-    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
-  }
-
-  return (
-    <Modal open onClose={onClose} title={`Move ${sittings.length} sitting${sittings.length === 1 ? '' : 's'}`}>
-      <div className="space-y-4">
-        <ul className="space-y-1 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-xs text-slate-700">
-          {sittings.map((s) => (
-            <li key={s.id} className="flex items-center justify-between gap-3">
-              <span className="truncate">{s.name}</span>
-              <span className="shrink-0 tabular-nums text-slate-500">{fmtDateTime(s.starts_at)}</span>
-            </li>
-          ))}
-        </ul>
-
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="radio" name="how" checked={how === 'shift'} onChange={() => setHow('shift')}
-              className="h-4 w-4 accent-brand-600" />
-            Move every one of them by
-            <input type="number" value={days} onChange={(e) => setDays(e.target.value)}
-              onFocus={() => setHow('shift')}
-              className={cx(inputClass, 'h-8 w-20 py-0 text-sm')} />
-            days
-          </label>
-          <label className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
-            <input type="radio" name="how" checked={how === 'date'} onChange={() => setHow('date')}
-              className="h-4 w-4 accent-brand-600" />
-            Put them all on
-            <input type="date" value={when} onChange={(e) => setWhen(e.target.value)}
-              onFocus={() => setHow('date')}
-              className={cx(inputClass, 'h-8 w-44 py-0 text-sm')} />
-            <span className="text-xs text-slate-500">keeping each one&rsquo;s time</span>
-          </label>
-        </div>
-
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          The invite was written for the old date, so moving a sitting marks its invite as not yet
-          sent. Send it again from the day it now falls on.
-        </p>
-
-        <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={go} disabled={busy || (how === 'date' && !when)}>
-            {busy ? <Spinner className="h-3.5 w-3.5" /> : <CalendarDays className="h-3.5 w-3.5" />} Move them
-          </Button>
-        </div>
-      </div>
-    </Modal>
   )
 }
 
@@ -1629,8 +1453,7 @@ export default function Onboarding() {
       {tab === 'candidates' && (
         board === null
           ? <div className="flex items-center gap-2 text-sm text-slate-500"><Spinner /> Loading…</div>
-          : <CandidatesView rows={board} onOpen={(r) => setOpenPlan(r.plan_id)}
-              mails={defs?.mails || []} onChanged={() => { loadBoard(); loadMails() }} />
+          : <CandidatesView rows={board} onOpen={(r) => setOpenPlan(r.plan_id)} />
       )}
 
       {tab === 'sessions' && (
@@ -1643,8 +1466,7 @@ export default function Onboarding() {
         <CalendarView occurrences={occurrences}
           onReschedule={(o) => setScheduling({ occurrence: o })}
           onOpen={(o) => setAttendance(o)}
-          onMail={(o) => setSessionMails(o)}
-          onChanged={() => { loadOccurrences(); loadMails() }} />
+          onMail={(o) => setSessionMails(o)} />
       )}
 
       {tab === 'mails' && (

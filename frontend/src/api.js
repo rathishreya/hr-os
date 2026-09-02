@@ -258,6 +258,16 @@ export const api = {
   onboardingSendSessionMail: (occId, key, body) =>
     req(`/onboarding-module/occurrences/${occId}/mails/${key}/send`, { method: 'POST', body: JSON.stringify(body) }),
 
+  // Doing one thing to several at once. The preview says who it reaches and who it skips, and why.
+  onboardingBulkMailPreview: (planIds, key) =>
+    req('/onboarding-module/mails/bulk-preview', { method: 'POST', body: JSON.stringify({ plan_ids: planIds, template_key: key }) }),
+  onboardingBulkMailSend: (planIds, key) =>
+    req('/onboarding-module/mails/bulk-send', { method: 'POST', body: JSON.stringify({ plan_ids: planIds, template_key: key }) }),
+  onboardingBulkSessionMail: (occIds, role = 'invite') =>
+    req('/onboarding-module/occurrences/bulk-mail', { method: 'POST', body: JSON.stringify({ occurrence_ids: occIds, session_role: role }) }),
+  onboardingBulkReschedule: (occIds, body) =>
+    req('/onboarding-module/occurrences/bulk-reschedule', { method: 'POST', body: JSON.stringify({ occurrence_ids: occIds, ...body }) }),
+
   onboardingPrefill: (candidateId, t) =>
     req(`/onboarding-form/${candidateId}/prefill?t=${encodeURIComponent(t)}`),
   submitOnboardingForm: ({ candidateId, token, variant, answers, files }) => {

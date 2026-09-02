@@ -11,7 +11,7 @@ all — the API does not hand the UI a field it must then know to hide.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -442,6 +442,32 @@ def mail_draft(plan_id: int, template_key: str, db: Session = Depends(get_db),
     }
 
 
+def _record_sent(db: Session, plan_id: int, t, mode: str) -> None:
+    """Mark one mail as gone against its step, so the checklist and the queues never disagree.
+
+    Shared by the single send and the bulk send: two copies of this would drift, and the thing
+    they would drift about is whether somebody gets the same mail twice.
+    """
+    if not t.step_key:
+        return
+    row = db.scalar(
+        select(models.OnboardingStepState)
+        .where(models.OnboardingStepState.plan_id == plan_id,
+               models.OnboardingStepState.step_key == t.step_key)
+    )
+    if not row:
+        row = models.OnboardingStepState(plan_id=plan_id, step_key=t.step_key)
+        db.add(row)
+    stamp = datetime.now(timezone.utc)
+    row.sent_mails = {**(row.sent_mails or {}), t.key: stamp.isoformat()}
+    row.sent_at = stamp
+    # Only the LAST mail on a step completes it. The ISO step is not done when the course
+    # credentials go out; it is done when the quiz has gone too.
+    remaining = [x for x in ml.for_step(t.step_key, mode) if x.key not in (row.sent_mails or {})]
+    if not remaining and row.status != "Done":
+        row.status = "Done"
+
+
 class MailSend(BaseModel):
     subject: str
     body: str
@@ -473,24 +499,7 @@ def send_mail(plan_id: int, template_key: str, payload: MailSend, db: Session = 
         sender_user=user,
     )
 
-    # Record it against the step, so the checklist and this queue never disagree about what went.
-    if t.step_key:
-        row = db.scalar(
-            select(models.OnboardingStepState)
-            .where(models.OnboardingStepState.plan_id == plan_id,
-                   models.OnboardingStepState.step_key == t.step_key)
-        )
-        if not row:
-            row = models.OnboardingStepState(plan_id=plan_id, step_key=t.step_key)
-            db.add(row)
-        stamp = datetime.now(timezone.utc)
-        row.sent_mails = {**(row.sent_mails or {}), t.key: stamp.isoformat()}
-        row.sent_at = stamp
-        # Only the LAST mail on a step completes it. The ISO step is not done when the course
-        # credentials go out; it is done when the quiz has gone too.
-        remaining = [x for x in ml.for_step(t.step_key, mode) if x.key not in (row.sent_mails or {})]
-        if not remaining and row.status != "Done":
-            row.status = "Done"
+    _record_sent(db, plan_id, t, mode)
 
     log(db, "onboarding.mail_sent", "onboarding_plan", plan_id,
         {"template": t.key, "to": to_email, "by": getattr(user, "email", "")})
@@ -642,3 +651,203 @@ def all_mails(db: Session = Depends(get_db), _user: models.User = Depends(curren
                 "missing": [],
             })
     return rows
+
+
+# ── doing the same thing to several at once ─────────────────────────────────────────────────
+# Sending one mail to six joiners is one decision, not six, and moving a week of sittings after a
+# room change is one decision too. What is NOT shared is the text: each joiner's copy is rendered
+# from their own paperwork, so a bulk send is six personal mails, never one mail with six people
+# on it. The preview shows one of them so nobody sends blind.
+
+class BulkMail(BaseModel):
+    plan_ids: list[int]
+    template_key: str
+
+
+@router.post("/mails/bulk-preview")
+def bulk_mail_preview(payload: BulkMail, db: Session = Depends(get_db),
+                      _user: models.User = Depends(current_user)):
+    """What a bulk send would do: who it reaches, who it cannot, and one real draft to read.
+
+    The sample is a genuine rendered draft for the first recipient, not a template with the tokens
+    left in, because the point of reading before sending is to see what a person will actually get.
+    """
+    t = ml.BY_KEY.get(payload.template_key)
+    if not t:
+        raise HTTPException(404, "No such mail template")
+    plans = list(db.scalars(select(models.OnboardingPlan)
+                            .where(models.OnboardingPlan.id.in_(payload.plan_ids or []))))
+    prefetched = ctxs.bulk_contexts(db, plans)
+
+    recipients, skipped, sample = [], [], None
+    for plan in plans:
+        pre = prefetched.get(plan.id) or {}
+        ctx, mode, entity = pre.get("ctx") or {}, pre.get("mode"), pre.get("entity") or "EZ"
+        name = ctx.get("Name") or (pre.get("candidate").name if pre.get("candidate") else "")
+
+        # A step the entity does not have is a mail that does not exist for that person.
+        step = st.BY_KEY.get(t.step_key or "")
+        if step and entity not in step.entities:
+            skipped.append({"plan_id": plan.id, "name": name,
+                            "why": f"{step.label} is not part of {entity} onboarding"})
+            continue
+        # The in-campus copy must not go to a remote joiner.
+        if t.mode != ml.BOTH and t.mode != mode:
+            other = [x for x in ml.for_step(t.step_key or "", mode) if x.key != t.key]
+            skipped.append({"plan_id": plan.id, "name": name,
+                            "why": f"works {mode}, so they get "
+                                   + (other[0].name if other else "the other version")})
+            continue
+        to_email, to_name = ctxs.recipient(db, plan, t.to, ctx)
+        if not to_email:
+            skipped.append({"plan_id": plan.id, "name": name,
+                            "why": f"no address on file for the {t.to}"})
+            continue
+
+        already = _sent_map(_states(db, plan.id).get(t.step_key or "")).get(t.key)
+        recipients.append({"plan_id": plan.id, "name": name, "to": to_email,
+                           "to_name": to_name, "sent_at": already,
+                           "missing": ml.unfilled(t.subject + "\n" + t.body, ctx)})
+        if sample is None:
+            sample = {"for": name, "to": to_email,
+                      "cc": ctxs.cc_list(ctx, t.cc),
+                      "subject": ml.render(t.subject, ctx),
+                      "body": ml.render(t.body, ctx)}
+
+    return {"template_key": t.key, "name": t.name, "to_role": t.to,
+            "recipients": recipients, "skipped": skipped, "sample": sample}
+
+
+@router.post("/mails/bulk-send")
+def bulk_mail_send(payload: BulkMail, db: Session = Depends(get_db),
+                   user: models.User = Depends(current_user)):
+    """Send one template to several joiners, each rendered from their own details."""
+    preview = bulk_mail_preview(payload, db=db, _user=user)
+    t = ml.BY_KEY[payload.template_key]
+    sent, failed = [], []
+
+    for r in preview["recipients"]:
+        plan = db.get(models.OnboardingPlan, r["plan_id"])
+        if not plan:
+            continue
+        ctx, mode = _plan_mail_context(db, plan)
+        try:
+            mailer.compose(
+                db, to_email=r["to"], to_name=r["to_name"],
+                template=f"onboarding:{t.key}",
+                subject=ml.render(t.subject, ctx), body=ml.render(t.body, ctx),
+                cc=ctxs.cc_list(ctx, t.cc),
+                candidate_id=plan.candidate_id, application_id=plan.application_id,
+                sender_user=user,
+            )
+        except Exception as e:                      # one bad address must not stop the other five
+            failed.append({"plan_id": plan.id, "name": r["name"], "error": str(e)[:200]})
+            continue
+        _record_sent(db, plan.id, t, mode)
+        sent.append({"plan_id": plan.id, "name": r["name"], "to": r["to"]})
+
+    log(db, "onboarding.bulk_mail_sent", "onboarding_plan", 0,
+        {"template": t.key, "sent": len(sent), "failed": len(failed),
+         "by": getattr(user, "email", "")})
+    db.commit()
+    return {"sent": sent, "failed": failed, "skipped": preview["skipped"]}
+
+
+class BulkOccurrenceMail(BaseModel):
+    occurrence_ids: list[int]
+    session_role: str = "invite"
+
+
+@router.post("/occurrences/bulk-mail")
+def bulk_session_mail(payload: BulkOccurrenceMail, db: Session = Depends(get_db),
+                      user: models.User = Depends(current_user)):
+    """Send the same part of the mail run for several sittings: every invite still to go out."""
+    occs = list(db.scalars(select(models.SessionOccurrence)
+                           .where(models.SessionOccurrence.id.in_(payload.occurrence_ids or []))))
+    done, skipped = [], []
+    stamp = datetime.now(timezone.utc)
+
+    for occ in occs:
+        d = sess.BY_KEY.get(occ.session_key)
+        templates = [t for t in ml.for_session(occ.session_key, occ.mode or ml.CAMPUS)
+                     if t.session_role == payload.session_role]
+        if not templates:
+            skipped.append({"id": occ.id, "name": d.name if d else occ.session_key,
+                            "why": f"has no {payload.session_role} mail"})
+            continue
+        t = templates[0]
+        ctx = ctxs.session_context(occ)
+        people = db.scalars(
+            select(models.SessionAttendee).where(models.SessionAttendee.occurrence_id == occ.id)
+        ).all()
+        wanted = people if t.session_role == "invite" else [p for p in people if p.attended]
+        wanted = [p for p in wanted if (p.email or "").strip()]
+        if not wanted:
+            skipped.append({"id": occ.id, "name": d.name if d else occ.session_key,
+                            "why": "nobody to send to"})
+            continue
+
+        subject, body = ml.render(t.subject, ctx), ml.render(t.body, ctx)
+        for p in wanted:
+            person = {"Name": p.name or ""}
+            mailer.compose(db, to_email=p.email, to_name=p.name or "",
+                           template=f"onboarding:{t.key}",
+                           subject=ml.render(subject, person), body=ml.render(body, person),
+                           candidate_id=p.candidate_id, sender_user=user)
+            if t.session_role != "invite":
+                p.feedback_sent_at = stamp
+        if t.session_role == "invite":
+            occ.invites_sent_at = stamp
+        done.append({"id": occ.id, "name": d.name if d else occ.session_key, "count": len(wanted)})
+
+    log(db, "onboarding.bulk_session_mail", "session_occurrence", 0,
+        {"role": payload.session_role, "sittings": len(done), "by": getattr(user, "email", "")})
+    db.commit()
+    return {"sent": done, "skipped": skipped}
+
+
+class BulkReschedule(BaseModel):
+    occurrence_ids: list[int]
+    #: Either move every sitting by this many days, or put them all on this date and keep the time.
+    shift_days: int | None = None
+    move_to: date | None = None
+
+
+@router.post("/occurrences/bulk-reschedule")
+def bulk_reschedule(payload: BulkReschedule, db: Session = Depends(get_db),
+                    user: models.User = Depends(current_user)):
+    """Move several sittings at once, keeping the time of day.
+
+    Shifting by days is the common case: the room went, so the whole week slides. Moving to one
+    date collapses several onto a single day, which is what happens when sessions are combined.
+    """
+    if payload.shift_days is None and payload.move_to is None:
+        raise HTTPException(422, "Say how far to move them: shift_days, or a date in move_to.")
+    occs = list(db.scalars(select(models.SessionOccurrence)
+                           .where(models.SessionOccurrence.id.in_(payload.occurrence_ids or []))))
+    moved = []
+    for occ in occs:
+        if not occ.starts_at:
+            continue
+        was = occ.starts_at
+        length = (occ.ends_at - occ.starts_at) if occ.ends_at else timedelta(hours=1)
+        if payload.shift_days is not None:
+            occ.starts_at = was + timedelta(days=payload.shift_days)
+        else:
+            occ.starts_at = datetime.combine(payload.move_to, was.time())
+        occ.ends_at = occ.starts_at + length
+        # The invite was written for the old date, so it has to go again.
+        occ.invites_sent_at = None
+        d = sess.BY_KEY.get(occ.session_key)
+        moved.append({"id": occ.id, "name": d.name if d else occ.session_key,
+                      "was": was.isoformat(), "now": occ.starts_at.isoformat(),
+                      "invite_due": (schedule.invite_date(occ.starts_at, d.invite_weeks_before,
+                                                          d.invite_weekday).isoformat()
+                                     if d else None)})
+
+    log(db, "onboarding.bulk_reschedule", "session_occurrence", 0,
+        {"count": len(moved), "shift_days": payload.shift_days,
+         "move_to": payload.move_to.isoformat() if payload.move_to else None,
+         "by": getattr(user, "email", "")})
+    db.commit()
+    return {"moved": moved}
