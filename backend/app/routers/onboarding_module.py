@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import models
@@ -23,7 +23,9 @@ from ..database import get_db
 from ..deps import current_user
 from ..services import mailer
 from ..services.documents import settled_entity
-from ..services.onboarding import context as ctxs, mails as ml, schedule, sessions as sess, steps as st
+from ..services.onboarding import (
+    audience as aud, context as ctxs, mails as ml, schedule, sessions as sess, steps as st,
+)
 from ..services.recruitment import log
 
 router = APIRouter(prefix="/api/onboarding-module", tags=["onboarding-module"])
@@ -851,3 +853,235 @@ def bulk_reschedule(payload: BulkReschedule, db: Session = Depends(get_db),
          "by": getattr(user, "email", "")})
     db.commit()
     return {"moved": moved}
+
+
+# ── who a mail goes to ──────────────────────────────────────────────────────────────────────
+# A joiner's welcome letter has one reader. A POSH briefing or a Pulse Survey goes to the room, or
+# to the whole company, which is why an audience is a RULE ("everyone with a login") rather than a
+# frozen list of names. It resolves at the moment of sending, and the composer shows the resolved
+# names first so nobody presses send on a number they have not looked at.
+
+@router.get("/audiences")
+def audiences(occurrence_id: int | None = None, db: Session = Depends(get_db),
+              _user: models.User = Depends(current_user)):
+    """The groups a mail can be addressed to, each with how many people it reaches right now."""
+    saved = [
+        {"id": g.id, "name": g.name, "note": g.note, "count": len(g.members or [])}
+        for g in db.scalars(select(models.RecipientGroup).order_by(models.RecipientGroup.name))
+    ]
+    return {"groups": aud.catalogue(db, occurrence_id), "saved": saved}
+
+
+class AudienceSpec(BaseModel):
+    groups: list[str] = []
+    saved: list[int] = []
+    emails: list[str] = []
+
+
+@router.post("/audiences/preview")
+def audience_preview(spec: AudienceSpec, occurrence_id: int | None = None,
+                     db: Session = Depends(get_db), _user: models.User = Depends(current_user)):
+    """The actual people an audience reaches, deduplicated, each saying which list named them."""
+    people = aud.resolve(db, spec.model_dump(), occurrence_id)
+    return {"count": len(people), "people": people}
+
+
+class GroupIn(BaseModel):
+    name: str
+    note: str = ""
+    members: list[dict] = []          # [{name, email}]
+
+
+@router.get("/groups")
+def list_groups(db: Session = Depends(get_db), _user: models.User = Depends(current_user)):
+    return [
+        {"id": g.id, "name": g.name, "note": g.note, "members": g.members or [],
+         "created_by": g.created_by, "updated_at": g.updated_at}
+        for g in db.scalars(select(models.RecipientGroup).order_by(models.RecipientGroup.name))
+    ]
+
+
+@router.post("/groups", status_code=201)
+def create_group(body: GroupIn, db: Session = Depends(get_db),
+                 user: models.User = Depends(current_user)):
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(422, "A list needs a name.")
+    members = _clean_members(body.members)
+    if not members:
+        raise HTTPException(422, "A list needs at least one address.")
+    g = models.RecipientGroup(name=name, note=(body.note or "").strip(), members=members,
+                              created_by=getattr(user, "email", ""))
+    db.add(g)
+    log(db, "onboarding.group_created", "recipient_group", 0,
+        {"name": name, "members": len(members), "by": getattr(user, "email", "")})
+    db.commit()
+    return {"id": g.id, "name": g.name, "note": g.note, "members": g.members}
+
+
+@router.patch("/groups/{group_id}")
+def update_group(group_id: int, body: GroupIn, db: Session = Depends(get_db),
+                 user: models.User = Depends(current_user)):
+    g = db.get(models.RecipientGroup, group_id)
+    if not g:
+        raise HTTPException(404, "No such list")
+    if body.name is not None and body.name.strip():
+        g.name = body.name.strip()
+    g.note = (body.note or "").strip()
+    g.members = _clean_members(body.members)
+    log(db, "onboarding.group_updated", "recipient_group", g.id,
+        {"members": len(g.members), "by": getattr(user, "email", "")})
+    db.commit()
+    return {"id": g.id, "name": g.name, "note": g.note, "members": g.members}
+
+
+@router.delete("/groups/{group_id}", status_code=204)
+def delete_group(group_id: int, db: Session = Depends(get_db),
+                 user: models.User = Depends(current_user)):
+    g = db.get(models.RecipientGroup, group_id)
+    if not g:
+        raise HTTPException(404, "No such list")
+    log(db, "onboarding.group_deleted", "recipient_group", g.id,
+        {"name": g.name, "by": getattr(user, "email", "")})
+    db.delete(g)
+    db.commit()
+
+
+def _clean_members(rows: list[dict]) -> list[dict]:
+    """Keep the rows that carry a usable address, deduplicated, in the order they were given."""
+    out, seen = [], set()
+    for m in rows or []:
+        email = str((m or {}).get("email") or "").strip()
+        if not email or "@" not in email or email.lower() in seen:
+            continue
+        seen.add(email.lower())
+        out.append({"name": str((m or {}).get("name") or "").strip(), "email": email})
+    return out
+
+
+# ── sending a session's mail, with or without a sitting ─────────────────────────────────────
+
+def _template_for_role(session_key: str, role: str, occ) -> "ml.MailTemplate":
+    """The actual letter behind a role chip.
+
+    The catalogue shows a session's mails by the PART they play - invite, feedback - because that
+    is what the People team calls them. Which of the two written versions goes out depends on where
+    the sitting is held, so the mode has to come from the sitting rather than from the chip.
+    """
+    mode = (occ.mode if occ and occ.mode else ml.CAMPUS)
+    if mode not in (ml.CAMPUS, ml.REMOTE):
+        mode = ml.CAMPUS
+    for t in ml.for_session(session_key, mode):
+        if t.session_role == role:
+            return t
+    # A session with only one version of that mail: mode does not narrow anything.
+    for t in ml.TEMPLATES:
+        if t.session_key == session_key and t.session_role == role:
+            return t
+    raise HTTPException(404, "That mail does not belong to this session")
+
+
+@router.get("/sessions/{session_key}/mails/{role}")
+def session_catalogue_mail(session_key: str, role: str, occurrence_id: int | None = None,
+                           db: Session = Depends(get_db),
+                           _user: models.User = Depends(current_user)):
+    """A session mail drafted from the catalogue, so it can be sent without opening the calendar.
+
+    A sitting fills in the date, the weekday, the time and the meeting link. Without one those
+    tokens stay standing in the text for HR to type, which is the honest state of a mail about a
+    session nobody has scheduled yet.
+    """
+    d = sess.BY_KEY.get(session_key)
+    if not d:
+        raise HTTPException(404, "No such session")
+    occ = db.get(models.SessionOccurrence, occurrence_id) if occurrence_id else None
+    t = _template_for_role(session_key, role, occ)
+    ctx = ctxs.session_context(occ)
+    # Every sitting of this session, so the composer can offer them.
+    sittings = [
+        {"id": o.id, "starts_at": o.starts_at, "mode": o.mode, "entity": o.entity,
+         "invites_sent_at": o.invites_sent_at,
+         "attendees": db.scalar(select(func.count(models.SessionAttendee.id))
+                                .where(models.SessionAttendee.occurrence_id == o.id)) or 0}
+        for o in db.scalars(select(models.SessionOccurrence)
+                            .where(models.SessionOccurrence.session_key == session_key)
+                            .order_by(models.SessionOccurrence.starts_at))
+    ]
+    default_audience = (occ.audience if occ and occ.audience else None) or _default_audience(t, occ)
+    return {
+        "template_key": t.key, "name": t.name, "session": session_key, "session_name": d.name,
+        "session_role": t.session_role, "role": role, "mode": t.mode,
+        "subject": ml.render(t.subject, ctx),
+        "body": ml.render(t.body, ctx),
+        "missing": [f for f in ml.unfilled(t.subject + "\n" + t.body, ctx) if f not in PER_RECIPIENT],
+        "per_recipient": sorted(PER_RECIPIENT),
+        "sittings": sittings,
+        "occurrence_id": occ.id if occ else None,
+        "audience": default_audience,
+        "note": t.note,
+    }
+
+
+def _default_audience(t, occ) -> dict:
+    """What this mail is addressed to before anybody changes it.
+
+    An invite goes to whoever is on the sitting; a feedback mail goes to the people who actually
+    turned up; a chase-up goes to the people who did not. Those are three different lists and
+    getting them the wrong way round is the mistake this exists to prevent.
+    """
+    if not occ:
+        return {"groups": [], "saved": [], "emails": []}
+    if t.session_role == "invite":
+        return {"groups": ["sitting"], "saved": [], "emails": []}
+    if t.session_role == "non_attendees":
+        return {"groups": ["sitting_absent"], "saved": [], "emails": []}
+    return {"groups": ["sitting_attended"], "saved": [], "emails": []}
+
+
+class SessionMailSend(BaseModel):
+    subject: str
+    body: str
+    audience: AudienceSpec
+    occurrence_id: int | None = None
+
+
+@router.post("/sessions/{session_key}/mails/{role}/send")
+def send_session_catalogue_mail(session_key: str, role: str, payload: SessionMailSend,
+                                db: Session = Depends(get_db),
+                                user: models.User = Depends(current_user)):
+    """Send a session mail to a resolved audience, one personalised copy each."""
+    occ = db.get(models.SessionOccurrence, payload.occurrence_id) if payload.occurrence_id else None
+    t = _template_for_role(session_key, role, occ)
+    people = aud.resolve(db, payload.audience.model_dump(), occ.id if occ else None)
+    if not people:
+        raise HTTPException(422, "That audience reaches nobody. Pick a group or type an address.")
+
+    stamp = datetime.now(timezone.utc)
+    sent = 0
+    for p in people:
+        # One draft, many readers: the greeting is filled per person rather than going out as a
+        # literal {{Name}}.
+        person = {"Name": p.get("name") or ""}
+        mailer.compose(db, to_email=p["email"], to_name=p.get("name") or "",
+                       template=f"onboarding:{t.key}",
+                       subject=ml.render(payload.subject, person),
+                       body=ml.render(payload.body, person),
+                       candidate_id=p.get("candidate_id"), sender_user=user)
+        sent += 1
+
+    if occ:
+        # Remember the audience so the next mail for this sitting starts where this one did.
+        occ.audience = payload.audience.model_dump()
+        if t.session_role == "invite":
+            occ.invites_sent_at = stamp
+        else:
+            ids = {p.get("attendee_id") for p in people if p.get("attendee_id")}
+            if ids:
+                for a in db.scalars(select(models.SessionAttendee)
+                                    .where(models.SessionAttendee.id.in_(ids))):
+                    a.feedback_sent_at = stamp
+
+    log(db, "onboarding.session_mail_sent", "session_occurrence", occ.id if occ else 0,
+        {"template": t.key, "count": sent, "by": getattr(user, "email", "")})
+    db.commit()
+    return {"ok": True, "sent": sent}

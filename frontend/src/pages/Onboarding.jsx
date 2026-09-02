@@ -371,6 +371,268 @@ function BulkMailModal({ planIds, templates, onClose, onSent }) {
   )
 }
 
+// ── who a mail goes to ──────────────────────────────────────────────────────────────────────
+
+/** Pick the audience for a mail, and see the actual people before sending.
+ *
+ * A group here is a rule, not a frozen list: "everyone with a login" is resolved at the moment you
+ * look, so the count is right today. The resolved names are one click away rather than hidden,
+ * because the number on its own is exactly the thing people press send on without reading. */
+function AudiencePicker({ value, onChange, occurrenceId, onSavedListsChanged }) {
+  const { toast } = useToast()
+  const [cat, setCat] = useState(null)
+  const [people, setPeople] = useState(null)
+  const [open, setOpen] = useState(false)
+  const [typed, setTyped] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const spec = useMemo(
+    () => ({ groups: value.groups || [], saved: value.saved || [], emails: value.emails || [] }),
+    [value])
+
+  useEffect(() => {
+    api.onboardingAudiences(occurrenceId).then(setCat).catch(() => setCat(null))
+  }, [occurrenceId])
+
+  useEffect(() => {
+    let live = true
+    api.onboardingResolveAudience(spec, occurrenceId)
+      .then((r) => { if (live) setPeople(r) })
+      .catch(() => { if (live) setPeople(null) })
+    return () => { live = false }
+  }, [spec, occurrenceId])
+
+  const toggleGroup = (key) => onChange({
+    ...spec,
+    groups: spec.groups.includes(key) ? spec.groups.filter((g) => g !== key) : [...spec.groups, key],
+  })
+  const toggleSaved = (id) => onChange({
+    ...spec,
+    saved: spec.saved.includes(id) ? spec.saved.filter((s) => s !== id) : [...spec.saved, id],
+  })
+
+  function addTyped() {
+    const parts = typed.split(/[,;\s]+/).map((x) => x.trim()).filter((x) => x.includes('@'))
+    if (!parts.length) return
+    onChange({ ...spec, emails: [...new Set([...spec.emails, ...parts])] })
+    setTyped('')
+  }
+
+  async function saveAsList() {
+    const name = window.prompt('Name this list')
+    if (!name) return
+    setSaving(true)
+    try {
+      const members = (people?.people || []).map((p) => ({ name: p.name, email: p.email }))
+      const g = await api.onboardingCreateGroup({ name, members })
+      toast(`Saved “${g.name}” with ${g.members.length} in it`, 'success')
+      setCat(await api.onboardingAudiences(occurrenceId))
+      onSavedListsChanged?.()
+    } catch (e) { toast(e.message, 'error') } finally { setSaving(false) }
+  }
+
+  const count = people?.count ?? 0
+
+  return (
+    <div className="rounded-xl border border-slate-200">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2.5">
+        <Users className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+        <span className="text-sm font-medium text-slate-800">
+          {count === 0 ? 'Nobody yet' : `Goes to ${count} ${count === 1 ? 'person' : 'people'}`}
+        </span>
+        {count > 0 && (
+          <button type="button" onClick={() => setOpen((v) => !v)}
+            className={cx('rounded px-1 text-xs font-medium text-brand-700 hover:text-brand-900', focusRing)}>
+            {open ? 'Hide who' : 'Show who'}
+          </button>
+        )}
+        {count > 0 && (
+          <button type="button" onClick={saveAsList} disabled={saving}
+            className={cx('ml-auto rounded px-1 text-xs text-slate-500 hover:text-slate-800', focusRing)}>
+            Save as a list
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <ul className="max-h-44 overflow-auto border-b border-slate-100 px-3 py-2 text-xs">
+          {(people?.people || []).map((p) => (
+            <li key={p.email} className="flex items-center justify-between gap-3 py-0.5">
+              <span className="min-w-0 truncate text-slate-800">{p.name || p.email}</span>
+              <span className="shrink-0 truncate text-[11px] text-slate-500">
+                {p.name ? `${p.email} · ` : ''}{p.source}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="space-y-2.5 px-3 py-2.5">
+        <div className="flex flex-wrap gap-1.5">
+          {(cat?.groups || []).map((g) => {
+            const on = spec.groups.includes(g.key)
+            return (
+              <button key={g.key} type="button" onClick={() => toggleGroup(g.key)}
+                title={g.source}
+                className={cx('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium',
+                  'transition-colors duration-150 ease-snappy', focusRing,
+                  on ? 'border-brand-300 bg-brand-100 text-brand-900'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300')}>
+                {on && <Check className="h-3 w-3" aria-hidden />}
+                {g.label}
+                <span className="tabular-nums opacity-60">{g.count}</span>
+              </button>
+            )
+          })}
+          {(cat?.saved || []).map((g) => {
+            const on = spec.saved.includes(g.id)
+            return (
+              <button key={`s${g.id}`} type="button" onClick={() => toggleSaved(g.id)}
+                title={g.note || 'A list somebody built by hand'}
+                className={cx('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium',
+                  'transition-colors duration-150 ease-snappy', focusRing,
+                  on ? 'border-brand-300 bg-brand-100 text-brand-900'
+                    : 'border-dashed border-slate-300 bg-white text-slate-700 hover:border-slate-400')}>
+                {on && <Check className="h-3 w-3" aria-hidden />}
+                {g.name}
+                <span className="tabular-nums opacity-60">{g.count}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {spec.emails.map((e) => (
+            <span key={e} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
+              {e}
+              <button type="button" aria-label={`Remove ${e}`}
+                onClick={() => onChange({ ...spec, emails: spec.emails.filter((x) => x !== e) })}
+                className={cx('rounded text-slate-400 hover:text-slate-700', focusRing)}>×</button>
+            </span>
+          ))}
+          <input value={typed} onChange={(ev) => setTyped(ev.target.value)}
+            onKeyDown={(ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addTyped() } }}
+            onBlur={addTyped}
+            placeholder="Add an address and press enter"
+            className={cx(TOOLBAR, 'h-8 min-w-56 flex-1 text-xs')} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Send a session's mail: from the catalogue, or from a sitting on the calendar.
+ *
+ * The date, weekday and time come from whichever sitting is picked. With none picked those tokens
+ * stay standing in the text, which is the honest state of a mail about a session nobody has
+ * scheduled yet. */
+function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, onSent }) {
+  const { toast } = useToast()
+  const [draft, setDraft] = useState(null)
+  const [sitting, setSitting] = useState(occurrenceId || '')
+  const [subject, setSubject] = useState('')
+  const [body, setBody] = useState('')
+  const [audience, setAudience] = useState({ groups: [], saved: [], emails: [] })
+  const [sending, setSending] = useState(false)
+
+  // Reading the draft is a fetch, and the fetch is the only thing that sets this window up, so it
+  // settles state from the promise rather than from the effect body.
+  const apply = useCallback((d) => {
+    setDraft(d)
+    setSubject(d.subject)
+    setBody(d.body)
+    setAudience(d.audience || { groups: [], saved: [], emails: [] })
+  }, [])
+
+  useEffect(() => {
+    api.onboardingSessionCatalogueMail(sessionKey, templateKey, occurrenceId || undefined)
+      .then(apply)
+      .catch((e) => { toast(e.message, 'error'); onClose() })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionKey, templateKey, occurrenceId])
+
+  function pickSitting(v) {
+    setSitting(v)
+    setDraft(null)
+    api.onboardingSessionCatalogueMail(sessionKey, templateKey, v ? Number(v) : undefined)
+      .then(apply)
+      .catch((e) => toast(e.message, 'error'))
+  }
+
+  async function send() {
+    setSending(true)
+    try {
+      const res = await api.onboardingSendSessionCatalogueMail(sessionKey, templateKey, {
+        subject, body, audience, occurrence_id: sitting ? Number(sitting) : null,
+      })
+      toast(`Sent to ${res.sent} ${res.sent === 1 ? 'person' : 'people'}`, 'success')
+      onSent?.()
+      onClose()
+    } catch (e) { toast(e.message, 'error') } finally { setSending(false) }
+  }
+
+  return (
+    <Modal open onClose={onClose} size="wide" title={draft ? draft.name : 'Mail'}>
+      {!draft ? (
+        <div className="flex items-center gap-2 py-10 text-sm text-slate-500"><Spinner className="h-4 w-4" /> Loading the draft…</div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-xs text-slate-600">
+              Which sitting
+              <select value={sitting} onChange={(e) => pickSitting(e.target.value)}
+                className={cx(TOOLBAR, 'h-8')}>
+                <option value="">Not scheduled yet</option>
+                {draft.sittings.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {fmtDateTime(s.starts_at)} · {s.mode} · {s.attendees} invited
+                    {s.invites_sent_at ? ' · invites sent' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-xs text-slate-500">{draft.session_name}</span>
+          </div>
+
+          {!!draft.missing?.length && (
+            <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>
+                Still to fill in: <strong>{draft.missing.join(', ')}</strong>.
+                {!sitting && ' Picking a sitting fills the date and time.'}
+              </span>
+            </p>
+          )}
+
+          <AudiencePicker value={audience} onChange={setAudience}
+            occurrenceId={sitting ? Number(sitting) : undefined} />
+
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Subject</span>
+            <input value={subject} onChange={(e) => setSubject(e.target.value)}
+              className={cx(inputClass, 'h-9 text-sm')} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Message</span>
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={16}
+              className={cx(inputClass, 'resize-y font-sans text-sm leading-relaxed')} />
+          </label>
+          <p className="text-[11px] text-slate-500">
+            Everyone gets this letter with their own name in the greeting.
+          </p>
+
+          <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button onClick={send} disabled={sending}>
+              {sending ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} Send
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 /** Read a mail, change what you want, send it.
  *
  * The same window serves a candidate's mail and a session's, because they differ only in who is
@@ -700,7 +962,7 @@ const SESSION_COLUMNS = [
   { key: 'mails', label: 'Mails', get: (s) => s.mails.map((m) => m.label).join(', ') },
 ]
 
-function SessionsView({ sessions, frequencies, modes, onSchedule }) {
+function SessionsView({ sessions, frequencies, modes, onSchedule, onMail }) {
   const [q, setQ] = useState('')
   const colFilters = useColumnFilters()
   const label = (list, id) => list.find((x) => x.id === id)?.label || id
@@ -776,9 +1038,12 @@ function SessionsView({ sessions, frequencies, modes, onSchedule }) {
                   <td className={TD}>
                     <span className="flex flex-wrap gap-1">
                       {s.mails.map((m) => (
-                        <span key={m.key} className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
+                        <button key={m.key} type="button" onClick={() => onMail(s, m)}
+                          title={`Read and send: ${m.label}`}
+                          className={cx('inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700',
+                            'transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-100', focusRing)}>
                           <Mail className="h-3 w-3" aria-hidden />{m.label}
-                        </span>
+                        </button>
                       ))}
                     </span>
                   </td>
@@ -1361,7 +1626,9 @@ function AttendanceModal({ occurrence, onClose, onSaved }) {
 
 /** The mails one sitting sends: the invite, and whatever follows it. */
 function SessionMailsModal({ occurrence, mails, onClose, onSent }) {
-  const [composing, setComposing] = useState(null)
+  const [composing, setComposing] = useState(null)   // a session role, e.g. "invite"
+  // One chip per PART the mail plays. A session that has an in-campus and a remote version of its
+  // invite is still one invite here; which version goes out is decided by where the sitting is.
   const mine = mails.filter((m) => m.session_key === occurrence.session_key
     && (m.mode === 'both' || m.mode === (occurrence.mode || 'campus')))
 
@@ -1373,7 +1640,7 @@ function SessionMailsModal({ occurrence, mails, onClose, onSent }) {
           {occurrence.invite_due && ` · invite due ${fmtDate(occurrence.invite_due)}`}
         </p>
         {mine.map((m) => (
-          <button key={m.key} type="button" onClick={() => setComposing(m.key)}
+          <button key={m.key} type="button" onClick={() => setComposing(m.session_role)}
             className={cx('flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left',
               'transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-50/50', focusRing)}>
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
@@ -1394,7 +1661,8 @@ function SessionMailsModal({ occurrence, mails, onClose, onSent }) {
         ))}
       </div>
       {composing && (
-        <MailComposer occurrenceId={occurrence.id} templateKey={composing}
+        <SessionMailComposer sessionKey={occurrence.session_key} templateKey={composing}
+          occurrenceId={occurrence.id}
           onClose={() => setComposing(null)} onSent={onSent} />
       )}
     </Modal>
@@ -1551,6 +1819,7 @@ export default function Onboarding() {
   const [formsOpen, setFormsOpen] = useState(false)
   const [mails, setMails] = useState(null)
   const [sessionMails, setSessionMails] = useState(null)   // an occurrence
+  const [sessionMail, setSessionMail] = useState(null)     // { sessionKey, templateKey, occurrenceId? }
   const [composing, setComposing] = useState(null)         // a row from the mails table
 
   const loadBoard = () => api.onboardingBoard().then(setBoard).catch(() => setBoard([]))
@@ -1636,7 +1905,8 @@ export default function Onboarding() {
       {tab === 'sessions' && (
         !defs ? <div className="flex items-center gap-2 text-sm text-slate-500"><Spinner /> Loading…</div>
           : <SessionsView sessions={defs.sessions} frequencies={defs.frequencies || []}
-              modes={defs.modes || []} onSchedule={(s) => setScheduling({ session: s })} />
+              modes={defs.modes || []} onSchedule={(s) => setScheduling({ session: s })}
+              onMail={(sess, mail) => setSessionMail({ sessionKey: sess.key, templateKey: mail.key })} />
       )}
 
       {tab === 'calendar' && (
@@ -1667,6 +1937,12 @@ export default function Onboarding() {
       {sessionMails && defs && (
         <SessionMailsModal occurrence={sessionMails} mails={defs.mails || []}
           onClose={() => setSessionMails(null)}
+          onSent={() => { loadOccurrences(); loadMails() }} />
+      )}
+      {sessionMail && (
+        <SessionMailComposer sessionKey={sessionMail.sessionKey} templateKey={sessionMail.templateKey}
+          occurrenceId={sessionMail.occurrenceId}
+          onClose={() => setSessionMail(null)}
           onSent={() => { loadOccurrences(); loadMails() }} />
       )}
       {composing && (

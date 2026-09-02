@@ -268,6 +268,26 @@ export const api = {
   onboardingBulkReschedule: (occIds, body) =>
     req('/onboarding-module/occurrences/bulk-reschedule', { method: 'POST', body: JSON.stringify({ occurrence_ids: occIds, ...body }) }),
 
+  // Who a mail goes to. A group is a rule ("everyone with a login"), resolved at send time, so the
+  // preview is the answer for today rather than for whenever somebody wrote the list down.
+  onboardingAudiences: (occId) =>
+    req(`/onboarding-module/audiences${occId ? `?occurrence_id=${occId}` : ''}`),
+  onboardingResolveAudience: (spec, occId) =>
+    req(`/onboarding-module/audiences/preview${occId ? `?occurrence_id=${occId}` : ''}`,
+      { method: 'POST', body: JSON.stringify(spec) }),
+  onboardingGroups: () => req('/onboarding-module/groups'),
+  onboardingCreateGroup: (body) =>
+    req('/onboarding-module/groups', { method: 'POST', body: JSON.stringify(body) }),
+  onboardingUpdateGroup: (id, body) =>
+    req(`/onboarding-module/groups/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  onboardingDeleteGroup: (id) => req(`/onboarding-module/groups/${id}`, { method: 'DELETE' }),
+
+  onboardingSessionCatalogueMail: (sessionKey, templateKey, occId) =>
+    req(`/onboarding-module/sessions/${sessionKey}/mails/${templateKey}${occId ? `?occurrence_id=${occId}` : ''}`),
+  onboardingSendSessionCatalogueMail: (sessionKey, templateKey, body) =>
+    req(`/onboarding-module/sessions/${sessionKey}/mails/${templateKey}/send`,
+      { method: 'POST', body: JSON.stringify(body) }),
+
   onboardingPrefill: (candidateId, t) =>
     req(`/onboarding-form/${candidateId}/prefill?t=${encodeURIComponent(t)}`),
   submitOnboardingForm: ({ candidateId, token, variant, answers, files }) => {

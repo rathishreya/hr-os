@@ -580,6 +580,10 @@ class SessionOccurrence(Base):
     meet_link: Mapped[str] = mapped_column(String(400), default="")
     status: Mapped[str] = mapped_column(String(12), default="scheduled")  # scheduled|done|cancelled
     invites_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: Who this sitting's mails go to: {"groups": [...], "saved": [id], "emails": [...]}.
+    #: Stored as the RULE rather than the resolved names, so a session the whole company attends
+    #: reaches whoever is here on the day, not whoever was here when it was scheduled.
+    audience: Mapped[dict] = mapped_column(JSON, default=dict)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=True)
@@ -602,3 +606,24 @@ class SessionAttendee(Base):
     invited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     attended: Mapped[bool | None] = mapped_column(nullable=True)
     feedback_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class RecipientGroup(Base):
+    """A mailing list somebody built by hand.
+
+    The built-in groups in services/onboarding/audience.py are RULES: "everyone with a login",
+    "on onboarding, ArabEasy". They stay right on their own. This is the other kind, the one no
+    rule can express because it only exists in a person's head: the six people who run the
+    induction, the leads who need the POSH briefing first. Members are stored by name and address
+    rather than by id, because half of them are not users of this system and never will be.
+    """
+
+    __tablename__ = "recipient_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    note: Mapped[str] = mapped_column(String(300), default="")
+    members: Mapped[list] = mapped_column(JSON, default=list)   # [{name, email}]
+    created_by: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=True)
