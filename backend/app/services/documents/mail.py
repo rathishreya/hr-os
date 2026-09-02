@@ -152,7 +152,14 @@ def render(template_key: str, *, full_name: str, role: str, today: date | None =
     say so rather than presenting inherited wording as if it were signed off.
     """
     spec = MAIL_TEMPLATES.get(template_key)
+    borrowed = spec is None
     if spec is None:
+        # No approved wording under this key. Borrow the offer letter's, which is exactly what the
+        # review step already tells the recruiter is happening — it promised a borrowed draft and
+        # handed over an empty one, so the mail simply could not be sent. Documents drafted before
+        # the templates were re-keyed ("offer_letter", "nda", "traineeship_offer") all land here.
+        spec = MAIL_TEMPLATES.get("ez_offer_letter")
+    if spec is None:  # no offer letter either: nothing honest to show
         return {
             "subject": "",
             "body": "",
@@ -178,5 +185,5 @@ def render(template_key: str, *, full_name: str, role: str, today: date | None =
         "body": fill(spec.body),
         "cc": list(spec.cc),
         "from_email": spec.from_email,
-        "known": template_key not in UNSPECIFIED,
+        "known": not borrowed and template_key not in UNSPECIFIED,
     }
