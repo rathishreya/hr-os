@@ -37,6 +37,19 @@ const SOURCE_LABEL = {
   form: 'the onboarding form',
 }
 
+// A box labelled "Notes" is not where anybody looks to name a go-to person. These are the
+// prompts that say what the row wants.
+const PROMPTS = {
+  go_to_person: 'Name of the go-to person',
+  lwd: 'Last working day at their old place',
+  induction_session: 'Date of the induction session',
+  performance_buddy: 'Date of the performance buddy meeting',
+  linkedin_update: 'Their LinkedIn profile',
+  joining_date: 'The date they join',
+  candidate_name: 'Their name',
+  role: 'The role they were hired into',
+}
+
 const KIND_ICON = {
   mail: Mail, session: Users, meeting: CalendarDays, feedback: ClipboardList,
   date: CalendarDays, status: Check, text: PencilLine, source: Inbox, derived: Filter,
@@ -926,6 +939,86 @@ function MailComposer({ planId, occurrenceId, templateKey, onClose, onSent }) {
   )
 }
 
+/** The answer a step is asking for, in the column where the reader is already looking.
+ *
+ * A read-only row shows what the offer letter says and lets it be corrected, because paperwork is
+ * typed by people and sometimes typed wrong. Correcting the joining date moves every working-day
+ * due date with it, which is the whole reason it is editable here rather than read-only. */
+function StepValue({ step, busy, onSave }) {
+  const [v, setV] = useState(step.resolved ?? step.value ?? '')
+  const [editing, setEditing] = useState(false)
+
+  const asDate = step.key === 'joining_date' || step.kind === 'date'
+  const placeholder = step.kind === 'source'
+    ? `From ${SOURCE_LABEL[step.source] || 'elsewhere'}`
+    : PROMPTS[step.key] || 'Type it here'
+
+  if (step.kind === 'source' && !editing) {
+    return (
+      <span className="flex items-center gap-1.5">
+        {v
+          ? <span className="text-sm text-slate-800">{asDate ? fmtDate(v) : v}</span>
+          : <span className="text-xs text-slate-500">Not on their paperwork yet</span>}
+        <button type="button" onClick={() => setEditing(true)} aria-label={`Edit ${step.label}`}
+          className={cx('rounded p-0.5 text-slate-400 hover:text-brand-700', focusRing)}>
+          <PencilLine className="h-3 w-3" aria-hidden />
+        </button>
+      </span>
+    )
+  }
+  return (
+    <input type={asDate ? 'date' : 'text'} value={v} disabled={busy} autoFocus={editing}
+      placeholder={placeholder}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => {
+        setEditing(false)
+        if (v !== (step.value || '') && v !== (step.resolved || '')) onSave(v)
+      }}
+      aria-label={step.label}
+      className={cx(inputClass, 'h-8 w-full min-w-32 py-0 text-xs')} />
+  )
+}
+
+/** The due date, and a way to move it.
+ *
+ * The calculated date is the plan: the seventh working day, the forty-fifth. Real life moves them,
+ * and a date nobody can move is a date people stop believing. Setting one here is used by every
+ * other view; clearing it brings the calculated one back. */
+function StepDue({ step, onSave }) {
+  const [open, setOpen] = useState(false)
+  if (!step.due_on && !step.due_working_day) return <span className={EMPTY}>&mdash;</span>
+  if (open) {
+    return (
+      <span className="flex items-center gap-1">
+        <input type="date" defaultValue={step.due_on || ''} autoFocus
+          onChange={(e) => { onSave(e.target.value); setOpen(false) }}
+          onBlur={() => setOpen(false)}
+          aria-label={`Due date for ${step.label}`}
+          className={cx(inputClass, 'h-8 py-0 text-xs')} />
+        {step.due_is_set_by_hand && (
+          <button type="button" onClick={() => { onSave(''); setOpen(false) }}
+            className={cx('rounded px-1 text-[11px] text-slate-500 hover:text-slate-800', focusRing)}>
+            Reset
+          </button>
+        )}
+      </span>
+    )
+  }
+  return (
+    <button type="button" onClick={() => setOpen(true)}
+      className={cx('group rounded px-1 py-0.5 text-left', focusRing)}>
+      <span className={cx('text-xs', step.overdue ? 'font-medium text-amber-700' : 'text-slate-600',
+        'group-hover:text-brand-700')}>
+        {step.due_on ? fmtDate(step.due_on) : 'Set a date'}
+      </span>
+      <span className="block text-[11px] text-slate-400">
+        {step.due_is_set_by_hand ? 'set by hand'
+          : step.due_working_day ? `day ${step.due_working_day}` : 'not set'}
+      </span>
+    </button>
+  )
+}
+
 function ChecklistModal({ planId, phases, onClose, onChanged }) {
   const { toast } = useToast()
   const [plan, setPlan] = useState(null)
@@ -1064,8 +1157,10 @@ function ChecklistModal({ planId, phases, onClose, onChanged }) {
                           <td className={TD}>
                             {s.kind === 'derived' ? (
                               <span className="text-sm font-medium tabular-nums text-slate-700">{plan.progress.percent}%</span>
-                            ) : s.kind === 'source' ? (
-                              <span className="text-xs text-slate-500">from {SOURCE_LABEL[s.source] || 'elsewhere'}</span>
+                            ) : (s.kind === 'source' || s.kind === 'text' || s.kind === 'date') ? (
+                              <StepValue key={`${s.key}:${s.resolved}:${s.value}`}
+                                step={s} busy={busy === s.key}
+                                onSave={(v) => patch(s.key, { value: v })} />
                             ) : (
                               <select value={s.status} disabled={busy === s.key}
                                 onChange={(e) => patch(s.key, { status: e.target.value })}
@@ -1076,12 +1171,7 @@ function ChecklistModal({ planId, phases, onClose, onChanged }) {
                             )}
                           </td>
                           <td className={cx(TD, 'whitespace-nowrap')}>
-                            {s.due_on ? (
-                              <span className={cx('text-xs', s.overdue ? 'font-medium text-amber-700' : 'text-slate-600')}>
-                                {fmtDate(s.due_on)}
-                                {s.due_working_day && <span className="block text-[11px] text-slate-400">day {s.due_working_day}</span>}
-                              </span>
-                            ) : <span className={EMPTY}>—</span>}
+                            <StepDue step={s} onSave={(v) => patch(s.key, { due_override: v })} />
                           </td>
                           <td className={TD}>
                             {(s.comments || s.comment_slots?.length) ? (
@@ -1100,11 +1190,6 @@ function ChecklistModal({ planId, phases, onClose, onChanged }) {
                                   </label>
                                 ))}
                               </div>
-                            ) : s.kind === 'date' || s.kind === 'text' ? (
-                              <input
-                                type={s.kind === 'date' ? 'date' : 'text'} defaultValue={s.value || ''}
-                                onBlur={(e) => { if (e.target.value !== (s.value || '')) patch(s.key, { value: e.target.value }) }}
-                                className={cx(inputClass, 'h-8 py-0 text-xs')} />
                             ) : s.attendance ? (
                               <label className="inline-flex items-center gap-2 text-xs text-slate-600">
                                 <input type="checkbox" checked={!!s.attended}
@@ -1855,15 +1940,13 @@ function SessionMailsModal({ occurrence, mails, onClose, onSent }) {
 // ── View 4: every mail, and which ones write themselves ─────────────────────────────────────
 
 const MAIL_COLUMNS = [
-  { key: 'who', label: 'For', get: (r) => r.who || '' },
   { key: 'name', label: 'Mail', get: (r) => r.name || '' },
   { key: 'kind', label: 'Kind', get: (r) => r.kind || '' },
   { key: 'sending', label: 'Sending', get: (r) => r.sending || '' },
   { key: 'to', label: 'Goes to', get: (r) => r.to || '' },
-  { key: 'entity', label: 'Entity', get: (r) => r.entity || '' },
-  { key: 'due', label: 'Due', get: (r) => (r.due_on ? fmtDate(r.due_on) : '') },
   { key: 'state', label: 'State', get: (r) => r.state || '' },
-  { key: 'missing', label: 'Ready', get: (r) => (r.missing?.length ? 'Needs a field' : 'Ready') },
+  { key: 'due', label: 'Next due', get: (r) => (r.next_due ? fmtDate(r.next_due) : '') },
+  { key: 'progress', label: 'Sent', get: (r) => `${r.sent} of ${r.total}` },
 ]
 
 const STATE_TONE = {
@@ -1887,21 +1970,23 @@ function MailsView({ rows, onOpen }) {
   const values = useMemo(
     () => Object.fromEntries(MAIL_COLUMNS.map((c) => [c.key, distinctValues(rows, c.get)])), [rows])
 
+  const outstanding = rows.reduce((n, r) => n + r.outstanding, 0)
   const autoCount = rows.filter((r) => r.sending === 'Automatic').length
 
   if (!rows.length) {
     return (
       <EmptyState icon={Mail} title="No mails yet"
-        description="Mails appear here once somebody is on onboarding or a session has a sitting on the calendar." />
+        description="Letters appear here once somebody is on onboarding or a session has a sitting on the calendar." />
     )
   }
 
   return (
     <div className="space-y-3">
       <p className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-xs leading-relaxed text-slate-600">
-        <strong className="font-semibold text-slate-800">{autoCount}</strong> of these {rows.length} draft
-        themselves from the candidate&rsquo;s own details; the rest are written by hand. None of them
-        leaves without somebody opening it and pressing send.
+        <strong className="font-semibold text-slate-800">{outstanding}</strong> letters still to go,
+        across {rows.length} kinds. {autoCount} of those kinds draft themselves from the
+        candidate&rsquo;s own details; the rest are written by hand. None of them leaves without
+        somebody opening it and pressing send.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -1921,7 +2006,7 @@ function MailsView({ rows, onOpen }) {
 
       <div className={TABLE_WRAP}>
         <div className="overflow-auto">
-          <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[860px] border-collapse text-left text-sm">
             <thead className={cx(THEAD, 'sticky top-0 z-10')}>
               <tr className={THEAD_ROW}>
                 {MAIL_COLUMNS.map((c) => (
@@ -1934,16 +2019,15 @@ function MailsView({ rows, onOpen }) {
                     </span>
                   </th>
                 ))}
+                <th scope="col" className={cx(TH, 'text-right')} />
               </tr>
             </thead>
             <tbody>
-              {shown.map((r, i) => (
-                <tr key={`${r.plan_id || r.occurrence_id}-${r.template_key}-${i}`}
-                  onClick={() => onOpen(r)}
+              {shown.map((r) => (
+                <tr key={r.template_key} onClick={() => onOpen(r)}
                   className={cx('cursor-pointer border-b border-slate-100 last:border-0', ROW_HOVER)}>
-                  <td className={TD}><span className="block truncate font-medium text-slate-800">{r.who}</span></td>
-                  <td className={cx(TD, 'text-slate-700')}>
-                    <span className="block truncate">{r.name}</span>
+                  <td className={TD}>
+                    <span className="block truncate font-medium text-slate-800">{r.name}</span>
                     {r.step_label && <span className="block truncate text-[11px] text-slate-500">{r.step_label}</span>}
                   </td>
                   <td className={cx(TD, 'text-slate-600')}>{r.kind}</td>
@@ -1957,21 +2041,28 @@ function MailsView({ rows, onOpen }) {
                   </td>
                   <td className={cx(TD, 'capitalize text-slate-600')}>{r.to}</td>
                   <td className={TD}>
-                    <span className="inline-flex items-center rounded border border-slate-200 bg-slate-50 px-1.5 py-px text-[11px] font-medium text-slate-600">{r.entity}</span>
-                  </td>
-                  <td className={cx(TD, 'whitespace-nowrap text-slate-600')}>
-                    {r.due_on ? fmtDate(r.due_on) : <span className={EMPTY}>—</span>}
-                  </td>
-                  <td className={TD}>
                     <span className={cx('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium',
                       STATE_TONE[r.state] || STATE_TONE.Waiting)}>
                       {r.state}
                     </span>
                   </td>
-                  <td className={TD}>
-                    {r.missing?.length
-                      ? <span className="text-[11px] text-amber-700" title={r.missing.join(', ')}>Needs {r.missing.join(', ')}</span>
-                      : <span className="text-[11px] text-slate-500">Ready</span>}
+                  <td className={cx(TD, 'whitespace-nowrap text-slate-600')}>
+                    {r.next_due ? fmtDate(r.next_due) : <span className={EMPTY}>&mdash;</span>}
+                  </td>
+                  <td className={cx(TD, 'w-32')}>
+                    <div className="flex items-center gap-2">
+                      <ProgressBar percent={r.total ? Math.round((r.sent / r.total) * 100) : 0}
+                        tone={r.sent === r.total ? 'bg-emerald-500' : 'bg-brand-600'} />
+                      <span className="shrink-0 text-[11px] tabular-nums text-slate-600">{r.sent}/{r.total}</span>
+                    </div>
+                    {!!r.needs.length && (
+                      <span className="mt-0.5 block truncate text-[11px] text-amber-700" title={r.needs.join(', ')}>
+                        needs {r.needs[0]}{r.needs.length > 1 ? ` +${r.needs.length - 1}` : ''}
+                      </span>
+                    )}
+                  </td>
+                  <td className={cx(TD, 'text-right')}>
+                    <ChevronRight className="ml-auto h-4 w-4 text-slate-400" aria-hidden />
                   </td>
                 </tr>
               ))}
@@ -1980,6 +2071,69 @@ function MailsView({ rows, onOpen }) {
         </div>
       </div>
     </div>
+  )
+}
+
+/** One letter, and who it is still owed to. */
+function MailPeopleModal({ row, onClose, onPick }) {
+  const pending = row.people.filter((p) => p.state !== 'Sent')
+  const done = row.people.filter((p) => p.state === 'Sent')
+  return (
+    <Modal open onClose={onClose} title={row.name}>
+      <div className="space-y-4">
+        <p className="text-xs text-slate-600">
+          {row.sending === 'Automatic' ? 'Drafts itself from their details.' : 'Written by hand.'}
+          {' '}Goes to the {row.to}. {row.sent} of {row.total} sent.
+        </p>
+        {!!row.needs.length && (
+          <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>Still to supply: {row.needs.join(', ')}.</span>
+          </p>
+        )}
+
+        {!!pending.length && (
+          <section>
+            <h3 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              Still to go
+            </h3>
+            <div className="space-y-1.5">
+              {pending.map((p) => (
+                <button key={`${p.plan_id || p.occurrence_id}`} type="button" onClick={() => onPick(p)}
+                  className={cx('flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5 text-left',
+                    'transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-50/50', focusRing)}>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-slate-800">{p.who}</span>
+                    <span className="block truncate text-[11px] text-slate-500">
+                      {p.entity}{p.due_on ? ` · due ${fmtDate(p.due_on)}` : ''}
+                    </span>
+                  </span>
+                  <span className={cx('shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                    STATE_TONE[p.state] || STATE_TONE.Waiting)}>{p.state}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!!done.length && (
+          <section>
+            <h3 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              Already sent
+            </h3>
+            <ul className="space-y-1 text-xs text-slate-600">
+              {done.map((p) => (
+                <li key={`${p.plan_id || p.occurrence_id}`} className="flex items-center justify-between gap-3">
+                  <span className="truncate">{p.who}</span>
+                  <span className="shrink-0 text-[11px] text-slate-400">{fmtDate(p.sent_at)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+    </Modal>
   )
 }
 
@@ -2006,10 +2160,11 @@ export default function Onboarding() {
   const [sessionMails, setSessionMails] = useState(null)   // an occurrence
   const [sessionMail, setSessionMail] = useState(null)     // { sessionKey, templateKey, occurrenceId? }
   const [composing, setComposing] = useState(null)         // a row from the mails table
+  const [mailPeople, setMailPeople] = useState(null)       // one letter, and who it is owed to
 
   const loadBoard = () => api.onboardingBoard().then(setBoard).catch(() => setBoard([]))
   const loadOccurrences = () => api.onboardingOccurrences().then(setOccurrences).catch(() => setOccurrences([]))
-  const loadMails = () => api.onboardingAllMails().then(setMails).catch(() => setMails([]))
+  const loadMails = () => api.onboardingMailsByTemplate().then(setMails).catch(() => setMails([]))
   // How many phrases in the letters still have no address behind them. Worth a number in the
   // header: every one of them is a dead link in a mail somebody is about to send.
   const loadLinks = () => api.onboardingLinks().then((r) => setLinksMissing(r.missing)).catch(() => {})
@@ -2028,7 +2183,7 @@ export default function Onboarding() {
       people: rows.length,
       overdue: rows.filter((r) => r.overdue).length,
       sittings: occurrences.filter((o) => new Date(o.starts_at) >= new Date()).length,
-      mails: (mails || []).filter((m) => m.state === 'Due today' || m.state === 'Overdue').length,
+      mails: (mails || []).reduce((n, m) => n + (m.outstanding || 0), 0),
     }
   }, [board, occurrences, mails])
 
@@ -2119,14 +2274,7 @@ export default function Onboarding() {
       {tab === 'mails' && (
         mails === null
           ? <div className="flex items-center gap-2 text-sm text-slate-500"><Spinner /> Loading…</div>
-          : <MailsView rows={mails} onOpen={(r) => {
-              if (r.occurrence_id) {
-                const occ = occurrences.find((o) => o.id === r.occurrence_id)
-                if (occ) setSessionMails(occ)
-              } else {
-                setComposing({ planId: r.plan_id, templateKey: r.template_key })
-              }
-            }} />
+          : <MailsView rows={mails} onOpen={(r) => setMailPeople(r)} />
       )}
 
       {openPlan && defs && (
@@ -2157,6 +2305,18 @@ export default function Onboarding() {
       {attendance && (
         <AttendanceModal occurrence={attendance} onClose={() => setAttendance(null)}
           onSaved={loadOccurrences} />
+      )}
+      {mailPeople && (
+        <MailPeopleModal row={mailPeople} onClose={() => setMailPeople(null)}
+          onPick={(p) => {
+            setMailPeople(null)
+            if (p.occurrence_id) {
+              const occ = occurrences.find((o) => o.id === p.occurrence_id)
+              if (occ) setSessionMails(occ)
+            } else {
+              setComposing({ planId: p.plan_id, templateKey: p.template_key })
+            }
+          }} />
       )}
       {linksOpen && <LinksModal onClose={() => setLinksOpen(false)} onChanged={loadLinks} />}
       <OnboardingFormsModal key={formsOpen ? 'o' : 'c'} open={formsOpen} onClose={() => setFormsOpen(false)} />

@@ -107,6 +107,7 @@ def _ensure_sqlite_columns() -> None:
         ],
         "onboarding_step_states": [
             ("sent_mails", "TEXT DEFAULT '{}'"),
+            ("due_override", "DATE"),
         ],
         "session_occurrences": [
             ("audience", "TEXT DEFAULT '{}'"),
@@ -166,6 +167,7 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP",
             "ALTER TABLE onboarding_step_states ADD COLUMN IF NOT EXISTS sent_mails JSONB DEFAULT '{}'::jsonb",
             "ALTER TABLE session_occurrences ADD COLUMN IF NOT EXISTS audience JSONB DEFAULT '{}'::jsonb",
+            "ALTER TABLE onboarding_step_states ADD COLUMN IF NOT EXISTS due_override DATE",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS transcript TEXT DEFAULT ''",
             "ALTER TABLE video_interviews ADD COLUMN IF NOT EXISTS timeline JSONB DEFAULT '[]'::jsonb",

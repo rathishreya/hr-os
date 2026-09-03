@@ -6,9 +6,9 @@ a sprawl of side tables — easy to evolve, and Postgres JSONB upgrades cleanly 
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy import Date, JSON, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -553,6 +553,9 @@ class OnboardingStepState(Base):
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     #: When the automated mail actually went out, so nothing is sent twice.
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: A due date somebody set by hand, overriding the working-day arithmetic. The calculated date
+    #: is the plan; this is what actually happened, and once it is set every view uses it.
+    due_override: Mapped[date | None] = mapped_column(Date, nullable=True)
     #: template key -> when it was sent. A step can carry more than one mail (the ISO course and
     #: its quiz; the training form and the manager's), and a single timestamp cannot say which of
     #: them has gone, which is how somebody gets the same mail twice.

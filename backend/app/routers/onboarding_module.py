@@ -54,8 +54,19 @@ def _plan_entity(db: Session, plan: models.OnboardingPlan) -> str:
 
 
 def _joining_of(db: Session, plan: models.OnboardingPlan) -> str:
-    """The joining date, from their paperwork. Free text in this system, which is why every date
-    helper here parses rather than assumes."""
+    """The joining date, from their paperwork, unless somebody has corrected it on the checklist.
+
+    Free text in this system, which is why every date helper here parses rather than assumes. The
+    correction comes first on purpose: every working-day due date counts from this one value, so a
+    joining date that moved has to move all of them with it.
+    """
+    typed = db.scalar(
+        select(models.OnboardingStepState.value)
+        .where(models.OnboardingStepState.plan_id == plan.id,
+               models.OnboardingStepState.step_key == "joining_date")
+    )
+    if typed:
+        return str(typed)
     d = db.scalars(
         select(models.Document)
         .where(models.Document.candidate_id == plan.candidate_id)
@@ -143,6 +154,41 @@ def _sittings_for(db: Session, candidate_id: int) -> dict[str, dict]:
     return out
 
 
+def _sourced_values(db: Session, plan: models.OnboardingPlan) -> dict[str, str]:
+    """The values the checklist's read-only rows are supposed to be showing.
+
+    They were rendering the WORD "from their paperwork" and then an empty cell, which tells a
+    reader where to go and looking rather than telling them the answer. The answer is on the offer
+    letter and in the application; this reads it out.
+    """
+    doc = ctxs._first_document(db, plan.candidate_id)
+    terms = (doc.terms if doc else {}) or {}
+    cand = db.get(models.Candidate, plan.candidate_id)
+    parsed = (getattr(cand, "parsed", None) or {})
+    app = db.get(models.Application, plan.application_id) if plan.application_id else None
+    hr = app.hiring_request if app else None
+    details = plan.details or {}
+    return {
+        "candidate_name": str(terms.get("name") or getattr(cand, "name", "") or ""),
+        "joining_date": str(terms.get("start_date") or details.get("joining_date") or ""),
+        "role": str(terms.get("designation") or getattr(hr, "position", "") or plan.role_position or ""),
+        "linkedin_update": str(parsed.get("linkedin") or ""),
+    }
+
+
+def _due_with_overrides(due: dict, states: dict) -> dict:
+    """The calculated dates, with any a person set by hand put back on top.
+
+    Kept in one helper because three views ask the same question, and a board that says a step is
+    overdue while the checklist says it was moved is worse than either answer on its own.
+    """
+    out = dict(due)
+    for key, row in (states or {}).items():
+        if getattr(row, "due_override", None):
+            out[key] = row.due_override
+    return out
+
+
 def _progress(entity: str, states: dict) -> dict:
     """Done over everything that still counts. NA is excluded from the denominator, because a step
     marked not-applicable is not work anybody is going to do."""
@@ -174,8 +220,8 @@ def board(db: Session = Depends(get_db), _user: models.User = Depends(current_us
         cand = pre.get("candidate")
         entity = pre.get("entity") or "EZ"
         states = all_states.get(plan.id, {})
-        joining = pre.get("joining") or ""
-        due = schedule.due_dates(joining, st.steps_for(entity))
+        joining = (states.get("joining_date").value if states.get("joining_date") else "")             or pre.get("joining") or ""
+        due = _due_with_overrides(schedule.due_dates(joining, st.steps_for(entity)), states)
         overdue = [
             k for k, d in due.items()
             if d < today and (states.get(k).status if states.get(k) else "Pending") != "Done"
@@ -211,17 +257,24 @@ def plan_detail(plan_id: int, db: Session = Depends(get_db), _user: models.User 
     joining = _joining_of(db, plan)
     due = schedule.due_dates(joining, st.steps_for(entity))
     sittings = _sittings_for(db, plan.candidate_id)
+    sourced = _sourced_values(db, plan)
     today = date.today()
 
     rows = []
     for s in st.steps_for(entity):
         state = states.get(s.key)
-        d = due.get(s.key)
+        # A date somebody set by hand wins over the working-day arithmetic.
+        d = (state.due_override if state and state.due_override else None) or due.get(s.key)
         status = state.status if state else "Pending"
+        typed = state.value if state else ""
         rows.append({
             **st.as_dict(s),
             "status": status,
-            "value": state.value if state else "",
+            "value": typed,
+            # For a read-only row: what the paperwork says, or what somebody corrected it to.
+            "resolved": typed or sourced.get(s.key, ""),
+            "sourced": sourced.get(s.key, ""),
+            "due_is_set_by_hand": bool(state and state.due_override),
             "comments": (state.comments if state else {}) or {},
             "attended": state.attended if state else None,
             "scheduled_at": state.scheduled_at if state else None,
@@ -251,6 +304,8 @@ class StepPatch(BaseModel):
     attended: bool | None = None
     scheduled_at: datetime | None = None
     mark_sent: bool | None = None
+    #: A due date set by hand. Sending "" clears it and the calculated one comes back.
+    due_override: date | str | None = None
 
 
 @router.patch("/plan/{plan_id}/step/{step_key}")
@@ -295,6 +350,9 @@ def update_step(plan_id: int, step_key: str, body: StepPatch, db: Session = Depe
                 attendee.attended = body.attended
     if body.scheduled_at is not None:
         row.scheduled_at = body.scheduled_at
+    if body.due_override is not None:
+        # "" means "stop overriding", not "due on the epoch".
+        row.due_override = schedule._as_date(body.due_override) if body.due_override else None
     if body.mark_sent:
         row.sent_at = datetime.now(timezone.utc)
 
@@ -680,6 +738,54 @@ def send_session_mail(occ_id: int, template_key: str, payload: MailSend,
     return {"ok": True, "sent": sent}
 
 
+@router.get("/mails/by-template")
+def mails_by_template(db: Session = Depends(get_db), _user: models.User = Depends(current_user)):
+    """The letters themselves, one row each, with how they stand across everybody.
+
+    The per-person list is the same information typed out ninety times, with the same name running
+    down the first column. What somebody actually wants from this screen is "which letters still
+    have to go", and that is a question about the letter, not about a person. Opening one shows
+    who it is still owed to.
+    """
+    rows = all_mails(db=db, _user=_user)
+    grouped: dict[str, dict] = {}
+    for r in rows:
+        g = grouped.setdefault(r["template_key"], {
+            "template_key": r["template_key"], "name": r["name"], "kind": r["kind"],
+            "sending": r["sending"], "to": r["to"], "step_label": r["step_label"],
+            "people": [], "sent": 0, "overdue": 0, "due_today": 0, "waiting": 0,
+            "next_due": None, "needs": [],
+        })
+        g["people"].append(r)
+        if r["state"] == "Sent":
+            g["sent"] += 1
+        elif r["state"] == "Overdue":
+            g["overdue"] += 1
+        elif r["state"] == "Due today":
+            g["due_today"] += 1
+        else:
+            g["waiting"] += 1
+        if r["due_on"] and r["state"] != "Sent":
+            g["next_due"] = min(g["next_due"], r["due_on"]) if g["next_due"] else r["due_on"]
+        for miss in r.get("missing") or []:
+            if miss not in g["needs"]:
+                g["needs"].append(miss)
+
+    out = []
+    for g in grouped.values():
+        total = len(g["people"])
+        g["total"] = total
+        g["outstanding"] = total - g["sent"]
+        g["state"] = ("Sent" if g["sent"] == total else
+                      "Overdue" if g["overdue"] else
+                      "Due today" if g["due_today"] else "Waiting")
+        out.append(g)
+    # What is late first, then what is due, then everything still ahead.
+    order = {"Overdue": 0, "Due today": 1, "Waiting": 2, "Sent": 3}
+    out.sort(key=lambda g: (order[g["state"]], g["next_due"] or "9999", g["name"]))
+    return out
+
+
 @router.get("/mails")
 def all_mails(db: Session = Depends(get_db), _user: models.User = Depends(current_user)):
     """Every onboarding mail in the system in one place: the ones that draft themselves, the ones
@@ -703,7 +809,8 @@ def all_mails(db: Session = Depends(get_db), _user: models.User = Depends(curren
         entity = pre.get("entity") or "EZ"
         states = all_states.get(plan.id, {})
         ctx, mode = pre.get("ctx") or {}, pre.get("mode") or ml.CAMPUS
-        due = schedule.due_dates(pre.get("joining") or "", st.steps_for(entity))
+        joining = (states.get("joining_date").value if states.get("joining_date") else "")             or pre.get("joining") or ""
+        due = _due_with_overrides(schedule.due_dates(joining, st.steps_for(entity)), states)
         for s in st.steps_for(entity):
             for t in ml.for_step(s.key, mode):
                 sent = _sent_map(states.get(s.key)).get(t.key)

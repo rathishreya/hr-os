@@ -250,6 +250,8 @@ export const api = {
 
   // Onboarding mails. Nothing sends itself: a draft is fetched, read, and sent by a person.
   onboardingAllMails: () => req('/onboarding-module/mails'),
+  // The same letters grouped by template: one row per letter rather than one per person.
+  onboardingMailsByTemplate: () => req('/onboarding-module/mails/by-template'),
   onboardingPlanMails: (planId) => req(`/onboarding-module/plan/${planId}/mails`),
   onboardingMailDraft: (planId, key) => req(`/onboarding-module/plan/${planId}/mails/${key}`),
   onboardingSendMail: (planId, key, body) =>
