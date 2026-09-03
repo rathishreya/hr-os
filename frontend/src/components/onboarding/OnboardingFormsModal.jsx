@@ -8,7 +8,7 @@ import {
   AlertTriangle, ArrowLeft, Check, Copy, Inbox, Link as LinkIcon, Paperclip, PencilLine, Search, X,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Modal, Spinner, cx, inputClass } from '../../ui'
+import { Badge, Button, Modal, Spinner, cx, focusRing, inputClass } from '../../ui'
 import { EMPTY, ROW_HOVER, TD, TH, THEAD, THEAD_ROW } from '../tableStyles'
 import { ColumnFilter, distinctValues, useColumnFilters } from '../tableFilters'
 import { useToast } from '../Toast'
@@ -107,60 +107,65 @@ function Detail({ submission: s, onBack, onSaved }) {
         </p>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* items-start so a three-row section does not stretch to match a ten-row one, and the
+          title lives inside each card so scrolling can never separate it from its own rows. */}
+      <div className="grid items-start gap-4 lg:grid-cols-2">
         {sections.map((sec) => (
-          <section key={sec.id}>
-            <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-brand-800">{sec.title}</h3>
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <table className="w-full border-collapse text-left text-sm">
-                <thead className={THEAD}>
-                  <tr className={THEAD_ROW}>
-                    <th scope="col" className={cx(TH, 'w-[44%]')}>Field</th>
-                    <th scope="col" className={TH}>Answer</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sec.fields.map((f) => {
-                    const file = filesByKey[f.key]
-                    const value = answers[f.key]
-                    return (
-                      <tr key={f.key} className="border-b border-slate-100 last:border-0">
-                        <td className={cx(TD, 'align-top text-slate-600')}>
-                          {labelFor(f, variant)}
-                          {isRequired(f, answers) && <span className="ml-1 text-rose-500" aria-hidden>*</span>}
-                        </td>
-                        <td className={TD}>
-                          {isFile(f) ? (
-                            file ? (
-                              <button type="button" onClick={() => openUpload(file.id, toast)}
-                                className="inline-flex max-w-full items-center gap-1.5 text-brand-700 hover:underline">
-                                <Paperclip className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                <span className="min-w-0 truncate">{file.filename}</span>
-                                <span className="shrink-0 text-xs tabular-nums text-slate-500">{fmtSize(file.size)}</span>
-                              </button>
-                            ) : <span className={EMPTY}>Not sent</span>
-                          ) : editing ? (
-                            f.type === 'select' || f.type === 'radio' ? (
-                              <select className={cx(inputClass, 'h-8 py-0 text-sm')} value={value || ''}
-                                onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}>
-                                <option value="">—</option>
-                                {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
-                              </select>
-                            ) : (
-                              <input className={cx(inputClass, 'h-8 py-0 text-sm')} value={value || ''}
-                                onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} />
-                            )
-                          ) : (
-                            value ? <span className="whitespace-pre-wrap break-words text-slate-800">{value}</span>
-                              : <span className={EMPTY}>—</span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+          <section key={sec.id} className="overflow-hidden rounded-xl border border-slate-200">
+            <h3 className={cx('border-b border-brand-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-brand-800', THEAD)}>
+              {sec.title}
+            </h3>
+            <dl className="divide-y divide-slate-100">
+              {sec.fields.map((f) => {
+                const file = filesByKey[f.key]
+                const value = answers[f.key]
+                const blank = isFile(f) ? !file : !value
+                return (
+                  <div key={f.key} className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-3 px-3 py-2">
+                    <dt className="min-w-0 text-xs leading-relaxed text-slate-600">
+                      {labelFor(f, variant)}
+                      {/* The marker earns its place only when the answer is actually absent.
+                          Marking a question required next to the answer somebody already gave
+                          tells the reader nothing. */}
+                      {blank && isRequired(f, answers) && (
+                        <span className="ml-1 whitespace-nowrap text-[11px] font-medium text-amber-700">
+                          required
+                        </span>
+                      )}
+                    </dt>
+                    <dd className="min-w-0 text-sm">
+                      {isFile(f) ? (
+                        file ? (
+                          <button type="button" onClick={() => openUpload(file.id, toast)}
+                            className={cx('inline-flex max-w-full items-center gap-1.5 text-brand-700 hover:underline', focusRing)}>
+                            <Paperclip className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                            <span className="min-w-0 truncate">{file.filename}</span>
+                            <span className="shrink-0 text-xs tabular-nums text-slate-500">{fmtSize(file.size)}</span>
+                          </button>
+                        ) : <span className={EMPTY}>Not sent</span>
+                      ) : editing ? (
+                        f.type === 'select' || f.type === 'radio' ? (
+                          <select className={cx(inputClass, 'h-8 py-0 text-sm')} value={value || ''}
+                            onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}>
+                            <option value="">&mdash;</option>
+                            {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        ) : (
+                          <input className={cx(inputClass, 'h-8 py-0 text-sm')} value={value || ''}
+                            onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} />
+                        )
+                      ) : (
+                        value ? <span className="whitespace-pre-wrap break-words text-slate-800">{value}</span>
+                          : <span className={EMPTY}>&mdash;</span>
+                      )}
+                    </dd>
+                  </div>
+                )
+              })}
+              {!sec.fields.length && (
+                <p className="px-3 py-2 text-xs text-slate-400">Nothing in this section for them.</p>
+              )}
+            </dl>
           </section>
         ))}
       </div>

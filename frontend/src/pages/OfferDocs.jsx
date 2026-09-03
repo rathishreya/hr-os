@@ -937,8 +937,9 @@ export default function OfferDocs() {
   const [sortKey, setSortKey] = useState('recent')
   const [page, setPage] = useState(0)
   const [formsOpen, setFormsOpen] = useState(false)
-  // Candidates open by default — everything is visible on arrival; clicking a name folds it away.
-  const [collapsed, setCollapsed] = useState(() => new Set())
+  // Folded by default. A page that opens with every candidate's paperwork already unrolled is a
+  // page you have to scroll past to find anybody; clicking a name opens theirs.
+  const [expanded, setExpanded] = useState(() => new Set())
   const [confirm, setConfirm] = useState(null)      // { p, body } — sending someone to onboarding
   const [barBusy, setBarBusy] = useState(false)
   const colFilters = useColumnFilters()
@@ -1175,7 +1176,7 @@ export default function OfferDocs() {
     load()
   }
 
-  const toggleGroup = (key) => setCollapsed((c) => {
+  const toggleGroup = (key) => setExpanded((c) => {
     const n = new Set(c)
     if (n.has(key)) n.delete(key); else n.add(key)
     return n
@@ -1325,14 +1326,14 @@ export default function OfferDocs() {
                         <CandidateRow
                           person={g.p}
                           shown={g.rows}
-                          open={!collapsed.has(g.p.key)}
+                          open={expanded.has(g.p.key)}
                           onToggle={() => toggleGroup(g.p.key)}
                           onMerge={mergeDoc}
                           onAskOnboard={askOnboard}
                           onAddDoc={(person) => setForm({ doc: person.appDoc, mode: 'new' })}
                           onOpenOnboarding={() => navigate('/onboarding')}
                         />
-                        {!collapsed.has(g.p.key) && g.rows.map((doc) => (
+                        {expanded.has(g.p.key) && g.rows.map((doc) => (
                           <DocRow
                             key={doc.id}
                             doc={doc}
