@@ -282,6 +282,10 @@ export const api = {
     req(`/onboarding-module/groups/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   onboardingDeleteGroup: (id) => req(`/onboarding-module/groups/${id}`, { method: 'DELETE' }),
 
+  onboardingLinks: () => req('/onboarding-module/links'),
+  onboardingSetLink: (key, url) =>
+    req(`/onboarding-module/links/${key}`, { method: 'PATCH', body: JSON.stringify({ url }) }),
+
   onboardingSessionCatalogueMail: (sessionKey, role, occId, on, at) => {
     const q = new URLSearchParams()
     if (occId) q.set('occurrence_id', occId)

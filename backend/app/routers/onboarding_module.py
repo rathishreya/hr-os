@@ -24,7 +24,8 @@ from ..deps import current_user
 from ..services import mailer
 from ..services.documents import settled_entity
 from ..services.onboarding import (
-    audience as aud, context as ctxs, mails as ml, schedule, sessions as sess, steps as st,
+    audience as aud, context as ctxs, links as lk, mails as ml, richtext as rt, schedule,
+    sessions as sess, steps as st,
 )
 from ..services.recruitment import log
 
@@ -449,6 +450,29 @@ def _plan_mail_context(db: Session, plan: models.OnboardingPlan) -> tuple[dict, 
 PER_RECIPIENT = {"Name"}
 
 
+def _link_overrides(db: Session) -> dict[str, str]:
+    """Addresses somebody has typed in for links the People team's document never showed."""
+    return {r.key: r.url for r in db.scalars(select(models.MailLink)) if r.url}
+
+
+def _mail_parts(body: str, overrides: dict) -> dict:
+    """One body, both ways out: plain for anything that cannot show formatting, HTML for the rest.
+
+    Sent together as alternatives rather than one or the other, because the letters carry links the
+    reader is meant to click and a plain-text client still needs the address spelled out.
+    """
+    return {"body": rt.to_text(body, overrides), "html_body": rt.to_html(body, overrides)}
+
+
+def _still_missing(subject: str, body: str, ctx: dict, overrides: dict) -> list[str]:
+    """Everything still standing between this draft and a letter worth sending: merge fields with
+    nothing behind them, and link words with no address."""
+    text = subject + "\n" + body
+    out = ml.unfilled(text, ctx)
+    out += [f"a link for {lk.label_for(k)}" for k in rt.unresolved(text, overrides)]
+    return out
+
+
 def _sent_map(state) -> dict:
     return (state.sent_mails if state else {}) or {}
 
@@ -508,7 +532,8 @@ def mail_draft(plan_id: int, template_key: str, db: Session = Depends(get_db),
         "cc": ctxs.cc_list(ctx, t.cc),
         "subject": ml.render(t.subject, ctx),
         "body": ml.render(t.body, ctx),
-        "missing": ml.unfilled(t.subject + "\n" + t.body, ctx),
+        "missing": _still_missing(t.subject, t.body, ctx, _link_overrides(db)),
+        "html": rt.to_html(ml.render(t.body, ctx), _link_overrides(db)),
         "sent_at": _sent_map(state).get(t.key),
         "note": t.note,
     }
@@ -565,7 +590,8 @@ def send_mail(plan_id: int, template_key: str, payload: MailSend, db: Session = 
     msg = mailer.compose(
         db, to_email=to_email, to_name=to_name,
         template=f"onboarding:{t.key}",
-        subject=payload.subject, body=payload.body,
+        subject=rt.strip(payload.subject),
+        **_mail_parts(payload.body, _link_overrides(db)),
         cc=payload.cc if payload.cc is not None else ctxs.cc_list(ctx, t.cc),
         candidate_id=plan.candidate_id, application_id=plan.application_id,
         sender_user=user,
@@ -630,6 +656,7 @@ def send_session_mail(occ_id: int, template_key: str, payload: MailSend,
         raise HTTPException(422, "Nobody on this sitting has an address to send to.")
 
     stamp = datetime.now(timezone.utc)
+    overrides = _link_overrides(db)
     sent = 0
     for p in wanted:
         # One draft, many people: the greeting is filled in for each of them rather than going out
@@ -638,8 +665,8 @@ def send_session_mail(occ_id: int, template_key: str, payload: MailSend,
         mailer.compose(
             db, to_email=p.email, to_name=p.name or "",
             template=f"onboarding:{t.key}",
-            subject=ml.render(payload.subject, person),
-            body=ml.render(payload.body, person),
+            subject=rt.strip(ml.render(payload.subject, person)),
+            **_mail_parts(ml.render(payload.body, person), overrides),
             candidate_id=p.candidate_id, sender_user=user,
         )
         sent += 1
@@ -796,6 +823,7 @@ def bulk_mail_send(payload: BulkMail, db: Session = Depends(get_db),
     """Send one template to several joiners, each rendered from their own details."""
     preview = bulk_mail_preview(payload, db=db, _user=user)
     t = ml.BY_KEY[payload.template_key]
+    overrides = _link_overrides(db)
     sent, failed = [], []
 
     for r in preview["recipients"]:
@@ -807,7 +835,8 @@ def bulk_mail_send(payload: BulkMail, db: Session = Depends(get_db),
             mailer.compose(
                 db, to_email=r["to"], to_name=r["to_name"],
                 template=f"onboarding:{t.key}",
-                subject=ml.render(t.subject, ctx), body=ml.render(t.body, ctx),
+                subject=rt.strip(ml.render(t.subject, ctx)),
+                **_mail_parts(ml.render(t.body, ctx), overrides),
                 cc=ctxs.cc_list(ctx, t.cc),
                 candidate_id=plan.candidate_id, application_id=plan.application_id,
                 sender_user=user,
@@ -837,6 +866,7 @@ def bulk_session_mail(payload: BulkOccurrenceMail, db: Session = Depends(get_db)
     occs = list(db.scalars(select(models.SessionOccurrence)
                            .where(models.SessionOccurrence.id.in_(payload.occurrence_ids or []))))
     done, skipped = [], []
+    overrides = _link_overrides(db)
     stamp = datetime.now(timezone.utc)
 
     for occ in occs:
@@ -864,7 +894,8 @@ def bulk_session_mail(payload: BulkOccurrenceMail, db: Session = Depends(get_db)
             person = {"Name": p.name or ""}
             mailer.compose(db, to_email=p.email, to_name=p.name or "",
                            template=f"onboarding:{t.key}",
-                           subject=ml.render(subject, person), body=ml.render(body, person),
+                           subject=rt.strip(ml.render(subject, person)),
+                           **_mail_parts(ml.render(body, person), overrides),
                            candidate_id=p.candidate_id, sender_user=user)
             if t.session_role != "invite":
                 p.feedback_sent_at = stamp
@@ -1029,6 +1060,49 @@ def _clean_members(rows: list[dict]) -> list[dict]:
     return out
 
 
+@router.get("/links")
+def list_links(db: Session = Depends(get_db), _user: models.User = Depends(current_user)):
+    """Every phrase in these letters that carries a link, and where it points.
+
+    The ones with no address are not a bug: the People team's document hyperlinked the words but
+    never showed the target, so nobody here can know it. They are listed so somebody can supply
+    each one once instead of pasting it into every letter that mentions it.
+    """
+    overrides = _link_overrides(db)
+    rows = []
+    for link in lk.LINKS:
+        url = overrides.get(link.key) or link.url
+        rows.append({
+            "key": link.key, "label": link.label, "url": url, "note": link.note,
+            "from_document": bool(link.url),
+            "needs_a_url": not url,
+        })
+    return {"links": rows, "missing": len([r for r in rows if r["needs_a_url"]])}
+
+
+class LinkIn(BaseModel):
+    url: str
+
+
+@router.patch("/links/{key}")
+def set_link(key: str, body: LinkIn, db: Session = Depends(get_db),
+             user: models.User = Depends(current_user)):
+    if key not in lk.BY_KEY:
+        raise HTTPException(404, "No such link")
+    url = (body.url or "").strip()
+    if url and not url.startswith(("http://", "https://", "mailto:")):
+        raise HTTPException(422, "A link needs to start with https://")
+    row = db.scalar(select(models.MailLink).where(models.MailLink.key == key))
+    if not row:
+        row = models.MailLink(key=key)
+        db.add(row)
+    row.url = url
+    row.updated_by = getattr(user, "email", "")
+    log(db, "onboarding.link_set", "mail_link", 0, {"key": key, "by": getattr(user, "email", "")})
+    db.commit()
+    return {"key": key, "label": lk.label_for(key), "url": url}
+
+
 # ── sending a session's mail, with or without a sitting ─────────────────────────────────────
 
 def _template_for_role(session_key: str, role: str, occ) -> "ml.MailTemplate":
@@ -1088,7 +1162,9 @@ def session_catalogue_mail(session_key: str, role: str, occurrence_id: int | Non
         "session_role": t.session_role, "role": role, "mode": t.mode,
         "subject": ml.render(t.subject, ctx),
         "body": ml.render(t.body, ctx),
-        "missing": [f for f in ml.unfilled(t.subject + "\n" + t.body, ctx) if f not in PER_RECIPIENT],
+        "missing": [f for f in _still_missing(t.subject, t.body, ctx, _link_overrides(db))
+                    if f not in PER_RECIPIENT],
+        "html": rt.to_html(ml.render(t.body, ctx), _link_overrides(db)),
         "per_recipient": sorted(PER_RECIPIENT),
         "sittings": sittings,
         "occurrence_id": occ.id if occ else None,
@@ -1136,6 +1212,7 @@ def send_session_catalogue_mail(session_key: str, role: str, payload: SessionMai
         raise HTTPException(422, "That audience reaches nobody. Pick a group or type an address.")
 
     stamp = datetime.now(timezone.utc)
+    overrides = _link_overrides(db)
     sent = 0
     for p in people:
         # One draft, many readers: the greeting is filled per person rather than going out as a
@@ -1143,8 +1220,8 @@ def send_session_catalogue_mail(session_key: str, role: str, payload: SessionMai
         person = {"Name": p.get("name") or ""}
         mailer.compose(db, to_email=p["email"], to_name=p.get("name") or "",
                        template=f"onboarding:{t.key}",
-                       subject=ml.render(payload.subject, person),
-                       body=ml.render(payload.body, person),
+                       subject=rt.strip(ml.render(payload.subject, person)),
+                       **_mail_parts(ml.render(payload.body, person), overrides),
                        candidate_id=p.get("candidate_id"), sender_user=user)
         sent += 1
 

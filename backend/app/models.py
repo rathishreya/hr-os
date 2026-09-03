@@ -627,3 +627,21 @@ class RecipientGroup(Base):
     created_by: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=True)
+
+
+class MailLink(Base):
+    """The address behind a phrase in the onboarding letters.
+
+    services/onboarding/links.py names every link the People team's document carries and holds the
+    addresses that document actually showed. The rest were hyperlinks whose target was never
+    visible, so they have to be typed in once. This is where that answer lives, keyed by the same
+    key, and it also lets an address change without a deploy when a form moves.
+    """
+
+    __tablename__ = "mail_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(60), unique=True)
+    url: Mapped[str] = mapped_column(String(600), default="")
+    updated_by: Mapped[str] = mapped_column(String(200), default="")
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=True)

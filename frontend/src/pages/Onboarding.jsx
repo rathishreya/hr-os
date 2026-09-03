@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle, CalendarDays, Check, ChevronLeft, ChevronRight, ClipboardList, Clock, Filter,
-  Inbox, Mail, MapPin, PencilLine, Plus, Search, Send, Users, Video,
+  Inbox, Link2 as LinkIcon, Mail, MapPin, PencilLine, Plus, Search, Send, Users, Video,
 } from 'lucide-react'
 import { api } from '../api'
 import { Badge, Button, Card, EmptyState, IconButton, Modal, PageHeader, Spinner, cx, focusRing, inputClass } from '../ui'
@@ -371,6 +371,119 @@ function BulkMailModal({ planIds, templates, onClose, onSent }) {
   )
 }
 
+/** The link register: every phrase in these letters that carries a link, and where it points.
+ *
+ * The People team's document hyperlinked words like "Take the Test" without ever showing the
+ * address, so those cannot be transcribed. They are listed here, once, rather than left as dead
+ * words in every letter that mentions them. Filling one in fixes it everywhere. */
+function LinksModal({ onClose, onChanged }) {
+  const { toast } = useToast()
+  const [rows, setRows] = useState(null)
+  const [saving, setSaving] = useState('')
+
+  useEffect(() => {
+    api.onboardingLinks().then((r) => setRows(r.links)).catch(() => setRows([]))
+  }, [])
+
+  async function save(key, url) {
+    setSaving(key)
+    try {
+      await api.onboardingSetLink(key, url)
+      setRows((prev) => prev.map((r) => (r.key === key ? { ...r, url, needs_a_url: !url } : r)))
+      onChanged?.()
+    } catch (e) { toast(e.message, 'error') } finally { setSaving('') }
+  }
+
+  const needed = (rows || []).filter((r) => r.needs_a_url)
+  const known = (rows || []).filter((r) => !r.needs_a_url)
+
+  return (
+    <Modal open onClose={onClose} size="wide" title="Links in the letters">
+      {!rows ? (
+        <div className="flex items-center gap-2 py-10 text-sm text-slate-500"><Spinner className="h-4 w-4" /> Loading…</div>
+      ) : (
+        <div className="space-y-5">
+          <p className="text-xs leading-relaxed text-slate-600">
+            These are the words in the onboarding letters that carry a link. The addresses below
+            came from the People team&rsquo;s own document. The ones without an address were
+            hyperlinks whose target the document never showed, so they have to be typed in once
+            here rather than pasted into every letter that mentions them.
+          </p>
+
+          {!!needed.length && (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold text-amber-900">
+                {needed.length} still need an address
+              </h3>
+              <div className="space-y-2">
+                {needed.map((r) => (
+                  <LinkRow key={r.key} row={r} saving={saving === r.key} onSave={save} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-slate-800">
+              {known.length} already point somewhere
+            </h3>
+            <div className="space-y-2">
+              {known.map((r) => (
+                <LinkRow key={r.key} row={r} saving={saving === r.key} onSave={save} />
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+/** The letter as it will land, rather than the markup it is written in.
+ *
+ * The bodies carry *bold*, /italic/ and [words](#link) so they can be edited in a plain textarea.
+ * Nobody should have to read that and imagine the result, so this shows the rendered version
+ * beside it. The HTML comes from the server, which is the same renderer that builds the mail. */
+function BodyPreview({ html }) {
+  if (!html) return null
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+        As the reader sees it
+      </p>
+      <div className="max-h-80 overflow-auto rounded-lg bg-white p-3 [&_a]:underline"
+        // The renderer escapes the letter before adding its own tags, so what lands here is the
+        // template's formatting and nothing the template did not put there.
+        dangerouslySetInnerHTML={{ __html: html }} />
+    </div>
+  )
+}
+
+function LinkRow({ row, saving, onSave }) {
+  const [url, setUrl] = useState(row.url || '')
+  const dirty = (url || '') !== (row.url || '')
+  return (
+    <div className={cx('flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2',
+      row.needs_a_url ? 'border-amber-200 bg-amber-50/50' : 'border-slate-200')}>
+      <div className="min-w-40 flex-1">
+        <p className="text-sm font-medium text-slate-800">{row.label}</p>
+        {row.note && <p className="text-[11px] text-slate-500">{row.note}</p>}
+      </div>
+      <input value={url} onChange={(e) => setUrl(e.target.value)}
+        placeholder="https://…"
+        aria-label={`Address for ${row.label}`}
+        className={cx(inputClass, 'h-8 min-w-64 flex-[2] py-0 text-xs')} />
+      <Button size="sm" variant={dirty ? 'primary' : 'ghost'} disabled={!dirty || saving}
+        onClick={() => onSave(row.key, url.trim())}>
+        {saving ? <Spinner className="h-3.5 w-3.5" /> : 'Save'}
+      </Button>
+      {row.from_document && !dirty && (
+        <span className="text-[11px] text-slate-400">from the document</span>
+      )}
+    </div>
+  )
+}
+
 // ── who a mail goes to ──────────────────────────────────────────────────────────────────────
 
 /** Pick the audience for a mail, and see the actual people before sending.
@@ -539,6 +652,7 @@ function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, o
   const [audience, setAudience] = useState({ groups: [], saved: [], emails: [] })
   const [on, setOn] = useState('')
   const [at, setAt] = useState('')
+  const [showPreview, setShowPreview] = useState(false)
   const [sending, setSending] = useState(false)
 
   // Reading the draft is a fetch, and the fetch is the only thing that sets this window up, so it
@@ -653,9 +767,16 @@ function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, o
             <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={16}
               className={cx(inputClass, 'resize-y font-sans text-sm leading-relaxed')} />
           </label>
-          <p className="text-[11px] text-slate-500">
-            Everyone gets this letter with their own name in the greeting.
-          </p>
+          {showPreview && <BodyPreview html={draft.html} />}
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setShowPreview((v) => !v)}
+              className={cx('rounded px-1 text-xs font-medium text-brand-700 hover:text-brand-900', focusRing)}>
+              {showPreview ? 'Hide the preview' : 'Preview it'}
+            </button>
+            <p className="text-[11px] text-slate-500">
+              Everyone gets this letter with their own name in the greeting.
+            </p>
+          </div>
 
           <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -681,6 +802,7 @@ function MailComposer({ planId, occurrenceId, templateKey, onClose, onSent }) {
   const [body, setBody] = useState('')
   const [to, setTo] = useState('')
   const [cc, setCc] = useState('')
+  const [showPreview, setShowPreview] = useState(false)
   const [sending, setSending] = useState(false)
 
   useEffect(() => {
@@ -782,6 +904,14 @@ function MailComposer({ planId, occurrenceId, templateKey, onClose, onSent }) {
             <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={18}
               className={cx(inputClass, 'resize-y font-sans text-sm leading-relaxed')} />
           </label>
+          {showPreview
+            ? <BodyPreview html={draft.html} />
+            : (
+              <button type="button" onClick={() => setShowPreview(true)}
+                className={cx('rounded px-1 text-xs font-medium text-brand-700 hover:text-brand-900', focusRing)}>
+                Preview it
+              </button>
+            )}
 
           <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -1870,6 +2000,8 @@ export default function Onboarding() {
   const [scheduling, setScheduling] = useState(null)   // { session } | { occurrence }
   const [attendance, setAttendance] = useState(null)
   const [formsOpen, setFormsOpen] = useState(false)
+  const [linksOpen, setLinksOpen] = useState(false)
+  const [linksMissing, setLinksMissing] = useState(0)
   const [mails, setMails] = useState(null)
   const [sessionMails, setSessionMails] = useState(null)   // an occurrence
   const [sessionMail, setSessionMail] = useState(null)     // { sessionKey, templateKey, occurrenceId? }
@@ -1878,12 +2010,16 @@ export default function Onboarding() {
   const loadBoard = () => api.onboardingBoard().then(setBoard).catch(() => setBoard([]))
   const loadOccurrences = () => api.onboardingOccurrences().then(setOccurrences).catch(() => setOccurrences([]))
   const loadMails = () => api.onboardingAllMails().then(setMails).catch(() => setMails([]))
+  // How many phrases in the letters still have no address behind them. Worth a number in the
+  // header: every one of them is a dead link in a mail somebody is about to send.
+  const loadLinks = () => api.onboardingLinks().then((r) => setLinksMissing(r.missing)).catch(() => {})
 
   useEffect(() => {
     api.onboardingDefinitions().then(setDefs).catch(() => setDefs({ steps: [], sessions: [], phases: [] }))
     loadBoard()
     loadOccurrences()
     loadMails()
+    loadLinks()
   }, [])
 
   const totals = useMemo(() => {
@@ -1902,9 +2038,19 @@ export default function Onboarding() {
         title="Onboarding"
         subtitle="Every new joiner's first hundred days, the sessions EZ runs, and what is happening when."
         action={
-          <Button variant="ghost" onClick={() => setFormsOpen(true)}>
-            <ClipboardList className="h-3.5 w-3.5" /> Onboarding form
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" onClick={() => setLinksOpen(true)}>
+              <LinkIcon className="h-3.5 w-3.5" /> Links
+              {linksMissing > 0 && (
+                <span className="ml-0.5 rounded-full bg-amber-100 px-1.5 text-[11px] font-semibold text-amber-800">
+                  {linksMissing}
+                </span>
+              )}
+            </Button>
+            <Button variant="ghost" onClick={() => setFormsOpen(true)}>
+              <ClipboardList className="h-3.5 w-3.5" /> Onboarding form
+            </Button>
+          </div>
         }
       />
 
@@ -2012,6 +2158,7 @@ export default function Onboarding() {
         <AttendanceModal occurrence={attendance} onClose={() => setAttendance(null)}
           onSaved={loadOccurrences} />
       )}
+      {linksOpen && <LinksModal onClose={() => setLinksOpen(false)} onChanged={loadLinks} />}
       <OnboardingFormsModal key={formsOpen ? 'o' : 'c'} open={formsOpen} onClose={() => setFormsOpen(false)} />
     </div>
   )

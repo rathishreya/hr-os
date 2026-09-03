@@ -54,35 +54,35 @@ Congratulations and a warm welcome to Team EZ! We're thrilled to have you join u
 
 To help you get started smoothly, here are your Day 1 details
 
-- Reporting Time: 10:00 AM
-- Office Address: EZ Lab Pvt. Ltd., 5th Floor, Imperia Mindspace, Golf Course Ext Rd, behind Aipl Business Club, Sector 62, Gurugram, Haryana - 122098
-- Google Maps Link
-- Point of Contact:
+- *Reporting Time:* 10:00 AM
+- *Office Address:* EZ Lab Pvt. Ltd., 5th Floor, Imperia Mindspace, Golf Course Ext Rd, behind Aipl Business Club, Sector 62, Gurugram, Haryana - 122098
+- [Google Maps Link](#maps)
+- *Point of Contact:*
   Sweta: 7987380766
   Landline: 9311786723
-- Dress Code: Smart Business Casuals
-- On Arrival: Please check in at the reception with the Facilities Team.
+- *Dress Code:* Smart Business Casuals
+- *On Arrival:* Please check in at the reception with the Facilities Team.
 
-What your Day 1 will include:
+*What your Day 1 will include:*
 - Orientation
 - IT asset handover
 - Team introductions
 
 To support you during your initial weeks, {{Go to Person}} from the {{Team}} will be your go-to person. Feel free to reach out for any guidance or help settling in.
 
-Get to know you better:
+*Get to know you better:*
 We'd love to understand your work style and personality to support you better. Please complete the MBTI personality test and share your results using the links below:
-Take the Test
-Submit Your MBTI Results
+[Take the Test](#mbti_test)
+[Submit Your MBTI Results](#mbti_results)
 
-Your feedback matters:
+*Your feedback matters:*
 Lastly, your experience helps us improve. Please take 2 minutes to share your feedback on the hiring process:
-Hiring Feedback Form
+[Hiring Feedback Form](#hiring_feedback)
 
-Reporting Manager:
+*Reporting Manager:*
 Looping in {{Reporting Manager}} ({{Reporting Manager Email}}), your direct reporting manager, feel free to connect for any role-related queries.
 
-Department Head:
+*Department Head:*
 Looping in {{Department Head}} ({{Department Head Email}}), your Department Head.
 
 We're truly excited to have you on board and can't wait to see the impact you'll make at EZ.
@@ -95,31 +95,31 @@ Congratulations and a warm welcome to Team EZ! We're thrilled to have you join u
 
 To ensure a smooth start, here are your Day 1 details:
 
-- Joining Time: 10:00 AM
-- Mode: Remote (Google Meet)
-- Session Details: {{Meeting Link}}
-- Contact Person:
+- *Joining Time:* 10:00 AM
+- *Mode:* Remote (Google Meet)
+- *Session Details:* {{Meeting Link}}
+- *Contact Person:*
   Sweta | +91 79873 80766
-  Landline: 9311786723
-- Support Email: hr@ez.works
-- Dress Code (for virtual meets): Business Casual
+  *Landline:* 9311786723
+- *Support Email:* hr@ez.works
+- *Dress Code (for virtual meets):* Business Casual
 
-Your Day 1 schedule will include:
+*Your Day 1 schedule will include:*
 - Virtual Orientation
 - IT Access Setup
 - Team Introductions
 
 We'd love to understand your work preferences better. Please take a moment to complete the MBTI personality test and share your results with us:
-Take the Test
-Submit Your MBTI Results
+[Take the Test](#mbti_test)
+[Submit Your MBTI Results](#mbti_results)
 
 Lastly, your feedback helps us grow. Please take 2 minutes to share your experience with our hiring process.
-Hiring Feedback Form
+[Hiring Feedback Form](#hiring_feedback)
 
-Reporting Manager:
+*Reporting Manager:*
 Looping in {{Reporting Manager}} ({{Reporting Manager Email}}), your direct reporting manager, feel free to connect for any role-related queries.
 
-Department Head:
+*Department Head:*
 Looping in {{Department Head}} ({{Department Head Email}}), your Department Head.
 
 We're so excited to have you on board. Let's make great things happen together, even from afar!
@@ -130,7 +130,7 @@ CULTURE = """Dear {{Name}},
 
 As you prepare to join EZ, we'd like to give you a quick glimpse into the culture and experiences that shape life here.
 
-EZ Fridays
+*EZ Fridays*
 EZ Fridays are a cornerstone of our culture, designed to keep us connected, informed, and growing together. Over the past year, they've included:
 * People Updates
 * EZ Honor Code & Delivery Mindset sessions
@@ -139,14 +139,14 @@ EZ Fridays are a cornerstone of our culture, designed to keep us connected, info
 * Culture-led conversations (Espresso with EZ, Sessions with Joy, Brand EZ, and festive series)
 All sessions are thoughtfully planned for both in-office and remote teams.
 
-VIBE Committee
+*VIBE Committee*
 To drive engagement going forward, we've introduced the VIBE Committee, co-led by Aman and Harsh, focused on building meaningful people experiences across EZ.
 
-I Power EZ
+*I Power EZ*
 At EZ, we believe everyone has a unique way of contributing beyond their everyday role. Through I Power EZ, we celebrate the different ways our people add value, whether through their hobbies and interests, hosting or facilitating sessions, planning and executing workshops, sharing knowledge, or taking the lead on initiatives.
 As you become a part of EZ, we'd love to hear about how you I Power EZ and the interests, strengths, and ideas you bring with you.
 
-Life at EZ
+*Life at EZ*
 At EZ, growth, communication, and ownership matter. Your ideas are valued, and your contributions help shape our journey.
 
 We're excited to welcome you and look forward to growing together."""
@@ -159,7 +159,7 @@ It's with genuine excitement that we welcome you to EZ. We're delighted to have 
 
 At EZ, we believe every individual brings something meaningful to the table. With your skills and enthusiasm, we're confident you'll be a great addition to our growing team.
 
-EZ Culture: How We Work Together
+*EZ Culture: How We Work Together*
 
 Purpose-Led & Impact-Driven
 Our work is guided by ownership, accountability, and a strong focus on outcomes. We believe in moving fast while delivering meaningful value.
@@ -173,43 +173,43 @@ EZ is a place where individuality is respected and every voice matters. We're co
 A New Space, A Professional Vibe
 With our recent move to a new office, we've embraced a more formal and professional work environment, while keeping collaboration and approachability at the heart of our culture.
 
-Your First Day at EZ
+*Your First Day at EZ*
 
-Orientation
+*Orientation*
 Your journey begins with an orientation to help you understand EZ's values, structure, and ways of working.
 
-Your Go-To Buddy
+*Your Go-To Buddy*
 A buddy will support you through your initial days and help you settle in smoothly.
 
-Welcome Coffee
+*Welcome Coffee*
 We'll wrap up with a relaxed welcome coffee, an easy way to meet your team and start building connections.
 
-Dive Deeper into EZ (Before You Join)
+*Dive Deeper into EZ (Before You Join)*
 To get familiar with our work and mindset, we encourage you to explore:
-EZ Services - An overview of what we do
-Faster Than the Fastest - How speed and innovation shape our approach
-Consistently High Quality - Our commitment to excellence
-You can also watch our Corporate Film for a quick snapshot of our journey and ethos.
+[EZ Services](#ez_services) - An overview of what we do
+[Faster Than the Fastest](#faster_than_fastest) - How speed and innovation shape our approach
+[Consistently High Quality](#consistently_high_quality) - Our commitment to excellence
+You can also watch our [Corporate Film](#corporate_film) for a quick snapshot of our journey and ethos.
 
 We're excitedly counting down the days to welcome you on {{Date of Joining}}!
 
-Key Information for Day One
-Reporting Time: 10:00 AM
-Location: EZ Lab Pvt. Ltd., 5th Floor, Imperia Mindspace, Golf Course Ext Rd, behind AIPL Business Club, Sector 62, Gurugram, Haryana
-Google Maps Link
-Point of Contact: Sweta - 7987380766
-Landline: 9311786723
-Dress Code: Business Casual
+*Key Information for Day One*
+*Reporting Time:* 10:00 AM
+*Location:* EZ Lab Pvt. Ltd., 5th Floor, Imperia Mindspace, Golf Course Ext Rd, behind AIPL Business Club, Sector 62, Gurugram, Haryana
+[Google Maps Link](#maps)
+*Point of Contact:* Sweta - 7987380766
+*Landline:* 9311786723
+*Dress Code:* Business Casual
 
 If you have any questions before your joining date, feel free to reach out. We're excited to welcome you to Team EZ."""
 
 DIVE_DEEPER_REMOTE = DIVE_DEEPER_CAMPUS.replace(
-    """Reporting Time: 10:00 AM
-Location: EZ Lab Pvt. Ltd., 5th Floor, Imperia Mindspace, Golf Course Ext Rd, behind AIPL Business Club, Sector 62, Gurugram, Haryana
-Google Maps Link""",
-    """Reporting Time: 10:00 AM
-Mode: Remote
-Session Details: {{Meeting Link}}""")
+    """*Reporting Time:* 10:00 AM
+*Location:* EZ Lab Pvt. Ltd., 5th Floor, Imperia Mindspace, Golf Course Ext Rd, behind AIPL Business Club, Sector 62, Gurugram, Haryana
+[Google Maps Link](#maps)""",
+    """*Reporting Time:* 10:00 AM
+*Mode:* Remote
+*Session Details:* {{Meeting Link}}""")
 
 MANAGER_ONBOARDING = """Hello {{Reporting Manager}},
 
@@ -217,10 +217,10 @@ Hope this email finds you well.
 
 We are writing to inform you that a team member from your team has been onboarded with EZ on {{Date of Joining}}. The details are as follows:
 
-1. Name: {{Name}}
-   Designation: {{Designation}}
-   Team: {{Team}}
-   Department: {{Department}}
+1. *Name:* {{Name}}
+   *Designation:* {{Designation}}
+   *Team:* {{Team}}
+   *Department:* {{Department}}
 
 On the first day, they joined at 10:00 AM for the orientation session. During the orientation, we covered an overview of the organization, people, culture, services, professional development framework, and branding guidelines. Over the next three months, they will also attend sessions on Code of Ethics, Information Security, Branding, Delivery Mindset, and Sales Deck to help them gain a deeper understanding of EZ.
 
@@ -242,7 +242,7 @@ Keeping these expectations updated and clearly communicated will help ensure ali
 
 Thank you for your support in making the onboarding journey smoother and more structured."""
 
-_POLICY_SIGNATURE = """Email Signature Update (Mandatory)
+_POLICY_SIGNATURE = """*Email Signature Update (Mandatory)*
 
 Kindly update your email signature in the following format:
 
@@ -253,16 +253,16 @@ Mob./WhatsApp: +91 "Employee Phone Number"
 
 A short tutorial video is attached to guide you through the signature update process. Please refer to it if needed.
 
-Link for tutorial video
+[Link for tutorial video](#signature_tutorial)
 
 Note: Update your signature as per the below sample details:
-Designation: {{Designation}}
-Team: {{Team}}
-Department: {{Department}}
+*Designation:* {{Designation}}
+*Team:* {{Team}}
+*Department:* {{Department}}
 
 Calendar Invite Format to Follow at EZ:
 <Meeting/Skype/Discussion> re: "Descriptive subject" w person 1, person 2, person 3
-Ensure correct duration and add location or dialing instructions (Google Meet Link, Zoom, Skype ID, etc.).
+/Ensure correct duration and add location or dialing instructions (Google Meet Link, Zoom, Skype ID, etc.)./
 
 If you have any questions, feel free to reach out.
 
@@ -287,7 +287,31 @@ Through the FAQ, you can access details regarding:
 - Rewards & Recognition Policy
 - Calendar Invite Format to be followed at EZ
 
-""" + _POLICY_SIGNATURE
+*Email Signature Update (Mandatory)*
+
+Kindly update your email signature in the following format:
+
+Best Regards,
+Employee Name
+Employee Designation - Employee Team, Department
+Mob./WhatsApp: +91 "Employee Phone Number"
+
+A short tutorial video is attached to guide you through the signature update process. Please refer to it if needed.
+
+[Link for tutorial video](#signature_tutorial)
+
+Note: Update your signature as per the below sample details:
+*Designation:* {{Designation}}
+*Team:* {{Team}}
+*Department:* {{Department}}
+
+Calendar Invite Format to Follow at EZ:
+<Meeting/Skype/Discussion> re: "Descriptive subject" w person 1, person 2, person 3
+/Ensure correct duration and add location or dialing instructions (Google Meet Link, Zoom, Skype ID, etc.)./
+
+If you have any questions, feel free to reach out.
+
+Wishing you a great start at EZ!"""
 
 POLICY_CAMPUS = """Hi {{Name}},
 
@@ -308,7 +332,31 @@ The FAQ provides access to:
 - Increment & Promotion Cycle
 - Calendar Invite Format to be followed at EZ
 
-""" + _POLICY_SIGNATURE
+*Email Signature Update (Mandatory)*
+
+Kindly update your email signature in the following format:
+
+Best Regards,
+Employee Name
+Employee Designation - Employee Team, Department
+Mob./WhatsApp: +91 "Employee Phone Number"
+
+A short tutorial video is attached to guide you through the signature update process. Please refer to it if needed.
+
+[Link for tutorial video](#signature_tutorial)
+
+Note: Update your signature as per the below sample details:
+*Designation:* {{Designation}}
+*Team:* {{Team}}
+*Department:* {{Department}}
+
+Calendar Invite Format to Follow at EZ:
+<Meeting/Skype/Discussion> re: "Descriptive subject" w person 1, person 2, person 3
+/Ensure correct duration and add location or dialing instructions (Google Meet Link, Zoom, Skype ID, etc.)./
+
+If you have any questions, feel free to reach out.
+
+Wishing you a great start at EZ!"""
 
 ISO_COURSE = """Hi {{Name}},
 
@@ -333,7 +381,7 @@ We hope you're settling in well at EZ! Your experience and feedback are very imp
 
 Please take a few minutes to share your feedback by clicking the link below or scanning the QR code:
 
-EZ Induction & Onboarding Feedback Form
+[EZ Induction & Onboarding Feedback Form](#induction_feedback_form)
 
 Your inputs will help us make the onboarding experience even better for everyone.
 
@@ -345,7 +393,7 @@ We hope you're settling in well at EZ.
 
 Please take a few minutes to fill in your certification details using the form below:
 
-Certification Details Form - https://forms.gle/GeJ7JZP7B2d1hkeX6
+[Certification Details Form](#certification_form) - https://forms.gle/GeJ7JZP7B2d1hkeX6
 
 Your inputs will help us keep your record complete ahead of your 100-day certification.
 
@@ -359,7 +407,7 @@ Your inputs are extremely valuable in helping us understand what has worked well
 
 Please take a few minutes to fill out the feedback form using the link below:
 
-Training Feedback Form
+[Training Feedback Form](#training_feedback_form)
 
 We encourage you to submit your responses as soon as possible.
 
@@ -373,11 +421,11 @@ As part of our ongoing efforts to support and enhance employee development, we a
 
 To facilitate this process, we have created a brief survey that we kindly ask you to complete for each of your direct reports. The survey can be accessed via the following link:
 
-https://www.surveymonkey.com/r/79C599G
+[https://www.surveymonkey.com/r/79C599G](https://www.surveymonkey.com/r/79C599G)
 
 Please provide your feedback based on your observations and interactions with each individual.
 
-We would appreciate it if you could confirm once the same is completed from your end."""
+_We would appreciate it if you could confirm once the same is completed from your end._"""
 
 PERFORMANCE_BUDDY = """Hi {{Name}},
 
@@ -683,7 +731,7 @@ The session will be led by {{Facilitator}}, {{Profile Details}}
 
 {{Poster Link}}
 
-Please note that attendance is mandatory.
+_Please note that attendance is mandatory._
 
 If you have any questions or require further information regarding this session, please feel free to contact the People team."""
 
@@ -693,12 +741,12 @@ Thank you for participating in today's POSH Awareness and Sensitisation Program.
 
 Your feedback is invaluable in helping us assess the effectiveness of the program and improve future sessions. We request you to take a few minutes to share your thoughts through the feedback form below:
 
-Feedback Link: Click Here
+Feedback Link: [Click Here](#posh_feedback)
 
 Kindly submit your responses by {{Deadline}}.
 
 For your reference, please find the link to our POSH Policy below:
-POSH Policy Document
+[POSH Policy Document](#posh_policy)
 
 We truly appreciate your time, input, and commitment towards fostering a safe and respectful workplace."""
 
@@ -708,17 +756,17 @@ Hope you are doing well.
 
 Creating a safe, respectful, and inclusive workplace is a shared responsibility. As part of this ongoing commitment, we are organizing a POSH (Prevention of Sexual Harassment) Training on {{Week Day}}, {{Session Date}}.
 
-This program is designed for Internal Committee members, Team Leads, and HRs, and aims to strengthen awareness of the POSH Act, 2013, while reinforcing the role each of us plays in maintaining a harassment-free work environment.
+This program is designed for Internal Committee members, Team Leads, and HRs, and aims to strengthen awareness of the *POSH Act, 2013*, while reinforcing the role each of us plays in maintaining a harassment-free work environment.
 
-Training Details at a Glance
-Total Duration: 2.5 hours ({{Session Time}})
-Venue: Breakout Area, EZ
+*Training Details at a Glance*
+*Total Duration:* 2.5 hours ({{Session Time}})
+*Venue:* Breakout Area, EZ
 
 Part 1 | Awareness Session: Open to team leads, HRs, and Internal Committee members. Focus areas include POSH awareness, roles, responsibilities, and expectations from people managers.
 
 Part 2 | IC Deep-Dive Session: Exclusively for Internal Committee members and HRs, covering mock inquiries, case study discussions and interactive Q&A.
 
-Key Learning Outcomes
+*Key Learning Outcomes*
 Gender sensitivity and emotional awareness at work
 Core provisions and shared responsibilities under the POSH Act
 Identifying inappropriate workplace behavior
@@ -726,16 +774,16 @@ Clear understanding of reporting mechanisms
 Investigation process, timelines, and compliance requirements
 Building and sustaining a respectful workplace culture
 
-Training Methodology
+*Training Methodology*
 Real-life case studies and practical scenarios
 Problem-centered learning and group discussions
 Mock investigations and hands-on exercises
 Audio-visual aids, questionnaires, and quizzes
 
-About the Facilitator
+*About the Facilitator*
 The session will be conducted by {{Facilitator}}, {{Profile Details}}
 
-Please note: This training is mandatory. We request all relevant participants to mark their calendars and ensure attendance.
+_Please note: This training is mandatory._ We request all relevant participants to mark their calendars and ensure attendance.
 
 Looking forward to an engaging and insightful session together."""
 
@@ -746,12 +794,12 @@ Get ready for an engaging and interactive session designed to help you work smar
 
 As part of our ongoing compliance and awareness initiatives, we are organizing an informative session on ISO Awareness & AI Tools Usage, combining workplace security best practices with practical tips.
 
-Session Details
-Date: {{Session Date}}
-Time: {{Session Time}}
-Venue: Workspace
+*Session Details*
+*Date:* {{Session Date}}
+*Time:* {{Session Time}}
+*Venue:* Workspace
 
-What You'll Explore
+*What You'll Explore*
 ISO Information Security Awareness
 Responsibility within ISO 27001 Environment
 Workplace Security & Compliance Practices
@@ -765,14 +813,14 @@ Don't miss out, calendar invites have been shared. Looking forward to seeing eve
 
 JOY_2_INVITE = """Hi {{Name}},
 
-We're delighted to invite you to an exclusive and engaging conversation with our CEO, Mr. Joy Sharma, as he is hosting "Session with Joy 2.0" on {{Week Day}}, {{Session Date}}.
+We're delighted to invite you to an exclusive and engaging conversation with our CEO, Mr. *Joy Sharma*, as he is hosting "*Session with Joy 2.0*" on {{Week Day}}, {{Session Date}}.
 
-This session is specially curated for team members who have completed one year or more with us. It's a wonderful opportunity to pause, reflect on our shared journey, exchange experiences, and explore how we can continue to grow together. Your voice matters, and we're excited to hear your thoughts and perspectives.
+This session is specially curated for team members who have completed *one year or more* with us. It's a wonderful opportunity to pause, reflect on our shared journey, exchange experiences, and explore how we can continue to grow together. Your voice matters, and we're excited to hear your thoughts and perspectives.
 
-Session Details:
-Date: {{Session Date}}
-Time: {{Session Time}}
-Location: Breakout Area
+*Session Details:*
+*Date:* {{Session Date}}
+*Time:* {{Session Time}}
+*Location:* Breakout Area
 
 As always, this forum will be a space for open, transparent, and candid conversations, no filters, just honest dialogue.
 
@@ -780,11 +828,11 @@ We're looking forward to your active participation in making this session enrich
 
 JOY_2_FEEDBACK = """Dear Team,
 
-Thank you for attending the Session with Joy 2.0 held on {{Week Day}}, {{Session Date}}. We hope you found the session valuable and insightful.
+Thank you for attending the *Session with Joy 2.0* held on {{Week Day}}, {{Session Date}}. We hope you found the session valuable and insightful.
 
 Your feedback is extremely important to us as it helps us evaluate the effectiveness of the program and improve future sessions. We request you to kindly take a few minutes to share your feedback through the form below:
 
-Feedback Form Link: https://www.surveymonkey.com/r/DG63X7X
+Feedback Form Link: [https://www.surveymonkey.com/r/DG63X7X](https://www.surveymonkey.com/r/DG63X7X)
 
 We appreciate your time and inputs, and we look forward to incorporating your suggestions into upcoming initiatives."""
 
