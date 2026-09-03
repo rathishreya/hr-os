@@ -242,10 +242,18 @@ def session_context(occurrence: models.SessionOccurrence | None) -> dict:
         "Session Date": _pretty(start),
         "Week Day": _DAYS[start.weekday()],
         "Session Time": start.strftime("%I:%M %p").lstrip("0"),
+        # The rotational programme's subject carries the year. Nothing was filling it, so every
+        # send went out with the token still in the subject line.
+        "Year": str(start.year),
     }
     if occurrence.meet_link:
         out["Meeting Link"] = occurrence.meet_link
     return out
+
+
+def year_context() -> dict:
+    """The one field a session mail can always answer on its own."""
+    return {"Year": str(date.today().year)}
 
 
 def when_context(on, at: str | None = None) -> dict:

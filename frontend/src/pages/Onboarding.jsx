@@ -765,6 +765,7 @@ function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, o
   const [on, setOn] = useState('')
   const [at, setAt] = useState('')
   const [showPreview, setShowPreview] = useState(false)
+  const [extras, setExtras] = useState({})
   const [sending, setSending] = useState(false)
 
   // Reading the draft is a fetch, and the fetch is the only thing that sets this window up, so it
@@ -803,11 +804,19 @@ function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, o
     redraft({ sitting: v, on: '', at: '' })
   }
 
+  // A typed value replaces its token everywhere it appears, in the subject as well as the body.
+  const withExtras = (text) => Object.entries(extras).reduce(
+    (out, [field, value]) => (value
+      ? out.split(`{{${field}}}`).join(value)
+      : out),
+    text)
+
   async function send() {
     setSending(true)
     try {
       const res = await api.onboardingSendSessionCatalogueMail(sessionKey, templateKey, {
-        subject, body, audience, occurrence_id: sitting ? Number(sitting) : null,
+        subject: withExtras(subject), body: withExtras(body),
+        audience, occurrence_id: sitting ? Number(sitting) : null,
       })
       toast(`Sent to ${res.sent} ${res.sent === 1 ? 'person' : 'people'}`, 'success')
       onSent?.()
@@ -857,13 +866,34 @@ function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, o
           )}
 
           {!!draft.missing?.length && (
-            <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
-              <span>
-                Still to fill in: <strong>{draft.missing.join(', ')}</strong>.
-                {!sitting && ' Picking a sitting fills the date and time.'}
-              </span>
-            </p>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2.5">
+              <p className="flex items-start gap-2 text-xs text-amber-900">
+                <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>
+                  {draft.missing.length} still to fill in.
+                  {!sitting && ' Picking a sitting fills the date and time.'}
+                </span>
+              </p>
+              {/* Typing here fills the letter, rather than leaving somebody to find {{Facilitator}}
+                  somewhere in the body and replace it by hand. */}
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {draft.missing.filter((f) => !f.startsWith('a link for')).map((f) => (
+                  <label key={f} className="flex items-center gap-2 text-xs text-amber-900">
+                    <span className="w-28 shrink-0 truncate">{f}</span>
+                    <input value={extras[f] || ''}
+                      onChange={(e) => setExtras({ ...extras, [f]: e.target.value })}
+                      placeholder={`Type the ${f.toLowerCase()}`}
+                      className={cx(inputClass, 'h-8 flex-1 py-0 text-xs')} />
+                  </label>
+                ))}
+              </div>
+              {draft.missing.some((f) => f.startsWith('a link for')) && (
+                <p className="mt-2 text-[11px] text-amber-800">
+                  {draft.missing.filter((f) => f.startsWith('a link for')).join(', ')} &mdash; set
+                  those once under Links in the page header.
+                </p>
+              )}
+            </div>
           )}
 
           <AudiencePicker value={audience} onChange={setAudience}
@@ -871,10 +901,10 @@ function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, o
 
           <label className="block">
             <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Subject</span>
-            <input value={subject} onChange={(e) => setSubject(e.target.value)}
+            <input value={withExtras(subject)} onChange={(e) => setSubject(e.target.value)}
               className={cx(inputClass, 'h-9 text-sm')} />
           </label>
-          <RichTextArea value={body} onChange={setBody} rows={16} />
+          <RichTextArea value={withExtras(body)} onChange={setBody} rows={16} />
           {showPreview && <BodyPreview html={draft.html} />}
           <div className="flex items-center gap-3">
             <button type="button" onClick={() => setShowPreview((v) => !v)}

@@ -1356,7 +1356,8 @@ def session_catalogue_mail(session_key: str, role: str, occurrence_id: int | Non
         raise HTTPException(404, "No such session")
     occ = db.get(models.SessionOccurrence, occurrence_id) if occurrence_id else None
     t = _template_for_role(session_key, role, occ)
-    ctx = ctxs.session_context(occ)
+    # The year is answerable without a sitting; everything else about "when" needs one.
+    ctx = {**ctxs.year_context(), **ctxs.session_context(occ)}
     # A date typed into the composer wins over the sitting's. Somebody sending an invite for a
     # session that is not on the calendar yet still needs to say when it is, and somebody
     # correcting a time in the letter should not have to move the sitting first.
