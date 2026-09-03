@@ -738,9 +738,14 @@ function AudiencePicker({ value, onChange, occurrenceId, onSavedListsChanged }) 
         <ul className="max-h-44 overflow-auto border-t border-slate-100 px-3 py-2 text-xs">
           {(people?.people || []).map((p) => (
             <li key={p.email} className="flex items-center justify-between gap-3 py-0.5">
-              <span className="min-w-0 truncate text-slate-800">{p.name || p.email}</span>
+              <span className="min-w-0 truncate text-slate-800">
+                Hi {p.display_name || p.name || 'there'},
+                {!p.name && (
+                  <span className="ml-1 text-[11px] text-amber-700">from the address</span>
+                )}
+              </span>
               <span className="shrink-0 truncate text-[11px] text-slate-500">
-                {p.name ? `${p.email} · ` : ''}{p.source}
+                {p.email} · {p.source}
               </span>
             </li>
           ))}

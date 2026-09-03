@@ -520,6 +520,28 @@ def _plan_mail_context(db: Session, plan: models.OnboardingPlan) -> tuple[dict, 
     return ctxs.merge_context(db, plan, joining=joining), mode
 
 
+def _guard(subject: str, body: str, who: str = "") -> None:
+    """Refuse to send a letter that still has a hole in it.
+
+    A recipient with no name once shipped a letter that opened "Hi {{Name}},". The draft had said
+    the field was missing; the send happened anyway, because nothing between the two was checking.
+    This is that check: whatever else is wrong, a token never leaves the building.
+    """
+    left = ml.fields(subject + "\n" + body)
+    if left:
+        where = f" for {who}" if who else ""
+        raise HTTPException(
+            422,
+            f"This would go out{where} still saying {', '.join('{{' + f + '}}' for f in left)}. "
+            "Fill those in first.",
+        )
+
+
+def _greeting_for(email: str) -> str:
+    """What to call somebody we only have an address for. Never a token."""
+    return aud._name_from(email) or "there"
+
+
 #: Merge fields a session mail fills per person as it goes out, rather than once in the draft.
 PER_RECIPIENT = {"Name"}
 
@@ -672,6 +694,7 @@ def send_mail(plan_id: int, template_key: str, payload: MailSend, db: Session = 
     if not to_email:
         raise HTTPException(422, f"No address on file for the {t.to}. Add one before sending this.")
 
+    _guard(payload.subject, payload.body, to_name or to_email)
     msg = mailer.compose(
         db, to_email=to_email, to_name=to_name,
         template=f"onboarding:{t.key}",
@@ -746,7 +769,9 @@ def send_session_mail(occ_id: int, template_key: str, payload: MailSend,
     for p in wanted:
         # One draft, many people: the greeting is filled in for each of them rather than going out
         # as a literal {{Name}}, which is the whole point of not treating this as a single mail.
-        person = {"Name": p.name or ""}
+        person = {"Name": p.name or _greeting_for(p.email)}
+        _guard(ml.render(payload.subject, person), ml.render(payload.body, person),
+               p.name or p.email)
         mailer.compose(
             db, to_email=p.email, to_name=p.name or "",
             template=f"onboarding:{t.key}",
@@ -987,6 +1012,7 @@ def bulk_mail_send(payload: BulkMail, db: Session = Depends(get_db),
             continue
         ctx, mode = _plan_mail_context(db, plan)
         try:
+            _guard(ml.render(t.subject, ctx), ml.render(t.body, ctx), r["name"])
             mailer.compose(
                 db, to_email=r["to"], to_name=r["to_name"],
                 template=f"onboarding:{t.key}",
@@ -1046,7 +1072,8 @@ def bulk_session_mail(payload: BulkOccurrenceMail, db: Session = Depends(get_db)
 
         subject, body = ml.render(t.subject, ctx), ml.render(t.body, ctx)
         for p in wanted:
-            person = {"Name": p.name or ""}
+            person = {"Name": p.name or _greeting_for(p.email)}
+            _guard(ml.render(subject, person), ml.render(body, person), p.name or p.email)
             mailer.compose(db, to_email=p.email, to_name=p.name or "",
                            template=f"onboarding:{t.key}",
                            subject=rt.strip(ml.render(subject, person)),
@@ -1433,8 +1460,10 @@ def send_session_catalogue_mail(session_key: str, role: str, payload: SessionMai
     for p in people:
         # One draft, many readers: the greeting is filled per person rather than going out as a
         # literal {{Name}}.
-        person = {"Name": p.get("name") or ""}
-        mailer.compose(db, to_email=p["email"], to_name=p.get("name") or "",
+        person = {"Name": p.get("display_name") or p.get("name") or "there"}
+        _guard(ml.render(payload.subject, person), ml.render(payload.body, person),
+               p.get("display_name") or p["email"])
+        mailer.compose(db, to_email=p["email"], to_name=p.get("display_name") or "",
                        template=f"onboarding:{t.key}",
                        subject=rt.strip(ml.render(payload.subject, person)),
                        **_mail_parts(ml.render(payload.body, person), overrides),

@@ -19,6 +19,7 @@ count and the source so the gap is visible before it matters.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -60,11 +61,36 @@ BY_KEY = {g.key: g for g in GROUPS}
 _ROLE_GROUPS = {"staff_admin": "admin", "staff_recruiter": "recruiter", "staff_panellist": "panellist"}
 
 
+def _name_from(email: str) -> str:
+    """A greeting for somebody we only have an address for.
+
+    A letter that opens "Hi {{Name}}," has already failed, and that is exactly what a typed-in
+    address produced: no name, so the token stayed put and went out as written. Most work
+    addresses carry the person's name, so read it back out: shreyanshi.rathi@ez.works -> Shreyanshi
+    Rathi. Where the local part is not a name (info@, hr@, a string of digits), this gives
+    something odd rather than something wrong, and the composer shows what it will say before
+    anybody presses send.
+    """
+    local = (email or "").split("@", 1)[0]
+    words = [w for w in re.split(r"[._\-+]+", local) if w and not w.isdigit()]
+    if not words:
+        return ""
+    return " ".join(w[:1].upper() + w[1:] for w in words)
+
+
 def _clean(name: str, email: str, source: str) -> dict | None:
     email = (email or "").strip()
     if not email or "@" not in email:
         return None
-    return {"name": (name or "").strip(), "email": email, "source": source}
+    name = (name or "").strip()
+    return {
+        "name": name,
+        # What the letter will actually call them. Kept separate from `name` so the UI can still
+        # say the list gave us nothing and this was worked out from the address.
+        "display_name": name or _name_from(email),
+        "email": email,
+        "source": source,
+    }
 
 
 def _staff(db: Session, role: str | None = None) -> list[dict]:
