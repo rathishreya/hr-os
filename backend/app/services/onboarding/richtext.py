@@ -25,6 +25,28 @@ import re
 
 from . import links
 
+# A merge value is DATA, not markup. A designation of "Analyst /Delivery/ SWAT" would otherwise
+# render the middle word in italics, and a candidate's own record would be deciding how their
+# welcome letter is typeset. mails.render escapes the markers in every value it substitutes, and
+# these placeholders carry them past the regexes untouched.
+_ESCAPES = {"*": "\x00A", "/": "\x00B", "_": "\x00C", "[": "\x00D", "]": "\x00E"}
+_UNESCAPES = {v: k for k, v in _ESCAPES.items()}
+
+
+def protect(value: str) -> str:
+    """Make a substituted value safe to put into a template body."""
+    out = str(value)
+    for ch, ph in _ESCAPES.items():
+        out = out.replace(ch, ph)
+    return out
+
+
+def _restore(text: str) -> str:
+    for ph, ch in _UNESCAPES.items():
+        text = text.replace(ph, ch)
+    return text
+
+
 _LINK = re.compile(r"\[([^\]\n]+)\]\(([^)\n]*)\)")
 _BOLD = re.compile(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])")
 _ITALIC = re.compile(r"(?<![\w/])/([^/\n]+)/(?![\w/])")
@@ -70,7 +92,8 @@ def to_html(text: str, overrides: dict | None = None) -> str:
             # No address yet: keep the words and say so, rather than emit a dead <a href="">.
             return (f'<span style="color:#92400e">{label}</span>'
                     f'<span style="color:#92400e;font-size:12px"> [link needed]</span>')
-        return f'<a href="{target}" style="color:#5b21b6">{label}</a>'
+        # The address goes inside an attribute, so a quote in it would break out of the tag.
+        return f'<a href="{html.escape(target, quote=True)}" style="color:#5b21b6">{label}</a>'
 
     # Links first: their labels must not be re-parsed for emphasis markers.
     out = _LINK.sub(link, out)
@@ -85,7 +108,7 @@ def to_html(text: str, overrides: dict | None = None) -> str:
             continue
         paragraphs.append("<p style=\"margin:0 0 14px\">" + block.replace("\n", "<br>") + "</p>")
     body = "\n".join(paragraphs)
-    return (
+    return _restore(
         '<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;'
         'font-size:14px;line-height:1.6;color:#1e293b">\n' + body + "\n</div>"
     )
@@ -101,7 +124,7 @@ def to_text(text: str, overrides: dict | None = None) -> str:
     out = _BOLD.sub(r"\1", out)
     out = _ITALIC.sub(r"\1", out)
     out = _UNDER.sub(r"\1", out)
-    return out
+    return _restore(out)
 
 
 def strip(text: str) -> str:
@@ -110,4 +133,4 @@ def strip(text: str) -> str:
     out = _BOLD.sub(r"\1", out)
     out = _ITALIC.sub(r"\1", out)
     out = _UNDER.sub(r"\1", out)
-    return out
+    return _restore(out)

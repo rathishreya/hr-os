@@ -277,6 +277,10 @@ def plan_detail(plan_id: int, db: Session = Depends(get_db), _user: models.User 
             "due_is_set_by_hand": bool(state and state.due_override),
             "comments": (state.comments if state else {}) or {},
             "attended": state.attended if state else None,
+            "attendance": ("Attended" if state and state.attended is True
+                           else "Did not attend" if state and state.attended is False else "NA"),
+            "completed_at": (state.completed_at.isoformat()
+                             if state and state.completed_at else None),
             "scheduled_at": state.scheduled_at if state else None,
             "sent_at": state.sent_at if state else None,
             "due_on": d.isoformat() if d else None,
@@ -306,6 +310,9 @@ class StepPatch(BaseModel):
     mark_sent: bool | None = None
     #: A due date set by hand. Sending "" clears it and the calculated one comes back.
     due_override: date | str | None = None
+    #: "Attended" | "Did not attend" | "NA". A tick could only ever say two of those three, and
+    #: "nobody has taken the register yet" is a different fact from "they did not come".
+    attendance: str | None = None
 
 
 @router.patch("/plan/{plan_id}/step/{step_key}")
@@ -333,21 +340,30 @@ def update_step(plan_id: int, step_key: str, body: StepPatch, db: Session = Depe
         db.add(row)
 
     if body.status is not None:
+        # The day it was finished, kept so the checklist can answer "when" and not only "yes".
+        # Moving it off Done clears the date rather than leaving a stale one behind.
+        if body.status == "Done" and row.status != "Done":
+            row.completed_at = date.today()
+        elif body.status != "Done":
+            row.completed_at = None
         row.status = body.status
     if body.value is not None:
         row.value = body.value
     if body.comments is not None:
         row.comments = dict(body.comments)
+    if body.attendance is not None:
+        row.attended = {"Attended": True, "Did not attend": False}.get(body.attendance)
     if body.attended is not None:
         row.attended = body.attended
+    if body.attendance is not None or body.attended is not None:
         # Attendance is recorded in two places by nature: on the checklist a person is walking
         # down, and on the sitting's register. Writing only one of them is how they end up
-        # disagreeing about whether somebody turned up, so a tick here reaches both.
+        # disagreeing about whether somebody turned up, so an answer here reaches both.
         sitting = _sittings_for(db, plan.candidate_id).get(step_key)
         if sitting:
             attendee = db.get(models.SessionAttendee, sitting["attendee_id"])
             if attendee:
-                attendee.attended = body.attended
+                attendee.attended = row.attended
     if body.scheduled_at is not None:
         row.scheduled_at = body.scheduled_at
     if body.due_override is not None:
@@ -506,6 +522,17 @@ def _plan_mail_context(db: Session, plan: models.OnboardingPlan) -> tuple[dict, 
 
 #: Merge fields a session mail fills per person as it goes out, rather than once in the draft.
 PER_RECIPIENT = {"Name"}
+
+
+def _edited(db: Session) -> dict[str, models.MailTemplateEdit]:
+    """The letters somebody has rewritten, by template key."""
+    return {r.template_key: r for r in db.scalars(select(models.MailTemplateEdit))}
+
+
+def _wording(t, edits: dict) -> tuple[str, str]:
+    """The subject and body to use: what was written here, else what the document had."""
+    e = edits.get(t.key)
+    return ((e.subject or t.subject), (e.body or t.body)) if e else (t.subject, t.body)
 
 
 def _link_overrides(db: Session) -> dict[str, str]:
@@ -747,15 +774,35 @@ def mails_by_template(db: Session = Depends(get_db), _user: models.User = Depend
     have to go", and that is a question about the letter, not about a person. Opening one shows
     who it is still owed to.
     """
-    rows = all_mails(db=db, _user=_user)
+    edits = _edited(db)
+    overrides = _link_overrides(db)
+
+    # Start from EVERY letter, not only the ones that happen to have somebody waiting on them.
+    # A letter with no recipients today is still a letter the People team wants to read and edit,
+    # and hiding it until a joiner appears makes the catalogue look half-built.
     grouped: dict[str, dict] = {}
-    for r in rows:
-        g = grouped.setdefault(r["template_key"], {
-            "template_key": r["template_key"], "name": r["name"], "kind": r["kind"],
-            "sending": r["sending"], "to": r["to"], "step_label": r["step_label"],
+    for t in ml.TEMPLATES:
+        step = st.BY_KEY.get(t.step_key or "")
+        subject, body = _wording(t, edits)
+        edit = edits.get(t.key)
+        grouped[t.key] = {
+            "template_key": t.key, "name": t.name,
+            "kind": "Session" if t.session_key else "Candidate",
+            "sending": "Automatic" if (step and step.auto) else "HR reviews",
+            "to": t.to, "step_label": (step.label if step else (t.session_role or "")),
+            "mode": t.mode, "session_key": t.session_key,
+            "edited_at": edit.updated_at.isoformat() if edit and edit.updated_at else None,
+            "edited_by": edit.updated_by if edit else "",
             "people": [], "sent": 0, "overdue": 0, "due_today": 0, "waiting": 0,
-            "next_due": None, "needs": [],
-        })
+            "next_due": None,
+            "needs": [f"a link for {lk.label_for(k)}" for k in rt.unresolved(body, overrides)],
+        }
+
+    rows = all_mails(db=db, _user=_user)
+    for r in rows:
+        g = grouped.get(r["template_key"])
+        if g is None:
+            continue
         g["people"].append(r)
         if r["state"] == "Sent":
             g["sent"] += 1
@@ -776,12 +823,13 @@ def mails_by_template(db: Session = Depends(get_db), _user: models.User = Depend
         total = len(g["people"])
         g["total"] = total
         g["outstanding"] = total - g["sent"]
-        g["state"] = ("Sent" if g["sent"] == total else
+        g["state"] = ("Nobody waiting" if not total else
+                      "Sent" if g["sent"] == total else
                       "Overdue" if g["overdue"] else
                       "Due today" if g["due_today"] else "Waiting")
         out.append(g)
-    # What is late first, then what is due, then everything still ahead.
-    order = {"Overdue": 0, "Due today": 1, "Waiting": 2, "Sent": 3}
+    # What is late first, then what is due, then what is ahead, then what nobody is waiting on.
+    order = {"Overdue": 0, "Due today": 1, "Waiting": 2, "Sent": 3, "Nobody waiting": 4}
     out.sort(key=lambda g: (order[g["state"]], g["next_due"] or "9999", g["name"]))
     return out
 
@@ -1165,6 +1213,66 @@ def _clean_members(rows: list[dict]) -> list[dict]:
         seen.add(email.lower())
         out.append({"name": str((m or {}).get("name") or "").strip(), "email": email})
     return out
+
+
+@router.get("/templates/{template_key}")
+def read_template(template_key: str, db: Session = Depends(get_db),
+                  _user: models.User = Depends(current_user)):
+    """One letter as it currently stands, and as the document originally had it."""
+    t = ml.BY_KEY.get(template_key)
+    if not t:
+        raise HTTPException(404, "No such mail")
+    edits = _edited(db)
+    overrides = _link_overrides(db)
+    subject, body = _wording(t, edits)
+    edit = edits.get(t.key)
+    return {
+        "template_key": t.key, "name": t.name, "to": t.to, "mode": t.mode,
+        "step_key": t.step_key, "session_key": t.session_key, "session_role": t.session_role,
+        "subject": subject, "body": body,
+        "html": rt.to_html(body, overrides),
+        "original_subject": t.subject, "original_body": t.body,
+        "edited": bool(edit),
+        "edited_at": edit.updated_at.isoformat() if edit and edit.updated_at else None,
+        "edited_by": edit.updated_by if edit else "",
+        "needs": [f"a link for {lk.label_for(k)}" for k in rt.unresolved(body, overrides)],
+        "fields": ml.fields(subject + "\n" + body),
+        "note": t.note,
+    }
+
+
+class TemplateEdit(BaseModel):
+    subject: str
+    body: str
+
+
+@router.put("/templates/{template_key}")
+def write_template(template_key: str, payload: TemplateEdit, db: Session = Depends(get_db),
+                   user: models.User = Depends(current_user)):
+    """Rewrite a letter. Sending back exactly what the document had removes the edit entirely,
+    so "reset to the original" needs no special case."""
+    t = ml.BY_KEY.get(template_key)
+    if not t:
+        raise HTTPException(404, "No such mail")
+    subject, body = payload.subject.strip("\n"), payload.body.strip("\n")
+    row = db.scalar(select(models.MailTemplateEdit)
+                    .where(models.MailTemplateEdit.template_key == template_key))
+    if subject == t.subject and body == t.body:
+        if row:
+            db.delete(row)
+        log(db, "onboarding.template_reset", "mail_template", 0,
+            {"template": t.key, "by": getattr(user, "email", "")})
+        db.commit()
+        return read_template(template_key, db=db, _user=user)
+    if not row:
+        row = models.MailTemplateEdit(template_key=template_key)
+        db.add(row)
+    row.subject, row.body = subject, body
+    row.updated_by = getattr(user, "email", "")
+    log(db, "onboarding.template_edited", "mail_template", 0,
+        {"template": t.key, "by": getattr(user, "email", "")})
+    db.commit()
+    return read_template(template_key, db=db, _user=user)
 
 
 @router.get("/links")

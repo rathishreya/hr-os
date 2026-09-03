@@ -393,7 +393,7 @@ We hope you're settling in well at EZ.
 
 Please take a few minutes to fill in your certification details using the form below:
 
-[Certification Details Form](#certification_form) - https://forms.gle/GeJ7JZP7B2d1hkeX6
+[Certification Details Form](#certification_form)
 
 Your inputs will help us keep your record complete ahead of your 100-day certification.
 
@@ -421,7 +421,7 @@ As part of our ongoing efforts to support and enhance employee development, we a
 
 To facilitate this process, we have created a brief survey that we kindly ask you to complete for each of your direct reports. The survey can be accessed via the following link:
 
-[https://www.surveymonkey.com/r/79C599G](https://www.surveymonkey.com/r/79C599G)
+https://www.surveymonkey.com/r/79C599G
 
 Please provide your feedback based on your observations and interactions with each individual.
 
@@ -444,23 +444,23 @@ BRAND_EZ_CAMPUS = """Hi {{Name}},
 
 Hope you're doing great!
 
-We're excited to invite all our on-campus team members to the upcoming Brand EZ session, designed to help you connect with the essence of the EZ brand, elevate your professional presence, and engage in a meaningful learning experience.
+We're excited to invite all our on-campus team members to the upcoming *Brand EZ session*, designed to help you connect with the essence of the EZ brand, elevate your *professional presence*, and engage in a meaningful learning experience.
 
-Why this session matters
+*Why this session matters*
 At EZ, we believe that culture, collaboration, and great ideas thrive when we come together. This session will help strengthen your connection to the EZ brand and empower you to represent it with confidence and clarity.
 
-What to expect:
-An engaging walkthrough of the Brand EZ story
-Practical takeaways on building your personal brand
-An interactive hands-on segment to enhance your professional presence
+*What to expect:*
+An engaging walkthrough of the *Brand EZ story*
+Practical takeaways on building your *personal brand*
+An interactive hands-on segment to enhance your *professional presence*
 A fun surprise to keep the session lively and energizing!
 
-Session Details:
-Date: {{Week Day}}, {{Session Date}}
-Time: {{Session Time}}
-Venue: Breakout Area
+*Session Details:*
+*Date:* {{Week Day}}, {{Session Date}}
+*Time:* {{Session Time}}
+*Venue:* Breakout Area
 
-What you'll need:
+*What you'll need:*
 Just bring your enthusiasm and curiosity, we'll take care of everything else!
 
 We look forward to having you join us and experience the EZ brand journey together.
@@ -471,26 +471,26 @@ BRAND_EZ_REMOTE = """Hi {{Name}},
 
 Hope you're doing great!
 
-We're excited to invite you to a dedicated Brand EZ session specially curated for our remote team members. This session is designed to help you feel more connected, inspired, and aligned with the EZ brand experience, no matter where you are working from.
+We're excited to invite you to a dedicated *Brand EZ session* specially curated for our remote team members. This session is designed to help you feel more connected, inspired, and aligned with the EZ brand experience, no matter where you are working from.
 
-Why this session matters
+*Why this session matters*
 At EZ, we believe that ideas, culture, and impact flow from every corner, whether you're in the office or working remotely. This session aims to strengthen that connection and ensure every remote EZ-mate feels included, valued, and empowered.
 
-What to expect:
-A thoughtful walkthrough of the Brand EZ story and what it means for you
-Practical insights on strengthening your personal brand in a virtual-first environment
-An interactive segment to boost your professional presence
+*What to expect:*
+A thoughtful walkthrough of the *Brand EZ story* and what it means for you
+Practical insights on strengthening your *personal brand* in a virtual-first environment
+An interactive segment to boost your *professional presence*
 And of course, a little something fun to keep the energy high!
 
-Session Details:
-Date: {{Week Day}}, {{Session Date}}
-Time: {{Session Time}}
-Mode: Online
+*Session Details:*
+*Date:* {{Week Day}}, {{Session Date}}
+*Time:* {{Session Time}}
+*Mode:* Online
 
-Join the Session
+*Join the Session*
 Google Meet link: {{Meeting Link}}
 
-What you'll need:
+*What you'll need:*
 Just your laptop, a stable connection, and your curious self, we'll take care of the rest.
 
 Your voice and participation truly matter. We're looking forward to connecting with you the EZ way!
@@ -499,18 +499,18 @@ See you there!"""
 
 BRAND_EZ_FEEDBACK = """Hi {{Name}},
 
-Hope you enjoyed today's Brand EZ session and found it insightful.
+Hope you enjoyed today's *Brand EZ session* and found it insightful.
 
 We would love to hear your feedback, as it helps us improve and curate even better experiences in the future. If you haven't filled it out yet, please take a moment to complete the feedback form below:
 
-Share Feedback:
+*Share Feedback:*
 https://www.surveymonkey.com/r/Z3S8FL8
 
-Additionally, we are compiling participant profiles for future collaborations and engagements. Kindly add your LinkedIn/Profile link in the Google Sheet shared below:
+Additionally, we are compiling participant profiles for future collaborations and engagements. Kindly add your *LinkedIn/Profile link* in the Google Sheet shared below:
 
 https://docs.google.com/spreadsheets/d/1bhMJS50STUOua0qS9shGLqdDm53h_f0gYrECmfqYo6U/edit?usp=sharing
 
-Requesting you to kindly update your details in the sheet and share confirmation over email by EOD, {{Deadline}}.
+_Requesting you to kindly update your details in the sheet and share confirmation over email by EOD, {{Deadline}}._
 
 We truly appreciate your time, participation, and valuable inputs.
 
@@ -520,25 +520,25 @@ HONOR_CODE_CAMPUS = """Hi {{Name}},
 
 Hope you're doing well!
 
-Let's move on to the next step of your orientation journey at EZ. At EZ, we conduct our business with the highest standards of professionalism and fairness. To uphold this, we follow the EZ Honor Code, a framework built on six core, non-negotiable principles that define our culture.
+Let's move on to the next step of your orientation journey at EZ. At EZ, we conduct our business with the highest standards of professionalism and fairness. To uphold this, we follow the *EZ Honor Code*, a framework built on six core, non-negotiable principles that define our culture.
 
-You are invited to attend a session where we'll walk you through the EZ Honor Code and its importance in how we work and collaborate.
+You are invited to attend a session where we'll walk you through the *EZ Honor Code* and its importance in how we work and collaborate.
 
-Session Details
-Date: {{Week Day}}, {{Session Date}}
-Time: {{Session Time}}
-Venue: Breakout Area
+*Session Details*
+*Date:* {{Week Day}}, {{Session Date}}
+*Time:* {{Session Time}}
+*Venue:* Breakout Area
 
 A calendar invite has already been shared with you.
 
-Your participation is mandatory, and we look forward to seeing you there."""
+_Your participation is mandatory, and we look forward to seeing you there._"""
 
 HONOR_CODE_REMOTE = HONOR_CODE_CAMPUS.replace(
-    "Venue: Breakout Area", "Meeting Link: {{Meeting Link}}")
+    "*Venue:* Breakout Area", "*Meeting Link:* {{Meeting Link}}")
 
 HONOR_CODE_FEEDBACK = """Hi {{Name}},
 
-This is a gentle reminder for participants who attended the EZ Honor Code Session held on {{Session Date}}.
+This is a gentle reminder for participants who attended the *EZ Honor Code* Session held on {{Session Date}}.
 
 If you haven't done so already, please complete the following mandatory actions:
 
@@ -547,10 +547,10 @@ Kindly take a few minutes to complete the feedback form using the link below:
 https://www.surveymonkey.com/r/5MPTY8W
 Your feedback helps us improve the quality and effectiveness of our future learning sessions.
 
-2. Submit the Signed EZ Honor Code
+2. Submit the Signed *EZ Honor Code*
 EZ Honor Code Doc Link:
 https://drive.google.com/file/d/1iUcehOOBGNULGwD0_7BEvNU95NegiCRU/view?usp=sharing
-Please review the EZ Honor Code document, sign it, and share the signed copy by replying to this email.
+Please review the *EZ Honor Code* document, sign it, and share the signed copy by replying to this email.
 
 If you have already completed both the feedback form and submitted the signed document, please update through this email.
 
@@ -560,15 +560,15 @@ SALES_DECK_CAMPUS = """Hi {{Name}},
 
 Hope you're doing well.
 
-We're pleased to invite you to our upcoming EZ Sales Deck Session scheduled for {{Week Day}}, {{Session Date}} at {{Session Time}} in the Breakout Area. This interactive session will offer valuable insights into market trends, product strengths, and sales strategies that align with our growth roadmap.
+We're pleased to invite you to our upcoming *EZ Sales Deck Session* scheduled for {{Week Day}}, {{Session Date}} at {{Session Time}} in the Breakout Area. This interactive session will offer valuable insights into market trends, product strengths, and sales strategies that align with our growth roadmap.
 
-Agenda Highlights:
+*Agenda Highlights:*
 Project Workflow: How projects are received, delegated, and delivered to clients.
 Offerings Overview: Quick rundown of key product/service features and benefits.
 Quiz: Short check to assess understanding of offerings and sales deck.
 Q&A: Open forum to clarify doubts.
 
-Note: Attendance is mandatory.
+_Note: Attendance is mandatory._
 
 Should you have any questions, feel free to reach out.
 
@@ -578,18 +578,18 @@ SALES_DECK_REMOTE = """Hi {{Name}},
 
 Hope you're doing well.
 
-We're pleased to invite you to our upcoming EZ Sales Deck Session scheduled for {{Week Day}}, {{Session Date}} at {{Session Time}}.
+We're pleased to invite you to our upcoming *EZ Sales Deck Session* scheduled for {{Week Day}}, {{Session Date}} at {{Session Time}}.
 
 This virtual session has been designed to help you understand our market positioning, core offerings, and key sales enablers that support our growth roadmap.
 
-Agenda Highlights:
+*Agenda Highlights:*
 Project Workflow: How projects are received, delegated, and delivered to clients in a structured manner.
 Offerings Overview: Quick rundown of our key product/service features and benefits.
 Quiz: A short interactive quiz to assess understanding of our offerings and the sales deck.
 Q&A: Open forum for clarifying any questions.
 
-Note: Attendance is mandatory for all participants.
-Meeting Link: {{Meeting Link}}
+_Note: Attendance is mandatory for all participants._
+*Meeting Link:* {{Meeting Link}}
 
 If you have any questions, feel free to reach out.
 
@@ -599,39 +599,39 @@ SALES_DECK_FEEDBACK = """Hi {{Name}},
 
 Hope you're doing well.
 
-This is regarding the Sales Deck Session conducted on {{Week Day}}, {{Session Date}} at {{Session Time}}. It has come to our attention that several participants faced issues while accessing or submitting the feedback form shared earlier.
+This is regarding the *Sales Deck Session* conducted on {{Week Day}}, {{Session Date}} at {{Session Time}}. It has come to our attention that several participants faced issues while accessing or submitting the feedback form shared earlier.
 
 To ensure we capture your valuable insights, we request you to kindly fill out the feedback form again using the link below:
-Sales Deck Feedback Form
+[Sales Deck Feedback Form](#sales_deck_feedback)
 
 Your feedback is important for us to improve future sessions and make them more engaging and relevant. We appreciate your time and support in completing the form at the earliest."""
 
 DELIVERY_MINDSET_CAMPUS = """Hi {{Name}},
 
-We're pleased to invite you to the upcoming Delivery Mindset session scheduled for {{Session Date}}.
+We're pleased to invite you to the upcoming *Delivery Mindset* session scheduled for {{Session Date}}.
 
-This session will focus on the core pillars of Delivery Mindset through interactive discussions and activities designed to help us strengthen how we plan, execute, and deliver our projects with excellence.
+This session will focus on the core pillars of *Delivery Mindset* through interactive discussions and activities designed to help us strengthen how we plan, execute, and deliver our projects with excellence.
 
-As part of our continued learning journey, Delivery Mindset is now included in the PPR module and will serve as one of the three complementary approaches for reviews. Your participation is key to embedding this mindset into our daily work culture.
+As part of our continued learning journey, *Delivery Mindset* is now included in the PPR module and will serve as one of the three complementary approaches for reviews. Your participation is key to embedding this mindset into our daily work culture.
 
-Date: {{Session Date}}
-Time: {{Session Time}}
-Venue: Breakout Area
+*Date:* {{Session Date}}
+*Time:* {{Session Time}}
+*Venue:* Breakout Area
 
 Please ensure you join on time and come prepared for an engaging and collaborative session.
 
 Let's continue to build a strong culture of accountability, ownership, and delivery excellence together!"""
 
 DELIVERY_MINDSET_REMOTE = DELIVERY_MINDSET_CAMPUS.replace(
-    "Venue: Breakout Area", "Mode: Online\nMeeting Link: {{Meeting Link}}")
+    "*Venue:* Breakout Area", "*Mode:* Online\n*Meeting Link:* {{Meeting Link}}")
 
 DELIVERY_MINDSET_FEEDBACK = """Hi {{Name}},
 
-Thank you for attending the Delivery Mindset Session on {{Week Day}}, {{Session Date}}. We hope you found the session informative and valuable.
+Thank you for attending the *Delivery Mindset Session* on {{Week Day}}, {{Session Date}}. We hope you found the session informative and valuable.
 
 To help us enhance future sessions, we request you to please share your feedback using the link below (only for session attendees):
 
-Feedback Form: https://www.surveymonkey.com/r/5MPTY8W
+*Feedback Form:* https://www.surveymonkey.com/r/5MPTY8W
 
 We appreciate your time and inputs."""
 
@@ -643,26 +643,26 @@ This marks an important milestone in your journey with us, and we'd love to take
 
 You are invited to a small certification ceremony to celebrate this achievement:
 
-Date: {{Session Date}}
-Time: {{Session Time}}
-Venue: Breakout
+*Date:* {{Session Date}}
+*Time:* {{Session Time}}
+*Venue:* Breakout
 
 Let's come together to acknowledge your journey and cheer you on for the many milestones ahead.
 
 Looking forward to celebrating with you!"""
 
 HUNDRED_DAYS_REMOTE = HUNDRED_DAYS_CAMPUS.replace(
-    "Venue: Breakout", "Mode: Online\nMeeting Link: {{Meeting Link}}")
+    "*Venue:* Breakout", "*Mode:* Online\n*Meeting Link:* {{Meeting Link}}")
 
 JOY_INVITE = """Hi {{Name}},
 
 Curious to know how EZ was started, how we've evolved, and the milestones along the way? Then this is the session you shouldn't miss.
 
-About half a decade ago, #EZ was just an idea envisioned by our CEO, Joy Sharma, and we'd love for you to hear the story directly from him.
+About half a decade ago, *#EZ* was just an idea envisioned by our CEO, *Joy Sharma*, and we'd love for you to hear the story directly from him.
 
-When & Where
-Date: {{Session Date}}
-Time: {{Session Time}}
+*When & Where*
+*Date:* {{Session Date}}
+*Time:* {{Session Time}}
 Venue: Breakout Area
 
 This is an essential session for everyone to attend. If you have any questions about EZ, please bring them along.
@@ -671,11 +671,11 @@ Looking forward to seeing you there!"""
 
 JOY_FEEDBACK = """Hi {{Name}},
 
-Thank you for attending the Session with Joy on {{Week Day}}, {{Session Date}}. We hope it was informative and valuable.
+Thank you for attending the *Session with Joy* on {{Week Day}}, {{Session Date}}. We hope it was informative and valuable.
 
 To help us improve future sessions, please take a moment to share your feedback using the link below:
 
-Feedback Form: https://www.surveymonkey.com/r/5MPTY8W
+*Feedback Form:* https://www.surveymonkey.com/r/5MPTY8W
 
 We appreciate your time and inputs."""
 
@@ -683,10 +683,10 @@ ANTI_HARASSMENT_INVITE = """Hi All,
 
 We are pleased to invite you to this session which is designed to help us foster a respectful, inclusive, and safe workplace environment. It will cover key aspects of workplace conduct, awareness, and the steps we can all take to prevent and address harassment effectively.
 
-Session Details: Safe Workplace Practices: Anti Harassment Awareness Session
-Date: {{Session Date}}
-Time: {{Session Time}}
-Session Link: {{Meeting Link}}
+*Session Details:* *Safe Workplace Practices: Anti Harassment Awareness Session*
+*Date:* {{Session Date}}
+*Time:* {{Session Time}}
+*Session Link:* {{Meeting Link}}
 
 Your presence and participation will play a vital role in making this initiative meaningful. We look forward to seeing you there."""
 
@@ -694,13 +694,13 @@ ANTI_HARASSMENT_FACILITATOR = """Hi Team,
 
 I hope this email finds you well.
 
-As part of our commitment to fostering a safe, respectful, and inclusive workplace, we are organizing a mandatory session on Safe Workplace Practices: Anti-Harassment Awareness. This annual session is designed to build awareness around workplace harassment, inappropriate behaviour, professional boundaries, respectful communication, and the role each of us plays in creating a safe and comfortable work environment. The session will also help individuals understand how to identify and prevent instances of harassment, respond appropriately to concerns, and be aware of the channels available for raising concerns or seeking support.
+As part of our commitment to fostering a safe, respectful, and inclusive workplace, we are organizing a mandatory session on *Safe Workplace Practices: Anti-Harassment Awareness*. This annual session is designed to build awareness around workplace harassment, inappropriate behaviour, professional boundaries, respectful communication, and the role each of us plays in creating a safe and comfortable work environment. The session will also help individuals understand how to identify and prevent instances of harassment, respond appropriately to concerns, and be aware of the channels available for raising concerns or seeking support.
 
 The session will be led by {{Facilitator}}, {{Profile Details}}
 
 {{Poster Link}}
 
-Please note that attendance is mandatory.
+_Please note that attendance is mandatory._
 
 If you have any questions or require further information regarding the session, please feel free to contact the People Team.
 
@@ -708,16 +708,16 @@ We look forward to your active participation in creating a workplace where every
 
 ANTI_HARASSMENT_FEEDBACK = """Hi {{Name}},
 
-Thank you for joining today's Safe Workplace Practices: Anti-Harassment Awareness Session. We hope the session was insightful and provided meaningful takeaways.
+Thank you for joining today's *Safe Workplace Practices: Anti-Harassment Awareness Session*. We hope the session was insightful and provided meaningful takeaways.
 
 Your feedback plays a vital role in helping us evaluate the effectiveness of such programs and enhance future sessions. We kindly request you to take a few minutes to share your inputs through the link below:
 
-Feedback Form: https://www.surveymonkey.com/r/P2MMMCQ
+*Feedback Form:* https://www.surveymonkey.com/r/P2MMMCQ
 
 Please submit your responses by {{Deadline}}.
 
 For your reference, here is the link to EZ's Professional Boundaries and Anti-Harassment Policy:
-View Policy
+[View Policy](#anti_harassment_policy)
 
 We truly value your time, feedback, and commitment to fostering a safe, respectful, and inclusive workplace."""
 
@@ -832,37 +832,37 @@ Thank you for attending the *Session with Joy 2.0* held on {{Week Day}}, {{Sessi
 
 Your feedback is extremely important to us as it helps us evaluate the effectiveness of the program and improve future sessions. We request you to kindly take a few minutes to share your feedback through the form below:
 
-Feedback Form Link: [https://www.surveymonkey.com/r/DG63X7X](https://www.surveymonkey.com/r/DG63X7X)
+Feedback Form Link: https://www.surveymonkey.com/r/DG63X7X
 
 We appreciate your time and inputs, and we look forward to incorporating your suggestions into upcoming initiatives."""
 
 ROTATIONAL_INVITE = """Hi {{Name}},
 
-Step Into Another Team's Shoes, the Rotational Induction Program is back!
+Step Into Another Team's Shoes, the *Rotational Induction Program* is back!
 
 Ever wondered what happens behind the scenes in other departments at EZ? Curious about how different teams contribute to our success?
 
-Here's your chance to explore, learn, and connect across functions through our Rotational Induction Program! Get a first-hand experience of how different departments operate and collaborate.
+Here's your chance to explore, learn, and connect across functions through our *Rotational Induction Program*! Get a first-hand experience of how different departments operate and collaborate.
 
-Program Schedule
+*Program Schedule*
 Delivery Department
 Branding & Marketing Department
 Technology Department
 Sales Department
 
-Why Participate?
+*Why Participate?*
 Gain exposure to different functions
 Understand how teams work together
 Learn beyond your day-to-day role
 Build cross-functional connections
 
-How to Register?
+*How to Register?*
 Fill out the registration form here:
 https://www.surveymonkey.com/r/9GL2WKN
 
-Last Date to Register: {{Deadline}}
+_Last Date to Register: {{Deadline}}_
 
-Before You Register
+*Before You Register*
 Please obtain approval from your HOD/Manager.
 Slots are limited and will be allotted on a first-come, first-served basis.
 Schedule will be shared with registered participants.
@@ -877,9 +877,9 @@ PULSE_CAMPUS = """Hi {{Name}},
 
 I hope you're doing well!
 
-It's time for our EZ Pulse Survey, our biannual check-in to understand how you're feeling, what's working well, and where we can improve. Your honest feedback plays a direct role in shaping our culture, engagement, and overall workplace experience at EZ.
+It's time for our *EZ Pulse Survey*, our biannual check-in to understand how you're feeling, what's working well, and where we can improve. Your honest feedback plays a direct role in shaping our culture, engagement, and overall workplace experience at EZ.
 
-Survey Details (Team-wise Slots | {{Session Date}})
+*Survey Details* (Team-wise Slots | {{Session Date}})
 
 Slot 1  SWAT, Delivery                       Breakout Area   4:00 PM - 4:30 PM
 Slot 2  Experts, Delivery                    Breakout Area   4:30 PM - 5:00 PM
@@ -888,7 +888,7 @@ Slot 4  People, Sales, Branding & Marketing,
         Admin, CEO's Office, COO's Office    Breakout Area   5:30 PM - 6:00 PM
 
 Please carry your laptop or mobile.
-Participation is mandatory, kindly ensure availability in your assigned slot.
+_Participation is mandatory, kindly ensure availability in your assigned slot._
 
 Your responses are completely confidential, and every voice truly matters. Let's use this opportunity to build a stronger EZ together.
 
@@ -898,13 +898,13 @@ PULSE_REMOTE = """Hi {{Name}},
 
 I hope you're doing well!
 
-It's time for our EZ Pulse Survey, our biannual check-in to understand how you're feeling, what's working well, and where we can improve. Your honest feedback plays a direct role in shaping our culture, engagement, and overall workplace experience at EZ.
+It's time for our *EZ Pulse Survey*, our biannual check-in to understand how you're feeling, what's working well, and where we can improve. Your honest feedback plays a direct role in shaping our culture, engagement, and overall workplace experience at EZ.
 
-Survey Details
-Date & Time: {{Session Date}}, {{Session Time}}
-Google Meet Link: {{Meeting Link}}
+*Survey Details*
+*Date & Time:* {{Session Date}}, {{Session Time}}
+*Google Meet Link:* {{Meeting Link}}
 
-Participation is mandatory, kindly ensure availability in your assigned slot.
+_Participation is mandatory, kindly ensure availability in your assigned slot._
 
 Your responses are completely confidential, and every voice truly matters. Let's use this opportunity to build a stronger EZ together.
 
@@ -912,28 +912,28 @@ Looking forward to your active participation."""
 
 PULSE_NON_ATTENDEES = """Hi {{Name}},
 
-We noticed that you were unable to attend the Pulse Survey Session held on {{Week Day}}, {{Session Date}}. Kindly share the reason for your absence at the earliest.
+We noticed that you were unable to attend the *Pulse Survey* Session held on {{Week Day}}, {{Session Date}}. Kindly share the reason for your absence at the earliest.
 
 Please note that individuals who neither attended the session nor provided any communication will be marked half day absent for the day.
 
-In case you were unable to attend, you are required to complete the Pulse Survey using the link below by {{Deadline}}:
+In case you were unable to attend, you are required to complete the *Pulse Survey* using the link below by {{Deadline}}:
 https://www.surveymonkey.com/r/396FMF6
 
 After submission, please share a screenshot of the submission confirmation page for our records.
 
-Your prompt action on this is mandatory and appreciated."""
+_Your prompt action on this is mandatory and appreciated._"""
 
 PULSE_FOLLOWUP_CAMPUS = """Hi {{Name}},
 
 Hope this message finds you well.
 
-As you may recall, a Pulse Survey was conducted on {{Survey Date}}. This survey provided a quick and confidential way for you to share your thoughts, opinions, and suggestions about your experience at EZ.
+As you may recall, a *Pulse Survey* was conducted on {{Survey Date}}. This survey provided a quick and confidential way for you to share your thoughts, opinions, and suggestions about your experience at EZ.
 
 In our ongoing effort to foster a culture of open communication and continuous improvement, we are pleased to announce a follow-up session on {{Session Date}} at {{Session Time}}. During this session, we will provide updates on the survey, share insights into the feedback received, and communicate the next steps based on the findings.
 
 Your voice matters, and this session will help us collectively understand the insights and actions ahead.
 
-Kindly ensure your presence for the session, as it is mandatory to attend.
+_Kindly ensure your presence for the session, as it is mandatory to attend._
 
 Feel free to reach out to us if you have any questions."""
 
@@ -943,7 +943,7 @@ PULSE_FOLLOWUP_REMOTE = PULSE_FOLLOWUP_CAMPUS.replace(
 
 PULSE_FOLLOWUP_NON_ATTENDEES = """Hi {{Name}},
 
-We noticed that you were unable to attend the Pulse Survey Follow-up Session on {{Week Day}}, {{Session Date}}. Kindly share the reason for your absence at the earliest.
+We noticed that you were unable to attend the *Pulse Survey Follow-up Session* on {{Week Day}}, {{Session Date}}. Kindly share the reason for your absence at the earliest.
 
 Please note, those who neither attended the session nor provided a response will be marked absent for the day.
 
@@ -1144,9 +1144,13 @@ def render(text: str, ctx: dict) -> str:
     A blanked-out {{Session Time}} reads as a finished sentence with a hole in it; the token left
     in place reads as "type this before you send", which is what it is. HR sees every draft before
     it goes, so an unfilled field is a prompt rather than a defect."""
+    from .richtext import protect
+
     def sub(m):
         value = ctx.get(m.group(1))
-        return str(value) if value not in (None, "") else m.group(0)
+        # A value is data. Escaping its markers stops a designation with a slash in it from
+        # italicising half a sentence.
+        return protect(value) if value not in (None, "") else m.group(0)
     return _TOKEN.sub(sub, text or "")
 
 

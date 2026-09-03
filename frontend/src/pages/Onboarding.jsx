@@ -23,6 +23,14 @@ import OnboardingFormsModal from '../components/onboarding/OnboardingFormsModal'
 const TOOLBAR = cx('h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none',
   'transition-colors duration-150 ease-snappy hover:border-slate-300 focus:border-brand-500', focusRing)
 
+// "Nobody has taken the register yet" is a different fact from "they did not come", and a tick
+// could only ever say two of the three.
+const ATTENDANCE_TONE = {
+  Attended: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  'Did not attend': 'border-amber-200 bg-amber-50 text-amber-800',
+  NA: 'border-slate-200 bg-slate-100 text-slate-500',
+}
+
 const STATUS_TONE = {
   Done: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   Pending: 'border-slate-200 bg-white text-slate-700',
@@ -986,6 +994,21 @@ function StepValue({ step, busy, onSave }) {
  * other view; clearing it brings the calculated one back. */
 function StepDue({ step, onSave }) {
   const [open, setOpen] = useState(false)
+  // Once a step is finished, when it was finished is the more useful fact than when it was meant
+  // to be. The plan is still there underneath, in the second line.
+  if (step.completed_at && !open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className={cx('group rounded px-1 py-0.5 text-left', focusRing)}>
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+          <Check className="h-3 w-3" aria-hidden />{fmtDate(step.completed_at)}
+        </span>
+        <span className="block text-[11px] text-slate-400">
+          done{step.due_on ? ` · was due ${fmtDate(step.due_on)}` : ''}
+        </span>
+      </button>
+    )
+  }
   if (!step.due_on && !step.due_working_day) return <span className={EMPTY}>&mdash;</span>
   if (open) {
     return (
@@ -1191,12 +1214,15 @@ function ChecklistModal({ planId, phases, onClose, onChanged }) {
                                 ))}
                               </div>
                             ) : s.attendance ? (
-                              <label className="inline-flex items-center gap-2 text-xs text-slate-600">
-                                <input type="checkbox" checked={!!s.attended}
-                                  onChange={(e) => patch(s.key, { attended: e.target.checked })}
-                                  className="h-4 w-4 rounded border-slate-300 accent-brand-600" />
-                                Attended
-                              </label>
+                              <select value={s.attendance || 'NA'}
+                                onChange={(e) => patch(s.key, { attendance: e.target.value })}
+                                aria-label={`Attendance for ${s.label}`}
+                                className={cx('h-8 rounded-full border px-2.5 text-xs font-medium outline-none',
+                                  ATTENDANCE_TONE[s.attendance] || ATTENDANCE_TONE.NA, focusRing)}>
+                                {['Attended', 'Did not attend', 'NA'].map((o) => (
+                                  <option key={o} value={o}>{o}</option>
+                                ))}
+                              </select>
                             ) : <span className={EMPTY}>—</span>}
                           </td>
                         </tr>
@@ -1947,6 +1973,7 @@ const MAIL_COLUMNS = [
   { key: 'state', label: 'State', get: (r) => r.state || '' },
   { key: 'due', label: 'Next due', get: (r) => (r.next_due ? fmtDate(r.next_due) : '') },
   { key: 'progress', label: 'Sent', get: (r) => `${r.sent} of ${r.total}` },
+  { key: 'edited', label: 'Updated', get: (r) => (r.edited_at ? fmtDate(r.edited_at) : '') },
 ]
 
 const STATE_TONE = {
@@ -1954,6 +1981,7 @@ const STATE_TONE = {
   Overdue: 'border-amber-200 bg-amber-50 text-amber-800',
   'Due today': 'border-brand-200 bg-brand-50 text-brand-800',
   Waiting: 'border-slate-200 bg-slate-50 text-slate-600',
+  'Nobody waiting': 'border-slate-200 bg-white text-slate-400',
 }
 
 function MailsView({ rows, onOpen }) {
@@ -1970,9 +1998,6 @@ function MailsView({ rows, onOpen }) {
   const values = useMemo(
     () => Object.fromEntries(MAIL_COLUMNS.map((c) => [c.key, distinctValues(rows, c.get)])), [rows])
 
-  const outstanding = rows.reduce((n, r) => n + r.outstanding, 0)
-  const autoCount = rows.filter((r) => r.sending === 'Automatic').length
-
   if (!rows.length) {
     return (
       <EmptyState icon={Mail} title="No mails yet"
@@ -1982,13 +2007,6 @@ function MailsView({ rows, onOpen }) {
 
   return (
     <div className="space-y-3">
-      <p className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-xs leading-relaxed text-slate-600">
-        <strong className="font-semibold text-slate-800">{outstanding}</strong> letters still to go,
-        across {rows.length} kinds. {autoCount} of those kinds draft themselves from the
-        candidate&rsquo;s own details; the rest are written by hand. None of them leaves without
-        somebody opening it and pressing send.
-      </p>
-
       <div className="flex flex-wrap items-center gap-2">
         <label className="relative min-w-0 flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden />
@@ -2061,6 +2079,11 @@ function MailsView({ rows, onOpen }) {
                       </span>
                     )}
                   </td>
+                  <td className={cx(TD, 'whitespace-nowrap')}>
+                    {r.edited_at
+                      ? <span className="text-xs text-brand-700" title={r.edited_by}>{fmtDate(r.edited_at)}</span>
+                      : <span className={EMPTY}>&mdash;</span>}
+                  </td>
                   <td className={cx(TD, 'text-right')}>
                     <ChevronRight className="ml-auto h-4 w-4 text-slate-400" aria-hidden />
                   </td>
@@ -2074,68 +2097,186 @@ function MailsView({ rows, onOpen }) {
   )
 }
 
-/** One letter, and who it is still owed to. */
-function MailPeopleModal({ row, onClose, onPick }) {
-  const pending = row.people.filter((p) => p.state !== 'Sent')
-  const done = row.people.filter((p) => p.state === 'Sent')
+/** One letter: what it says, who has had it, and who is still waiting.
+ *
+ * The wording and the sending live in the same window on purpose. Editing a letter and then
+ * hunting for the list of people it is owed to is two screens for one thought. */
+function TemplateModal({ row, onClose, onPick, onEdited }) {
+  const { toast } = useToast()
+  const [tpl, setTpl] = useState(null)
+  const [subject, setSubject] = useState('')
+  const [body, setBody] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    api.onboardingReadTemplate(row.template_key)
+      .then((d) => { setTpl(d); setSubject(d.subject); setBody(d.body) })
+      .catch((e) => { toast(e.message, 'error'); onClose() })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row.template_key])
+
+  const dirty = tpl && (subject !== tpl.subject || body !== tpl.body)
+
+  async function save() {
+    setSaving(true)
+    try {
+      const d = await api.onboardingWriteTemplate(row.template_key, { subject, body })
+      setTpl(d); setSubject(d.subject); setBody(d.body); setEditing(false)
+      toast(d.edited ? 'Letter saved' : 'Back to the original wording', 'success')
+      onEdited?.()
+    } catch (e) { toast(e.message, 'error') } finally { setSaving(false) }
+  }
+
+  function resetToOriginal() {
+    if (!tpl) return
+    setSubject(tpl.original_subject)
+    setBody(tpl.original_body)
+    setEditing(true)
+  }
+
+  const pending = (row.people || []).filter((p) => p.state !== 'Sent')
+  const done = (row.people || []).filter((p) => p.state === 'Sent')
+
   return (
-    <Modal open onClose={onClose} title={row.name}>
-      <div className="space-y-4">
-        <p className="text-xs text-slate-600">
-          {row.sending === 'Automatic' ? 'Drafts itself from their details.' : 'Written by hand.'}
-          {' '}Goes to the {row.to}. {row.sent} of {row.total} sent.
-        </p>
-        {!!row.needs.length && (
-          <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span>Still to supply: {row.needs.join(', ')}.</span>
-          </p>
-        )}
+    <Modal open onClose={onClose} size="wide" title={row.name}>
+      {!tpl ? (
+        <div className="flex items-center gap-2 py-10 text-sm text-slate-500"><Spinner className="h-4 w-4" /> Loading…</div>
+      ) : (
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+            <span>{row.sending === 'Automatic' ? 'Drafts itself from their details' : 'Written by hand'}</span>
+            <span className="text-slate-300">|</span>
+            <span>Goes to the {tpl.to}</span>
+            {tpl.edited && (
+              <>
+                <span className="text-slate-300">|</span>
+                <span className="text-brand-700">
+                  Edited {fmtDateTime(tpl.edited_at)}{tpl.edited_by ? ` by ${tpl.edited_by}` : ''}
+                </span>
+              </>
+            )}
+          </div>
 
-        {!!pending.length && (
-          <section>
-            <h3 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-              Still to go
-            </h3>
-            <div className="space-y-1.5">
-              {pending.map((p) => (
-                <button key={`${p.plan_id || p.occurrence_id}`} type="button" onClick={() => onPick(p)}
-                  className={cx('flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5 text-left',
-                    'transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-50/50', focusRing)}>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-slate-800">{p.who}</span>
-                    <span className="block truncate text-[11px] text-slate-500">
-                      {p.entity}{p.due_on ? ` · due ${fmtDate(p.due_on)}` : ''}
-                    </span>
-                  </span>
-                  <span className={cx('shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium',
-                    STATE_TONE[p.state] || STATE_TONE.Waiting)}>{p.state}</span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+          {!!tpl.needs.length && (
+            <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>Still to supply: {tpl.needs.join(', ')}.</span>
+            </p>
+          )}
+
+          {/* the letter */}
+          <section className="rounded-xl border border-slate-200">
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                The letter
+              </span>
+              <div className="ml-auto flex items-center gap-2">
+                {tpl.edited && (
+                  <button type="button" onClick={resetToOriginal}
+                    className={cx('rounded px-1 text-xs text-slate-500 hover:text-slate-800', focusRing)}>
+                    Back to the original
+                  </button>
+                )}
+                <button type="button" onClick={() => setEditing((v) => !v)}
+                  className={cx('rounded px-1 text-xs font-medium text-brand-700 hover:text-brand-900', focusRing)}>
+                  {editing ? 'Preview it' : 'Edit it'}
                 </button>
-              ))}
+              </div>
             </div>
-          </section>
-        )}
 
-        {!!done.length && (
+            {editing ? (
+              <div className="space-y-3 p-3">
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Subject</span>
+                  <input value={subject} onChange={(e) => setSubject(e.target.value)}
+                    className={cx(inputClass, 'h-9 text-sm')} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Message</span>
+                  <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={18}
+                    className={cx(inputClass, 'resize-y font-sans text-sm leading-relaxed')} />
+                </label>
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                  *bold*, /italic/, _underline_, and [words](#link-name) for a link.
+                  {tpl.fields.length > 0 && ` Fields filled per person: ${tpl.fields.join(', ')}.`}
+                </p>
+                <div className="flex items-center justify-end gap-2">
+                  <Button variant="ghost" onClick={() => { setSubject(tpl.subject); setBody(tpl.body); setEditing(false) }}>
+                    Cancel
+                  </Button>
+                  <Button onClick={save} disabled={saving || !dirty}>
+                    {saving ? <Spinner className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />} Save the letter
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3">
+                <p className="mb-2 text-sm font-medium text-slate-900">{rtStrip(subject)}</p>
+                <div className="max-h-72 overflow-auto rounded-lg bg-slate-50/70 p-3 [&_a]:underline"
+                  dangerouslySetInnerHTML={{ __html: tpl.html }} />
+              </div>
+            )}
+          </section>
+
+          {/* who it is owed to, and who has had it */}
+          {!!pending.length && (
+            <section>
+              <h3 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                Still to go to {pending.length}
+              </h3>
+              <div className="space-y-1.5">
+                {pending.map((p) => (
+                  <button key={`${p.plan_id || p.occurrence_id}`} type="button" onClick={() => onPick(p)}
+                    className={cx('flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5 text-left',
+                      'transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-50/50', focusRing)}>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-slate-800">{p.who}</span>
+                      <span className="block truncate text-[11px] text-slate-500">
+                        {p.entity}{p.due_on ? ` · due ${fmtDate(p.due_on)}` : ''}
+                      </span>
+                    </span>
+                    <span className={cx('shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                      STATE_TONE[p.state] || STATE_TONE.Waiting)}>{p.state}</span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <h3 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-              Already sent
+              {done.length ? `Sent to ${done.length}` : 'Not sent to anybody yet'}
             </h3>
-            <ul className="space-y-1 text-xs text-slate-600">
-              {done.map((p) => (
-                <li key={`${p.plan_id || p.occurrence_id}`} className="flex items-center justify-between gap-3">
-                  <span className="truncate">{p.who}</span>
-                  <span className="shrink-0 text-[11px] text-slate-400">{fmtDate(p.sent_at)}</span>
-                </li>
-              ))}
-            </ul>
+            {done.length ? (
+              <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+                {done.map((p) => (
+                  <li key={`${p.plan_id || p.occurrence_id}`}
+                    className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                    <span className="truncate text-slate-800">{p.who}</span>
+                    <span className="shrink-0 text-[11px] text-slate-500">{fmtDateTime(p.sent_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-slate-500">
+                {row.total ? 'Nobody has had this one yet.' : 'Nobody is waiting on this one at the moment.'}
+              </p>
+            )}
           </section>
-        )}
-      </div>
+        </div>
+      )}
     </Modal>
   )
 }
+
+/** The subject line without its markers, for showing rather than editing. */
+const rtStrip = (s) => String(s || '')
+  .replace(/\[([^\]\n]+)\]\([^)\n]*\)/g, '$1')
+  .replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, '$1')
+  .replace(/(?<![\w/])\/([^/\n]+)\/(?![\w/])/g, '$1')
+  .replace(/(?<![\w_])_([^_\n]+)_(?![\w_])/g, '$1')
 
 const TABS = [
   { id: 'candidates', label: 'Candidates', icon: Users },
@@ -2191,7 +2332,6 @@ export default function Onboarding() {
     <div className="space-y-5">
       <PageHeader
         title="Onboarding"
-        subtitle="Every new joiner's first hundred days, the sessions EZ runs, and what is happening when."
         action={
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="ghost" onClick={() => setLinksOpen(true)}>
@@ -2307,7 +2447,8 @@ export default function Onboarding() {
           onSaved={loadOccurrences} />
       )}
       {mailPeople && (
-        <MailPeopleModal row={mailPeople} onClose={() => setMailPeople(null)}
+        <TemplateModal row={mailPeople} onClose={() => setMailPeople(null)}
+          onEdited={loadMails}
           onPick={(p) => {
             setMailPeople(null)
             if (p.occurrence_id) {

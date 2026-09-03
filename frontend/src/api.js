@@ -284,6 +284,10 @@ export const api = {
     req(`/onboarding-module/groups/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   onboardingDeleteGroup: (id) => req(`/onboarding-module/groups/${id}`, { method: 'DELETE' }),
 
+  onboardingReadTemplate: (key) => req(`/onboarding-module/templates/${key}`),
+  onboardingWriteTemplate: (key, body) =>
+    req(`/onboarding-module/templates/${key}`, { method: 'PUT', body: JSON.stringify(body) }),
+
   onboardingLinks: () => req('/onboarding-module/links'),
   onboardingSetLink: (key, url) =>
     req(`/onboarding-module/links/${key}`, { method: 'PATCH', body: JSON.stringify({ url }) }),

@@ -556,6 +556,9 @@ class OnboardingStepState(Base):
     #: A due date somebody set by hand, overriding the working-day arithmetic. The calculated date
     #: is the plan; this is what actually happened, and once it is set every view uses it.
     due_override: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: When this step was marked Done. A checklist that only says "Done" cannot answer "when", and
+    #: "when" is the question anybody looking back at an onboarding actually has.
+    completed_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     #: template key -> when it was sent. A step can carry more than one mail (the ISO course and
     #: its quiz; the training form and the manager's), and a single timestamp cannot say which of
     #: them has gone, which is how somebody gets the same mail twice.
@@ -646,5 +649,27 @@ class MailLink(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(60), unique=True)
     url: Mapped[str] = mapped_column(String(600), default="")
+    updated_by: Mapped[str] = mapped_column(String(200), default="")
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=True)
+
+
+class MailTemplateEdit(Base):
+    """A letter the People team has rewritten.
+
+    services/onboarding/mails.py holds the letters as the document had them. Those are the
+    starting point, not the last word: wording changes, a paragraph gets added, a link moves into
+    the sentence. Storing the edit here rather than in the file means it happens without a deploy
+    and it is visible, with the date it changed, next to the letter it changed.
+
+    Only the subject and body are stored. Which step the letter belongs to, who it goes to and
+    when it is due are the process, not the wording, and those stay in code.
+    """
+
+    __tablename__ = "mail_template_edits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    template_key: Mapped[str] = mapped_column(String(60), unique=True)
+    subject: Mapped[str] = mapped_column(Text, default="")
+    body: Mapped[str] = mapped_column(Text, default="")
     updated_by: Mapped[str] = mapped_column(String(200), default="")
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=True)
