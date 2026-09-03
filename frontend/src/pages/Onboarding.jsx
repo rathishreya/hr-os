@@ -7,10 +7,11 @@
 // Every list filters through the same faceted machinery the rest of the app uses, and everything
 // is entity-scoped: the API returns only the steps a candidate's entity has, so ArabEasy simply
 // does not have a go-to-person row to hide.
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle, CalendarDays, Check, ChevronLeft, ChevronRight, ClipboardList, Clock, Filter,
-  Inbox, Link2 as LinkIcon, Mail, MapPin, PencilLine, Plus, Search, Send, Users, Video,
+  Inbox, Link2 as LinkIcon, Mail, MapPin, PencilLine, Plus, Search, Send,
+  Table as TableIcon, Users, Video,
 } from 'lucide-react'
 import { api } from '../api'
 import { Badge, Button, Card, EmptyState, IconButton, Modal, PageHeader, Spinner, cx, focusRing, inputClass } from '../ui'
@@ -389,6 +390,96 @@ function BulkMailModal({ planIds, templates, onClose, onSent }) {
         </div>
       </div>
     </Modal>
+  )
+}
+
+/** A textarea with the formatting buttons above it.
+ *
+ * The letters are stored as markup so they stay editable in a plain box and diff cleanly, but
+ * nobody should have to remember that bold is an asterisk. These buttons wrap whatever is
+ * selected, put the cursor back where it was, and leave the text as the same markup a person could
+ * have typed. */
+function RichTextArea({ value, onChange, rows = 18, label = 'Message', links = [] }) {
+  const ref = useRef(null)
+
+  function wrap(before, after = before) {
+    const el = ref.current
+    if (!el) return
+    const { selectionStart: a, selectionEnd: b } = el
+    const chosen = value.slice(a, b)
+    // Pressing the same button again on wrapped text unwraps it, which is what people expect from
+    // a bold button and what stops markers piling up.
+    const already = value.slice(a - before.length, a) === before
+      && value.slice(b, b + after.length) === after
+    const next = already
+      ? value.slice(0, a - before.length) + chosen + value.slice(b + after.length)
+      : value.slice(0, a) + before + (chosen || 'text') + after + value.slice(b)
+    onChange(next)
+    const shift = already ? -before.length : before.length
+    requestAnimationFrame(() => {
+      el.focus()
+      const start = a + shift
+      el.setSelectionRange(start, start + (chosen || 'text').length)
+    })
+  }
+
+  function insert(text) {
+    const el = ref.current
+    if (!el) return
+    const { selectionStart: a, selectionEnd: b } = el
+    const next = value.slice(0, a) + text + value.slice(b)
+    onChange(next)
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(a + text.length, a + text.length)
+    })
+  }
+
+  function addLink() {
+    const el = ref.current
+    if (!el) return
+    const chosen = value.slice(el.selectionStart, el.selectionEnd) || 'these words'
+    const target = window.prompt(
+      'Link to an address (https://…), or to one of the saved links by name:\n\n'
+      + links.slice(0, 12).map((l) => `#${l.key}  — ${l.label}`).join('\n'))
+    if (!target) return
+    const t = target.trim()
+    const { selectionStart: a, selectionEnd: b } = el
+    const md = `[${chosen}](${t.startsWith('#') || t.startsWith('http') ? t : `https://${t}`})`
+    onChange(value.slice(0, a) + md + value.slice(b))
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(a + md.length, a + md.length) })
+  }
+
+  const TOOL = cx('inline-flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-xs',
+    'text-slate-600 transition-colors duration-150 ease-snappy hover:bg-slate-100 hover:text-slate-900',
+    focusRing)
+
+  return (
+    <div>
+      <div className="mb-1 flex flex-wrap items-center gap-1">
+        <span className="mr-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</span>
+        <button type="button" onClick={() => wrap('*')} title="Bold" aria-label="Bold"
+          className={cx(TOOL, 'font-bold')}>B</button>
+        <button type="button" onClick={() => wrap('/')} title="Italic" aria-label="Italic"
+          className={cx(TOOL, 'italic font-serif')}>I</button>
+        <button type="button" onClick={() => wrap('_')} title="Underline" aria-label="Underline"
+          className={cx(TOOL, 'underline')}>U</button>
+        <span className="mx-1 h-4 w-px bg-slate-200" aria-hidden />
+        <button type="button" onClick={addLink} title="Add a link" aria-label="Add a link"
+          className={TOOL}><LinkIcon className="h-3.5 w-3.5" aria-hidden /></button>
+        <button type="button" title="Insert a table" aria-label="Insert a table" className={TOOL}
+          onClick={() => insert('\n| Heading | Heading |\n| Cell | Cell |\n')}>
+          <TableIcon className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+      <textarea ref={ref} value={value} rows={rows}
+        onChange={(e) => onChange(e.target.value)}
+        className={cx(inputClass, 'resize-y font-sans text-sm leading-relaxed')} />
+      <p className="mt-1 text-[11px] text-slate-500">
+        Select some words and press a button, or type it: *bold*, /italic/, _underline_,
+        [words](#link-name). A row of | cells | makes a table.
+      </p>
+    </div>
   )
 }
 
@@ -783,11 +874,7 @@ function SessionMailComposer({ sessionKey, templateKey, occurrenceId, onClose, o
             <input value={subject} onChange={(e) => setSubject(e.target.value)}
               className={cx(inputClass, 'h-9 text-sm')} />
           </label>
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Message</span>
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={16}
-              className={cx(inputClass, 'resize-y font-sans text-sm leading-relaxed')} />
-          </label>
+          <RichTextArea value={body} onChange={setBody} rows={16} />
           {showPreview && <BodyPreview html={draft.html} />}
           <div className="flex items-center gap-3">
             <button type="button" onClick={() => setShowPreview((v) => !v)}
@@ -920,11 +1007,7 @@ function MailComposer({ planId, occurrenceId, templateKey, onClose, onSent }) {
             <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Subject</span>
             <input value={subject} onChange={(e) => setSubject(e.target.value)} className={cx(inputClass, 'h-9 text-sm')} />
           </label>
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Message</span>
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={18}
-              className={cx(inputClass, 'resize-y font-sans text-sm leading-relaxed')} />
-          </label>
+          <RichTextArea value={body} onChange={setBody} />
           {showPreview
             ? <BodyPreview html={draft.html} />
             : (
@@ -2108,6 +2191,11 @@ function TemplateModal({ row, onClose, onPick, onEdited }) {
   const [body, setBody] = useState('')
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [linkList, setLinkList] = useState([])
+
+  useEffect(() => {
+    api.onboardingLinks().then((r) => setLinkList(r.links)).catch(() => setLinkList([]))
+  }, [])
 
   useEffect(() => {
     api.onboardingReadTemplate(row.template_key)
@@ -2192,15 +2280,12 @@ function TemplateModal({ row, onClose, onPick, onEdited }) {
                   <input value={subject} onChange={(e) => setSubject(e.target.value)}
                     className={cx(inputClass, 'h-9 text-sm')} />
                 </label>
-                <label className="block">
-                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Message</span>
-                  <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={18}
-                    className={cx(inputClass, 'resize-y font-sans text-sm leading-relaxed')} />
-                </label>
-                <p className="text-[11px] leading-relaxed text-slate-500">
-                  *bold*, /italic/, _underline_, and [words](#link-name) for a link.
-                  {tpl.fields.length > 0 && ` Fields filled per person: ${tpl.fields.join(', ')}.`}
-                </p>
+                <RichTextArea value={body} onChange={setBody} links={linkList} />
+                {tpl.fields.length > 0 && (
+                  <p className="text-[11px] text-slate-500">
+                    Filled in per person: {tpl.fields.join(', ')}.
+                  </p>
+                )}
                 <div className="flex items-center justify-end gap-2">
                   <Button variant="ghost" onClick={() => { setSubject(tpl.subject); setBody(tpl.body); setEditing(false) }}>
                     Cancel

@@ -881,11 +881,11 @@ It's time for our *EZ Pulse Survey*, our biannual check-in to understand how you
 
 *Survey Details* (Team-wise Slots | {{Session Date}})
 
-Slot 1  SWAT, Delivery                       Breakout Area   4:00 PM - 4:30 PM
-Slot 2  Experts, Delivery                    Breakout Area   4:30 PM - 5:00 PM
-Slot 3  Technology                           Breakout Area   5:00 PM - 5:30 PM
-Slot 4  People, Sales, Branding & Marketing,
-        Admin, CEO's Office, COO's Office    Breakout Area   5:30 PM - 6:00 PM
+| Slot | Teams | Venue | Time |
+| 1 | SWAT, Delivery | Breakout Area | 4:00 PM - 4:30 PM |
+| 2 | Experts, Delivery | Breakout Area | 4:30 PM - 5:00 PM |
+| 3 | Technology | Breakout Area | 5:00 PM - 5:30 PM |
+| 4 | People, Sales, Branding & Marketing, Admin, CEO's Office, COO's Office | Breakout Area | 5:30 PM - 6:00 PM |
 
 Please carry your laptop or mobile.
 _Participation is mandatory, kindly ensure availability in your assigned slot._
