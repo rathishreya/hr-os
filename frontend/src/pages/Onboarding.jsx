@@ -1112,21 +1112,26 @@ function StepValue({ step, busy, onSave }) {
  * other view; clearing it brings the calculated one back. */
 function StepDue({ step, onSave }) {
   const [open, setOpen] = useState(false)
-  // Once a step is finished, when it was finished is the more useful fact than when it was meant
-  // to be. The plan is still there underneath, in the second line.
-  if (step.completed_at && !open) {
+
+  // A finished step's date is a record, not a plan. Moving the due date of something already done
+  // would be rewriting when it was supposed to happen after it happened, so once a step is Done
+  // this is read-only. Put it back to Pending and the date is yours to move again.
+  if (step.status === 'Done') {
     return (
-      <button type="button" onClick={() => setOpen(true)}
-        className={cx('group rounded px-1 py-0.5 text-left', focusRing)}>
+      <span className="block px-1 py-0.5" title="Set this back to Pending to change the date">
         <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
-          <Check className="h-3 w-3" aria-hidden />{fmtDate(step.completed_at)}
+          <Check className="h-3 w-3" aria-hidden />
+          {fmtDate(step.completed_at || step.due_on) || 'Done'}
         </span>
         <span className="block text-[11px] text-slate-400">
-          done{step.due_on ? ` · was due ${fmtDate(step.due_on)}` : ''}
+          {step.completed_at
+            ? `done${step.due_on ? ` · was due ${fmtDate(step.due_on)}` : ''}`
+            : 'done'}
         </span>
-      </button>
+      </span>
     )
   }
+
   if (!step.due_on && !step.due_working_day) return <span className={EMPTY}>&mdash;</span>
   if (open) {
     return (

@@ -367,6 +367,16 @@ def update_step(plan_id: int, step_key: str, body: StepPatch, db: Session = Depe
     if body.scheduled_at is not None:
         row.scheduled_at = body.scheduled_at
     if body.due_override is not None:
+        # A finished step's date is a record of what happened, not a plan for what will. Refusing
+        # here rather than only greying out the control, because a guard that lives in the browser
+        # is not a guard: this endpoint is what actually writes.
+        going_to = body.status if body.status is not None else row.status
+        if going_to == "Done":
+            raise HTTPException(
+                409,
+                f"{step.label} is already done, so its date cannot be moved. "
+                "Set it back to Pending first if the date was wrong.",
+            )
         # "" means "stop overriding", not "due on the epoch".
         row.due_override = schedule._as_date(body.due_override) if body.due_override else None
     if body.mark_sent:
