@@ -1138,12 +1138,21 @@ def fields(text: str) -> list[str]:
     return out
 
 
+# Fields that are genuinely optional: not every hire is given a go-to person / buddy. When one of
+# these is left unfilled it must NOT leave a "{{...}}" hole or block the send — the sentence simply
+# does not apply, so render() drops the whole line it sits on, and it is never counted as missing.
+OPTIONAL = frozenset({"Go to Person"})
+
+
 def render(text: str, ctx: dict) -> str:
     """Fill what we know and LEAVE the rest standing.
 
     A blanked-out {{Session Time}} reads as a finished sentence with a hole in it; the token left
     in place reads as "type this before you send", which is what it is. HR sees every draft before
-    it goes, so an unfilled field is a prompt rather than a defect."""
+    it goes, so an unfilled field is a prompt rather than a defect.
+
+    The exception is an OPTIONAL field nobody supplied: its line is dropped entirely, so an unnamed
+    go-to person never leaves a "{{Go to Person}}" gap in the letter or stops it from going out."""
     from .richtext import protect
 
     def sub(m):
@@ -1151,12 +1160,19 @@ def render(text: str, ctx: dict) -> str:
         # A value is data. Escaping its markers stops a designation with a slash in it from
         # italicising half a sentence.
         return protect(value) if value not in (None, "") else m.group(0)
-    return _TOKEN.sub(sub, text or "")
+    out = _TOKEN.sub(sub, text or "")
+    # After substitution, only UNFILLED tokens remain as {{...}}. Drop any line still carrying an
+    # unfilled OPTIONAL one (the whole sentence goes with it).
+    if any(f"{{{{{tok}}}}}" in out for tok in OPTIONAL):
+        out = "\n".join(ln for ln in out.split("\n")
+                        if not any(f"{{{{{tok}}}}}" in ln for tok in OPTIONAL))
+    return out
 
 
 def unfilled(text: str, ctx: dict) -> list[str]:
-    """The fields still standing after a render, so the UI can say what needs a person."""
-    return [f for f in fields(text) if ctx.get(f) in (None, "")]
+    """The fields still standing after a render, so the UI can say what needs a person. OPTIONAL
+    fields are never listed: their line is dropped when unfilled, so they are not "missing"."""
+    return [f for f in fields(text) if ctx.get(f) in (None, "") and f not in OPTIONAL]
 
 
 def as_dict(t: MailTemplate) -> dict:
