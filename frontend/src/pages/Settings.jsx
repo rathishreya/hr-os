@@ -396,6 +396,26 @@ function MySignatureCard() {
     const url = window.prompt('Link URL (https://…)')
     if (url) exec('createLink', url.trim())
   }
+  // Text colour: opening the OS colour picker blurs the editor and loses the selection, so the
+  // current range is remembered on every edit and restored before the colour is applied. styleWithCSS
+  // makes execCommand write `style="color:…"` (an inline style the server keeps) rather than a
+  // <font> tag (which it strips), so the colour actually survives the save.
+  const savedRange = useRef(null)
+  const rememberSelection = () => {
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount && ref.current && ref.current.contains(sel.anchorNode)) {
+      savedRange.current = sel.getRangeAt(0).cloneRange()
+    }
+  }
+  const applyColor = (color) => {
+    if (!ref.current) return
+    ref.current.focus()   // execCommand only acts on the focused editable
+    const sel = window.getSelection()
+    if (savedRange.current) { sel.removeAllRanges(); sel.addRange(savedRange.current) }
+    if (!sel.rangeCount || sel.isCollapsed) return   // nothing selected — a colour needs a target
+    exec('styleWithCSS', true)
+    exec('foreColor', color)
+  }
 
   async function save() {
     const html = ref.current ? ref.current.innerHTML : ''
@@ -438,9 +458,18 @@ function MySignatureCard() {
               <SigBtn title="Italic" onClick={() => exec('italic')}><Italic className="h-4 w-4" /></SigBtn>
               <SigBtn title="Underline" onClick={() => exec('underline')}><Underline className="h-4 w-4" /></SigBtn>
               <SigBtn title="Add link" onClick={addLink}><Link2 className="h-4 w-4" /></SigBtn>
+              <label title="Text colour — select some text first"
+                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900">
+                <span className="pointer-events-none text-sm font-semibold leading-none">A</span>
+                <input type="color" defaultValue="#1155cc" aria-label="Text colour"
+                  onMouseDown={rememberSelection}
+                  onChange={(e) => applyColor(e.target.value)}
+                  className="absolute h-0 w-0 opacity-0" />
+              </label>
             </div>
             {loaded ? (
               <div ref={ref} contentEditable suppressContentEditableWarning
+                onMouseUp={rememberSelection} onKeyUp={rememberSelection}
                 className="min-h-[96px] px-3 py-2 text-sm leading-relaxed text-slate-800 outline-none"
                 data-placeholder="Type your signature here…" />
             ) : (
