@@ -530,6 +530,32 @@ function fixTableColSpans(node) {
   }
 }
 
+/** html-to-pdfmake sizes table columns to their content, so a table with an empty column — the blank
+ *  Bank Details form on the agency/freelance letters, or any unfilled value column — collapses to a
+ *  narrow block instead of the full-width table the editor shows (.doc-html table { width:100% }).
+ *  Give every converted table a filling column (`*`) so it spans the page exactly as the edit view
+ *  does. A no-op when the table already has a `*` column. */
+function fillTableWidths(node) {
+  if (Array.isArray(node)) { node.forEach(fillTableWidths); return }
+  if (!node || typeof node !== 'object') return
+  const t = node.table
+  if (t && Array.isArray(t.body) && t.body.length) {
+    // html-to-pdfmake usually emits NO widths, so pdfmake sizes every column to its content and an
+    // empty column collapses. Column count is the widest row's length (matches fixTableColSpans).
+    let cols = 0
+    t.body.forEach((row) => { if (Array.isArray(row) && row.length > cols) cols = row.length })
+    if (cols) {
+      const w = (Array.isArray(t.widths) && t.widths.length === cols)
+        ? t.widths.slice() : Array(cols).fill('auto')
+      if (!w.includes('*')) w[w.length - 1] = '*'   // last column fills → table spans the page
+      t.widths = w
+    }
+  }
+  for (const k of Object.keys(node)) {
+    if (node[k] && typeof node[k] === 'object') fillTableWidths(node[k])
+  }
+}
+
 function replaceStructuredMarkers(node, items) {
   const RE = /^@@SIGNATURE_(\d+)@@$/
   if (Array.isArray(node)) {
@@ -612,6 +638,7 @@ async function buildDefinition(doc, bodyFont) {
     })
     replaceStructuredMarkers(content, structuredItems)
     fixTableColSpans(content)
+    fillTableWidths(content)
   } else {
     const blocks = Array.isArray(doc.blocks) ? doc.blocks : []
     content = blocks.length
