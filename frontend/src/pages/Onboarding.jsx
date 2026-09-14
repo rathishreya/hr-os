@@ -27,10 +27,13 @@ const TOOLBAR = cx('h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-
 // "Nobody has taken the register yet" is a different fact from "they did not come", and a tick
 // could only ever say two of the three.
 const ATTENDANCE_TONE = {
+  'Not marked': 'border-slate-200 bg-white text-slate-500',
   Attended: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  'Did not attend': 'border-amber-200 bg-amber-50 text-amber-800',
+  'Did not attend': 'border-rose-200 bg-rose-50 text-rose-800',
+  Informed: 'border-sky-200 bg-sky-50 text-sky-800',
   NA: 'border-slate-200 bg-slate-100 text-slate-500',
 }
+const ATTENDANCE_OPTIONS = ['Not marked', 'Attended', 'Did not attend', 'Informed', 'NA']
 
 const STATUS_TONE = {
   Done: 'border-emerald-200 bg-emerald-50 text-emerald-800',
@@ -1363,12 +1366,12 @@ function ChecklistModal({ planId, phases, onClose, onChanged }) {
                                 ))}
                               </div>
                             ) : s.attendance ? (
-                              <select value={s.attendance || 'NA'}
+                              <select value={s.attendance || 'Not marked'}
                                 onChange={(e) => patch(s.key, { attendance: e.target.value })}
                                 aria-label={`Attendance for ${s.label}`}
                                 className={cx('h-8 rounded-full border px-2.5 text-xs font-medium outline-none',
-                                  ATTENDANCE_TONE[s.attendance] || ATTENDANCE_TONE.NA, focusRing)}>
-                                {['Attended', 'Did not attend', 'NA'].map((o) => (
+                                  ATTENDANCE_TONE[s.attendance] || ATTENDANCE_TONE['Not marked'], focusRing)}>
+                                {ATTENDANCE_OPTIONS.map((o) => (
                                   <option key={o} value={o}>{o}</option>
                                 ))}
                               </select>

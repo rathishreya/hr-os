@@ -560,6 +560,10 @@ class OnboardingStepState(Base):
     value: Mapped[str] = mapped_column(Text, default="")        # a typed value, or a date as ISO
     comments: Mapped[dict] = mapped_column(JSON, default=dict)  # slot -> note; "" is the default slot
     attended: Mapped[bool | None] = mapped_column(nullable=True)
+    #: The register mark as HR chose it, kept verbatim so "Informed" (told us they can't come) stays
+    #: distinct from "Did not attend" and from "NA", none of which a bool can tell apart. `attended`
+    #: is the derived did-they-come flag the feedback mail reads; this is what the checklist shows.
+    attendance: Mapped[str | None] = mapped_column(String(20), nullable=True)
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     #: When the automated mail actually went out, so nothing is sent twice.
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

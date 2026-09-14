@@ -275,8 +275,13 @@ def plan_detail(plan_id: int, db: Session = Depends(get_db), _user: models.User 
     rows = []
     for s in st.steps_for(entity):
         state = states.get(s.key)
-        # A date somebody set by hand wins over the working-day arithmetic.
+        sit = sittings.get(s.key)
+        # A date somebody set by hand wins over the working-day arithmetic; failing both, a session
+        # step takes its due from the sitting it was scheduled for, so "when" shows the moment it
+        # actually runs rather than a dash.
         d = (state.due_override if state and state.due_override else None) or due.get(s.key)
+        if not d and sit and sit.get("starts_at"):
+            d = sit["starts_at"].date() if hasattr(sit["starts_at"], "date") else sit["starts_at"]
         status = state.status if state else "Pending"
         typed = state.value if state else ""
         rows.append({
@@ -289,8 +294,12 @@ def plan_detail(plan_id: int, db: Session = Depends(get_db), _user: models.User 
             "due_is_set_by_hand": bool(state and state.due_override),
             "comments": (state.comments if state else {}) or {},
             "attended": state.attended if state else None,
-            "attendance": ("Attended" if state and state.attended is True
-                           else "Did not attend" if state and state.attended is False else "NA"),
+            # The register mark verbatim when it exists (so "Informed"/"NA" survive), else derived
+            # from the old bool for rows marked before the string column existed, else "Not marked".
+            "attendance": (state.attendance if (state and state.attendance)
+                           else "Attended" if (state and state.attended is True)
+                           else "Did not attend" if (state and state.attended is False)
+                           else "Not marked"),
             "completed_at": (state.completed_at.isoformat()
                              if state and state.completed_at else None),
             "scheduled_at": state.scheduled_at if state else None,
@@ -322,8 +331,9 @@ class StepPatch(BaseModel):
     mark_sent: bool | None = None
     #: A due date set by hand. Sending "" clears it and the calculated one comes back.
     due_override: date | str | None = None
-    #: "Attended" | "Did not attend" | "NA". A tick could only ever say two of those three, and
-    #: "nobody has taken the register yet" is a different fact from "they did not come".
+    #: "Attended" | "Did not attend" | "Informed" | "NA" | "Not marked". A tick could only ever say
+    #: two of these; "nobody has taken the register yet" (Not marked) is a different fact from "they
+    #: did not come", and "Informed" (told us in advance) from a plain no-show.
     attendance: str | None = None
 
 
@@ -364,7 +374,10 @@ def update_step(plan_id: int, step_key: str, body: StepPatch, db: Session = Depe
     if body.comments is not None:
         row.comments = dict(body.comments)
     if body.attendance is not None:
-        row.attended = {"Attended": True, "Did not attend": False}.get(body.attendance)
+        # Store the label as chosen; "Not marked" clears it. `attended` is the derived came/didn't
+        # flag the feedback mail reads — Informed and NA are "not attended", Not marked is unknown.
+        row.attendance = body.attendance or None
+        row.attended = {"Attended": True, "Did not attend": False, "Informed": False}.get(body.attendance)
     if body.attended is not None:
         row.attended = body.attended
     if body.attendance is not None or body.attended is not None:
