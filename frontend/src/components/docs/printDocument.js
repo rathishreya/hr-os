@@ -37,6 +37,7 @@ export function printDocument(doc) {
   p.muted{ color:#4b5563; }
   p.right{ text-align:right; ${doc.entity === 'AEZ' ? '' : 'color:#538135;'} font-weight:600; margin:1px 0; }
   ol,ul{ margin:6px 0; padding-left:24px; } li{ margin:3px 0; text-align:left; padding-left:4px; }
+  ul.sub{ list-style:circle; margin:3px 0; padding-left:20px; }
   ul.plain{ list-style:none; padding-left:12px; } ul.plain li{ padding-left:2em; text-indent:-2em; }
   strong{ font-weight:600; }
 
@@ -55,9 +56,23 @@ export function printDocument(doc) {
   table.comp tr.ni td{ font-style:italic; font-size:8.5pt; }
 
   p.script,.sig .scr{ font-family:'Great Vibes',cursive; font-size:20pt; line-height:1.1; margin:2px 0; }
-  .sig{ display:flex; gap:48px; margin-top:22px; break-inside:avoid; }
-  .sig .col{ min-width:62mm; } .sig .line{ border-bottom:1px solid #475569; height:24px; padding-left:2px; }
-  .sig .lbl{ font-size:7.5pt; text-transform:uppercase; font-weight:600; color:#475569; margin-top:3px; }
+  p.script img{ height:30px; width:auto; }
+  /* The salutation and the date level with each other (borderless two-cell table — see docHtml.js). */
+  table.drow{ width:100%; border:0; border-collapse:collapse; margin:0; table-layout:auto; }
+  table.drow td{ border:0; padding:0; vertical-align:top; }
+  table.drow td.dr{ text-align:right; white-space:nowrap; width:1%; padding-left:16px; }
+  table.drow p{ margin:0 0 4px; }
+  .sighd{ font-weight:700; margin:20px 0 2px; }
+  /* Signature: two columns with a gap, a rule PER column (signer | gap | signer — the outer cells'
+     bottom border is the rule), the handwritten sign above its rule, role + "NAME: <name>" bold
+     under it. Matches the source contracts and the on-screen editor. */
+  table.sig{ width:100%; border:0; border-collapse:collapse; margin-top:6px; break-inside:avoid; table-layout:fixed; }
+  table.sig td{ border:0; padding:0; }
+  table.sig td.siggap{ width:24pt; }
+  table.sig td.sigrule{ border-bottom:0.75pt solid #000; height:34pt; vertical-align:bottom; padding-bottom:2pt; }
+  table.sig td.siglbl{ font-weight:700; color:#1f2937; font-size:9pt; line-height:1.35; vertical-align:top; padding-top:4pt; }
+  table.sig .scr{ font-family:'Great Vibes',cursive; font-size:20pt; line-height:1; text-transform:none; }
+  table.sig .scr img{ height:28px; }
 
   .pb{ break-after:page; height:0; } /* a divider in the source starts a new schedule on its own page */
   pre{ white-space:pre-wrap; font-family:inherit; }

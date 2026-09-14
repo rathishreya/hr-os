@@ -14,10 +14,12 @@ import smtplib
 import ssl
 import sys
 import time
+import uuid
 from email.message import EmailMessage as MimeEmail
 from typing import Any
 
 import httpx
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import models
@@ -124,6 +126,55 @@ def render_draft(
     return s, b, False
 
 
+# ── Personal email signature (a Gmail-style signature appended to every mail the user sends) ──
+_SIG_TAGS = ["p", "br", "strong", "b", "em", "i", "u", "span", "div", "a"]
+_SIG_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def sanitize_signature(html: str) -> str:
+    """Allow-list sanitize a user's signature HTML before storing it. Self-service (it only ever
+    goes on that user's own outgoing mail), but still sanitized so a pasted signature can't smuggle
+    a script into every mail. Links are kept; everything dangerous is stripped."""
+    html = (html or "").strip()
+    if not html:
+        return ""
+    try:
+        import bleach
+        return bleach.clean(
+            html, tags=_SIG_TAGS,
+            attributes={"a": ["href", "target", "rel"], "span": ["class"], "div": ["class"]},
+            protocols=["http", "https", "mailto", "tel"], strip=True, strip_comments=True,
+        )
+    except ImportError:
+        from html import escape
+        return escape(html)
+
+
+def _signature_text(html: str) -> str:
+    """A plain-text rendering of the signature, for the plain part of the multipart mail."""
+    s = html or ""
+    s = re.sub(r"(?i)</(p|div|li)>", "\n", s)
+    s = re.sub(r"(?i)<br\s*/?>", "\n", s)
+    s = _SIG_TAG_RE.sub("", s)
+    s = (s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+         .replace("&quot;", '"').replace("&#39;", "'").replace("&nbsp;", " "))
+    return re.sub(r"\n{3,}", "\n\n", s).strip()
+
+
+def _append_signature(user: "models.User | None", body: str, html_body: str | None):
+    """Append the sender's signature to the bottom of the mail — the plain part always, the HTML
+    part when there is one. Returns (body, html_body)."""
+    sig = (getattr(user, "signature", "") or "").strip() if user else ""
+    if not sig:
+        return body, html_body
+    sig_text = _signature_text(sig)
+    if sig_text:
+        body = f"{body}\n\n{sig_text}" if body else sig_text
+    if html_body:
+        html_body = f"{html_body}<br><br>{sig}"
+    return body, html_body
+
+
 def resolve_identity(user: "models.User | None" = None) -> dict:
     """Decide which mailbox sends an email.
 
@@ -172,7 +223,8 @@ def resolve_identity(user: "models.User | None" = None) -> dict:
 def _build_mime(from_email: str, from_name: str, to_email: str, to_name: str,
                 subject: str, body: str, reply_to: str = "", ics: str | None = None,
                 cc: list[str] | None = None, attachments: list[dict] | None = None,
-                html_body: str | None = None) -> MimeEmail:
+                html_body: str | None = None, message_id: str = "",
+                in_reply_to: str = "") -> MimeEmail:
     """Build the RFC-822 message (plain body + optional .ics calendar invite + optional file
     attachments). Shared by the SMTP, SES and Gmail-API send paths so all attach identically.
     Each attachment is {'filename': str, 'content': bytes, 'mimetype': str}.
@@ -183,6 +235,14 @@ def _build_mime(from_email: str, from_name: str, to_email: str, to_name: str,
     the HTML still gets the plain part, which spells each address out after the words that carried
     it."""
     msg = MimeEmail()
+    # A stable Message-ID of our own, so a later mail about the same thing can point at it. Without
+    # one the provider invents its own and we never learn it, and every follow-up starts a fresh
+    # conversation — a rescheduled sitting would arrive as a second unrelated mail.
+    if message_id:
+        msg["Message-ID"] = message_id
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+        msg["References"] = in_reply_to
     msg["From"] = f"{from_name} <{from_email}>" if from_name else from_email
     msg["To"] = f"{to_name} <{to_email}>" if to_name else to_email
     if cc:
@@ -481,6 +541,7 @@ def compose(
     cc: list[str] | None = None,
     attachments: list[dict] | None = None,
     html_body: str | None = None,
+    thread_key: str = "",
 ) -> models.EmailMessage:
     """Build (optionally with AI), send-or-log, and persist an email. `ics`, if given, is
     attached as a calendar invite (.ics). `sender_user` is the logged-in user — when they've
@@ -492,6 +553,11 @@ def compose(
     # account, still the logged-in user) rather than a generic workspace label.
     ctx = {"name": to_name, "role": role, "company": settings.COMPANY_NAME, "sender": identity["from_name"]}
     subject, body, ai_generated = render_draft(template, ctx, use_ai=use_ai, subject=subject, body=body)
+
+    # The sender's personal signature (like a Gmail signature), appended to the very bottom of every
+    # mail they send. It goes on the plain part always, and on the HTML part when there is one, so
+    # whichever the recipient's client shows carries it.
+    body, html_body = _append_signature(sender_user, body, html_body)
 
     # Sanitise the recipient so a mis-parsed address ("x@y.com Behance LinkedIn") doesn't get
     # handed to SMTP and rejected — a common cause of silent "failed" sends.
@@ -528,6 +594,24 @@ def compose(
             "-------------------------------------------------------------------\n\n"
         ) + body
 
+    # Threading. Every message gets a Message-ID of our own; when a thread_key is given, the
+    # FIRST message already sent to this recipient under that key is quoted, so a mail client files
+    # the follow-up under the original instead of opening a second conversation about the same
+    # sitting. Keyed per recipient as well as per thread because each person has their own copy —
+    # these mails go out individually, never as a group.
+    domain = (identity["from_email"].rsplit("@", 1)[-1] if "@" in identity["from_email"] else "hros")
+    message_id = f"<{uuid.uuid4().hex}@{domain}>"
+    in_reply_to = ""
+    if thread_key and clean_to:
+        parent = db.scalar(
+            select(models.EmailMessage)
+            .where(models.EmailMessage.thread_key == thread_key,
+                   func.lower(models.EmailMessage.to_email) == clean_to.lower(),
+                   models.EmailMessage.message_id != "")
+            .order_by(models.EmailMessage.id)
+        )
+        in_reply_to = parent.message_id if parent else ""
+
     rec = models.EmailMessage(
         candidate_id=candidate_id,
         application_id=application_id,
@@ -537,6 +621,8 @@ def compose(
         subject=subject,
         body=body,
         ai_generated=ai_generated,
+        message_id=message_id,
+        thread_key=thread_key,
     )
 
     sender_email = (sender_user.email if sender_user else "") or ""
@@ -575,7 +661,7 @@ def compose(
             raw = _build_mime(sender_email or settings.EMAIL_FROM,
                               (sender_user.name if sender_user else "") or settings.EMAIL_FROM_NAME,
                               clean_to, to_name, subject, body, sender_email, ics, clean_cc,
-                              attachments, html_body).as_bytes()
+                              attachments, html_body, message_id, in_reply_to).as_bytes()
             for label, fn in gmail_attempts:
                 try:
                     fn(raw)

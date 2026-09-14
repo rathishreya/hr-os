@@ -9,8 +9,8 @@
 
 /** Who is filling it in. The three respondent types differ by hidden fields and by wording. */
 export const VARIANTS = [
-  { value: 'individual', label: 'Employee', blurb: 'Joining EZ Lab on a full-time or part-time contract.' },
-  { value: 'freelancer', label: 'Freelancer / Consultant', blurb: 'Engaged for a defined scope of work, invoicing us.' },
+  { value: 'individual', label: 'Employee / Professional Service Expert', blurb: 'Joining EZ Lab on a full-time or part-time contract, or engaged for a defined scope of professional services.' },
+  { value: 'freelancer', label: 'Freelancer', blurb: 'Working independently for a defined piece of work, invoicing us.' },
   { value: 'organization', label: 'Organization / Agency', blurb: 'A company contracting with us, not an individual.' },
 ]
 
@@ -83,9 +83,9 @@ export const FIELDS = [
 
   },
   {
-    key: 'whatsapp', label: 'WhatsApp number', type: 'tel', required: false,
+    key: 'whatsapp', label: 'WhatsApp number', type: 'tel', required: true,
     labels: { organization: 'WhatsApp number of your SPOC' }, section: 'you',
-    help: 'Only if it differs from the number above.',
+    help: 'The number we can reach you on over WhatsApp — the same as your mobile is fine.',
   },
   {
     key: 'nationality', label: 'Nationality', type: 'select', options: COUNTRIES, required: true,
@@ -117,7 +117,7 @@ export const FIELDS = [
     help: 'Optional, but needed before any work travel.',
   },
   {
-    key: 'pan_number', label: 'PAN number', type: 'text', required: false, hide: ['freelancer'],
+    key: 'pan_number', label: 'PAN number', type: 'text', required: true, hide: ['freelancer'],
     section: 'identity', pattern: /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/,
     invalid: 'A PAN is five letters, four digits, then a letter — like ABCDE1234F.',
   },

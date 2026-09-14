@@ -6,3 +6,5 @@ python-docx>=1.1         # DOCX resume parsing
 openpyxl>=3.1            # Excel (.xlsx) candidate import + template download
 pyjwt[crypto]>=2.8       # Google Indexing API service-account JWT (RS256); optional — feature degrades gracefully if absent
 boto3>=1.34              # S3 (or S3-compatible) object storage for interview recordings; optional — falls back to DB storage if unconfigured
+bleach>=6.1              # allow-list HTML sanitizer for recruiter-edited offer-letter content_html (stored-XSS defense)
+tinycss2>=1.2              # CSS sanitizer backend for bleach (safe inline styles in edited docs)

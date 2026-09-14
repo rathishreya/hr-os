@@ -17,56 +17,149 @@ function ToolBtn({ title, onClick, children }) {
   )
 }
 
-// ── Page geometry, in CSS pixels ─────────────────────────────────────────────────────────────
-// Browsers resolve mm against a 96dpi reference, so these are exact rather than approximate.
+// ── Page geometry, in CSS pixels — derived from pdfmake's OWN page box so the editor's sheets are
+// the exact size the saved PDF uses (A4 841.89pt, pageMargins [54,88,54,48]; 1pt = 96/72 px). With
+// the same page height, margins and line-height (index.css), the on-screen pages break where the PDF
+// does — the editor IS the letter, page by page, editable in place. ─────────────────────────────
+const PT = 96 / 72
 const MM = 96 / 25.4
-const PAGE_H = 297 * MM          // A4 height
-const M_TOP = 30 * MM            // the letterhead band
-const M_BOTTOM = 14 * MM
-const GAP = 26                   // the space between two sheets
+const PAGE_H = 841.89 * PT
+const M_TOP = 88 * PT             // the letterhead band
+const M_BOTTOM = 48 * PT
+const GAP = 26                    // the on-screen gap between two sheets
 const PITCH = PAGE_H + GAP
 const CONTENT_H = PAGE_H - M_TOP - M_BOTTOM
 
-/** Push any block that would straddle a page boundary onto the next sheet.
- *  Returns how many pages the letter now runs to. */
+const SPLIT_ATTR = 'data-tbl-split'   // a table continuation (chunk 2+) points at its origin id
+let _splitSeq = 0
+
+// A table taller than a page is broken into row-chunks that each fit — separate <table> siblings
+// pagination pushes onto their own pages, exactly as pdfmake flows a long table. Rows are MOVED (not
+// cloned), so a caret inside a cell rides along and editing is never interrupted.
+function _makeContinuation(table, originId) {
+  const cont = document.createElement('table')
+  cont.className = table.className
+  cont.setAttribute(SPLIT_ATTR, originId)
+  if (table.tHead) {
+    const th = table.tHead.cloneNode(true)
+    th.setAttribute('data-repeated', '')
+    cont.appendChild(th)
+  }
+  cont.appendChild(document.createElement('tbody'))
+  return cont
+}
+
+/** Merge every continuation chunk's rows back into its origin table, then drop the continuations —
+ *  run before re-paginating (to measure the real table) and inside cleanHtml. */
+function unsplitTables(root) {
+  root.querySelectorAll(`table[${SPLIT_ATTR}]`).forEach((cont) => {
+    const origin = root.querySelector(`table[data-tbl-origin="${cont.getAttribute(SPLIT_ATTR)}"]`)
+    if (origin) {
+      const ob = origin.tBodies[0]
+      cont.querySelectorAll(':scope > tbody > tr').forEach((tr) => ob && ob.appendChild(tr))
+    }
+    cont.remove()
+  })
+  root.querySelectorAll('table[data-tbl-origin]').forEach((t) => t.removeAttribute('data-tbl-origin'))
+}
+
+const MIN_ROOM = 120   // need at least a header + a row of space to start a table chunk here
+
+function _spacer(height) {
+  const spacer = document.createElement('div')
+  spacer.setAttribute('data-pagebreak', '')
+  spacer.setAttribute('contenteditable', 'false')
+  spacer.setAttribute('aria-hidden', 'true')
+  spacer.style.height = `${Math.max(0, height)}px`
+  spacer.style.pointerEvents = 'none'
+  return spacer
+}
+
+/** Move the rows that don't fit in `remaining` px into a continuation table after `table`, keeping
+ *  the rows that DO fit. Returns the continuation, or null if not even one row fits. */
+function _splitTableToFit(el, table, remaining) {
+  const rows = [...table.tBodies[0].rows]
+  const headH = table.tHead ? table.tHead.offsetHeight : 0
+  let acc = headH
+  let cut = -1
+  for (let i = 0; i < rows.length; i += 1) {
+    const rh = rows[i].offsetHeight
+    if (i > 0 && acc + rh > remaining) { cut = i; break }
+    acc += rh
+  }
+  if (cut <= 0) return null
+  const originId = table.getAttribute('data-tbl-origin') || `t${(_splitSeq += 1)}`
+  table.setAttribute('data-tbl-origin', originId)
+  const cont = _makeContinuation(table, originId)
+  el.insertBefore(cont, table.nextSibling)
+  const cb = cont.tBodies[0]
+  for (let j = cut; j < rows.length; j += 1) cb.appendChild(rows[j])
+  return cont
+}
+
+/** Lay the letter onto sheets: push a block that would straddle a page onto the next one, and flow a
+ *  table taller than a page across pages FILLING each (first chunk takes the space left, the rest
+ *  continues), as pdfmake does. Returns the page count. */
 function paginate(el) {
   if (!el) return 1
   el.querySelectorAll('[data-pagebreak]').forEach((n) => n.remove())
+  unsplitTables(el)
+
   let page = 0
-  // Live list: inserting a spacer reflows everything after it, so re-read offsets as we go.
   for (let i = 0; i < el.children.length; i += 1) {
     const kid = el.children[i]
-    if (kid.hasAttribute('data-pagebreak')) continue
+    if (kid.hasAttribute && kid.hasAttribute('data-pagebreak')) continue
     const top = kid.offsetTop
     const height = kid.offsetHeight
-    if (!height) continue
-    // A block taller than a page cannot be helped; let it run and carry on from where it ends.
-    while (top >= (page + 1) * PITCH && page < 200) page += 1
-    if (height <= CONTENT_H && top + height > page * PITCH + CONTENT_H) {
-      const spacer = document.createElement('div')
-      spacer.setAttribute('data-pagebreak', '')
-      spacer.setAttribute('contenteditable', 'false')
-      spacer.setAttribute('aria-hidden', 'true')
-      spacer.style.height = `${Math.max(0, (page + 1) * PITCH - top)}px`
-      spacer.style.pointerEvents = 'none'
-      el.insertBefore(spacer, kid)
+    while (top >= (page + 1) * PITCH && page < 400) page += 1
+    const pageBottom = page * PITCH + CONTENT_H
+    if (kid.classList && kid.classList.contains('pb')) {   // an explicit divider page break
+      kid.style.height = `${Math.max(0, (page + 1) * PITCH - top)}px`
       page += 1
-      i += 1   // step over the spacer we just added
+      continue
+    }
+    if (!height) continue
+    if (kid.tagName === 'TABLE' && kid.tBodies[0] && kid.tBodies[0].rows.length >= 2
+        && height > CONTENT_H && top + height > pageBottom + 1) {
+      const remaining = pageBottom - top
+      if (remaining >= MIN_ROOM) {
+        const cont = _splitTableToFit(el, kid, remaining)
+        if (cont) {
+          const kidBottom = kid.offsetTop + kid.offsetHeight
+          el.insertBefore(_spacer((page + 1) * PITCH - kidBottom), cont)
+          page += 1
+          i += 1
+          continue
+        }
+      } else {
+        el.insertBefore(_spacer((page + 1) * PITCH - top), kid)
+        page += 1
+        i += 1
+        continue
+      }
+    }
+    if (height <= CONTENT_H && top + height > pageBottom + 1) {
+      el.insertBefore(_spacer((page + 1) * PITCH - top), kid)
+      page += 1
+      i += 1
     }
   }
   return Math.max(1, Math.ceil(el.scrollHeight / PITCH))
 }
 
-/** The letter's HTML without the spacers we injected for layout. */
+/** The letter's HTML, cleaned for saving: drop any leftover page spacers and re-merge tables that an
+ *  older paginated edit had split, so the stored document is clean and single-table. */
 function cleanHtml(el) {
   if (!el) return ''
   const clone = el.cloneNode(true)
   clone.querySelectorAll('[data-pagebreak]').forEach((n) => n.remove())
+  unsplitTables(clone)
+  clone.querySelectorAll('thead[data-repeated]').forEach((n) => n.remove())
   return clone.innerHTML
 }
 
-// The editable letter body: a contentEditable region seeded from the document's HTML, with a
-// sticky formatting toolbar. Exposes editorRef.current.getHtml() so the parent can read + save it.
+// The editable letter body: a contentEditable seeded from the document, with a sticky toolbar,
+// flowed across A4 sheets by paginate(). Exposes getHtml() for saving.
 function EditableBody({ doc, editorRef, onPages }) {
   const ref = useRef(null)
   const busy = useRef(false)
@@ -74,31 +167,56 @@ function EditableBody({ doc, editorRef, onPages }) {
   useEffect(() => {
     if (ref.current) ref.current.innerHTML = documentBodyHtml(doc)
     if (editorRef) editorRef.current = { getHtml: () => cleanHtml(ref.current) }
-    // Emit tag-based marks (<b>/<u>) not inline styles, so the server's allow-list sanitizer (which
-    // drops style attrs) never loses bold/underline.
     try { document.execCommand('styleWithCSS', false, false) } catch { /* noop */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id])
 
-  // Re-flow after the text changes, on a short delay so it never fights the caret mid-word. The
-  // busy flag keeps our own spacer insertions from re-triggering the observer.
+  // Re-flow after typing pauses, preserving the caret and the scroll so editing never jumps.
   useEffect(() => {
     const el = ref.current
     if (!el) return undefined
     let timer = 0
+    const scrollParent = () => {
+      let n = el.parentElement
+      while (n) {
+        const oy = getComputedStyle(n).overflowY
+        if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n
+        n = n.parentElement
+      }
+      return document.scrollingElement || document.documentElement
+    }
     const run = () => {
       if (busy.current) return
       busy.current = true
-      onPages(paginate(el))
-      busy.current = false
+      const sel = window.getSelection()
+      const hasSel = sel && sel.rangeCount && el.contains(sel.anchorNode)
+      const aNode = hasSel ? sel.anchorNode : null
+      const aOff = hasSel ? sel.anchorOffset : 0
+      const sp = scrollParent()
+      const top = sp ? sp.scrollTop : 0
+      try {
+        onPages(paginate(el))
+      } finally {
+        if (aNode && el.contains(aNode)) {
+          try {
+            const max = aNode.nodeType === 3 ? aNode.length : aNode.childNodes.length
+            const r = document.createRange()
+            r.setStart(aNode, Math.min(aOff, max))
+            r.collapse(true)
+            sel.removeAllRanges()
+            sel.addRange(r)
+          } catch { /* selection gone — leave it */ }
+        }
+        if (sp && Math.abs(sp.scrollTop - top) > 1) sp.scrollTop = top
+        busy.current = false
+      }
     }
-    const schedule = () => { clearTimeout(timer); timer = setTimeout(run, 180) }
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(run, 450) }
     const mo = new MutationObserver(schedule)
     mo.observe(el, { subtree: true, childList: true, characterData: true })
     const ro = new ResizeObserver(schedule)
     ro.observe(el)
-    // Fonts land after first paint and change every measurement, so re-flow once they have.
-    const fonts = document.fonts?.ready
+    const fonts = document.fonts && document.fonts.ready
     if (fonts) fonts.then(schedule)
     run()
     return () => { clearTimeout(timer); mo.disconnect(); ro.disconnect() }
@@ -108,7 +226,7 @@ function EditableBody({ doc, editorRef, onPages }) {
   const Sep = () => <span className="mx-1 h-5 w-px shrink-0 bg-slate-200" />
   return (
     <>
-      <div className="sticky top-2 z-20 mb-3 flex flex-wrap items-center gap-0.5 rounded-lg border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
+      <div className="sticky top-0 z-20 mb-3 flex flex-wrap items-center gap-0.5 rounded-lg border border-slate-200 bg-white px-1.5 py-1 shadow-sm">
         <ToolBtn title="Bold" onClick={() => exec('bold')}><Bold className="h-4 w-4" /></ToolBtn>
         <ToolBtn title="Underline" onClick={() => exec('underline')}><Underline className="h-4 w-4" /></ToolBtn>
         <Sep />
@@ -194,13 +312,13 @@ function PdfPreview({ doc }) {
 export default function DocumentPaper({ doc, editable = false, editorRef }) {
   const [pages, setPages] = useState(1)
 
-  // Viewing is the real paginated PDF — discrete A4 pages with the letterhead, the ISO lines and
-  // the coloured edge pattern on every one, because it IS the issued document.
+  // Viewing is the real paginated PDF — discrete A4 pages with the letterhead and coloured edge bars
+  // on every one, because it IS the issued document.
   if (!editable) return <PdfPreview doc={doc} />
 
-  // Editing is the same document, page by page: a stack of A4 sheets with a gap between them,
-  // each carrying its own letterhead and side pattern, and the text flowed across them by
-  // paginate() rather than running off the bottom of one endless page.
+  // Editing is the document page by page: a stack of A4 sheets, each with its own letterhead, text
+  // flowed across them by paginate(). The sheet size, margins and line-height match the PDF's, so the
+  // page breaks land where the PDF's do and what you edit is what the PDF shows.
   return (
     <div className="doc-paper relative mx-auto w-[210mm] max-w-full" style={{ height: pages * PITCH - GAP }}>
       <style>{chromeCss('screen').replaceAll('\n  .', '\n  .doc-paper .')}</style>

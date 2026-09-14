@@ -21,7 +21,8 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..database import get_db
 from ..deps import current_user
-from ..services import mailer
+from ..config import settings
+from ..services import gcal, mailer
 from ..services.documents import settled_entity
 from ..services.onboarding import (
     audience as aud, context as ctxs, links as lk, mails as ml, richtext as rt, schedule,
@@ -215,6 +216,14 @@ def board(db: Session = Depends(get_db), _user: models.User = Depends(current_us
     plans = list(db.scalars(select(models.OnboardingPlan).order_by(models.OnboardingPlan.id.desc())))
     prefetched = ctxs.bulk_contexts(db, plans)
     all_states = _states_for(db, [p.id for p in plans])
+    # Which candidates have actually returned their onboarding form. One query for the whole board
+    # rather than one per row, so the "Onboarding form" column costs nothing to add.
+    submitted_ids = {
+        cid for cid in db.scalars(
+            select(models.OnboardingSubmission.candidate_id)
+            .where(models.OnboardingSubmission.candidate_id.isnot(None))
+        ) if cid
+    }
     for plan in plans:
         pre = prefetched.get(plan.id) or {}
         cand = pre.get("candidate")
@@ -240,6 +249,9 @@ def board(db: Session = Depends(get_db), _user: models.User = Depends(current_us
             "overdue": len(overdue),
             "next_due": {"step": nxt[0][1], "on": nxt[0][0].isoformat()} if nxt else None,
             "status": plan.status,
+            # Has this candidate returned their onboarding form? Drives the board's "Onboarding
+            # form" column so the People team can see at a glance who still owes it.
+            "form_submitted": plan.candidate_id in submitted_ids,
         })
     return out
 
@@ -405,7 +417,8 @@ def _occurrence_out(db: Session, o: models.SessionOccurrence) -> dict:
                        if d and o.starts_at else None),
         "attendees": [
             {"id": p.id, "candidate_id": p.candidate_id, "name": p.name, "email": p.email,
-             "attended": p.attended, "feedback_sent_at": p.feedback_sent_at}
+             "attended": p.attended, "comment": p.comment or "",
+             "feedback_sent_at": p.feedback_sent_at}
             for p in people
         ],
     }
@@ -431,6 +444,171 @@ class OccurrenceIn(BaseModel):
     notes: str = ""
 
 
+def _google_route(user) -> tuple[str, bool, bool]:
+    """How, if at all, this user can reach Google Calendar: (their address, may delegate, may
+    OAuth). Both false means no calendar work is possible and callers should do nothing."""
+    email = (getattr(user, "email", "") or "")
+    domain = email.rsplit("@", 1)[-1].lower() if "@" in email else ""
+    can_delegate = bool(user and gcal.delegation_available()
+                        and domain in settings.google_workspace_domains)
+    can_oauth = bool(user and (getattr(user, "google_refresh_token", "") or "").strip())
+    return email, can_delegate, can_oauth
+
+
+def _sitting_minutes(o: models.SessionOccurrence) -> int:
+    return int((o.ends_at - o.starts_at).total_seconds() // 60) if o.ends_at else 60
+
+
+def _calendar_event_for_sitting(db: Session, o: models.SessionOccurrence, d, user) -> dict:
+    """A real Google Meet link and its event id for one sitting, or empty strings.
+
+    Mirrors the interview-round path: admin-wide delegation first, else the scheduler's own Google
+    connection. Any failure returns empties rather than raising — a Google hiccup must never stop a
+    sitting being scheduled, and the link can always be pasted in by hand afterwards.
+    """
+    email, can_delegate, can_oauth = _google_route(user)
+    if not (can_delegate or can_oauth):
+        return {"link": "", "id": ""}
+    kw = dict(
+        summary=f"{d.name} — {o.entity}",
+        start=o.starts_at,
+        duration_minutes=_sitting_minutes(o),
+        description=f"{d.name} at {settings.COMPANY_NAME}.",
+        # Nobody is invited at creation time: people are added to the sitting afterwards, and the
+        # invite mail is what tells them. The event exists so the link does.
+        attendees=[],
+        request_id=f"hros-sitting-{o.id}-{o.starts_at.strftime('%Y%m%dT%H%M%S')}",
+    )
+    try:
+        return (gcal.create_meet_event_as_detail(email, **kw) if can_delegate
+                else gcal.create_meet_event_detail(user.google_refresh_token, **kw))
+    except Exception:                       # never block scheduling on a Google hiccup
+        return {"link": "", "id": ""}
+
+
+def _move_sitting_event(o: models.SessionOccurrence, user) -> bool:
+    """Move this sitting's calendar event to its new time. True if the event was moved.
+
+    False covers three different things and deliberately does not distinguish them, because the
+    caller's response to all three is the same — carry on with the mail: there was no event to
+    move, this user cannot reach Google, or Google refused. The mail is what people actually read;
+    a calendar entry left behind is worth reporting in the log, not worth failing a reschedule for.
+    """
+    if not (o.calendar_event_id or "").strip():
+        return False
+    email, can_delegate, can_oauth = _google_route(user)
+    if not (can_delegate or can_oauth):
+        return False
+    kw = dict(start=o.starts_at, duration_minutes=_sitting_minutes(o))
+    try:
+        if can_delegate:
+            gcal.move_event_as(email, o.calendar_event_id, **kw)
+        else:
+            gcal.move_event(user.google_refresh_token, o.calendar_event_id, **kw)
+        return True
+    except Exception:
+        return False
+
+
+def _left_candidate_ids(db: Session) -> set[int]:
+    """Everybody with a last working day on file.
+
+    Nothing automatic goes to these people. A reschedule notice is exactly the kind of mail a
+    date-driven rule sends most eagerly and a leaver should least receive.
+    """
+    rows = db.execute(
+        select(models.OnboardingPlan.candidate_id)
+        .join(models.OnboardingStepState,
+              models.OnboardingStepState.plan_id == models.OnboardingPlan.id)
+        .where(models.OnboardingStepState.step_key == "lwd",
+               func.coalesce(models.OnboardingStepState.value, "") != "")
+    )
+    return {r[0] for r in rows if r[0]}
+
+
+def _notify_moved(db: Session, occ: models.SessionOccurrence, was, user) -> dict:
+    """Tell the people already invited to this sitting that it has moved. Returns what happened.
+
+    Three rules decide whether anything goes out at all, and each exists because the alternative is
+    a mail somebody should not have received:
+
+      * invites must already have gone. Someone who was never told about a session must not learn
+        of it through "this has been rescheduled" — to them it reads as a session they missed.
+      * the sitting must not be cancelled. Re-sending an invite for something that is not happening
+        is worse than saying nothing.
+      * the draft must be complete. If a merge field or a link has nothing behind it we report that
+        and send nothing, rather than posting {{Meeting Link}} to a roomful of new joiners.
+
+    The audience is the stored RULE, re-resolved now, so the notice reaches whoever is actually on
+    the list today. Each person gets their own copy — `mailer.compose` once per recipient, nobody
+    in CC — so no reader ever sees who else was invited, and every copy carries the sitting's
+    thread key so it lands inside the original invite's conversation rather than as a stray second
+    mail the reader has to reconcile against the first.
+    """
+    if (occ.status or "") == "cancelled":
+        return {"sent": 0, "reason": "cancelled"}
+    if not occ.invites_sent_at:
+        return {"sent": 0, "reason": "never-invited"}
+    d = sess.BY_KEY.get(occ.session_key)
+    if not d:
+        return {"sent": 0, "reason": "unknown-session"}
+    try:
+        t = _template_for_role(occ.session_key, "invite", occ)
+    except HTTPException:
+        return {"sent": 0, "reason": "no-invite-template"}
+
+    people = aud.resolve(db, occ.audience or {}, occ.id)
+    if not people:
+        return {"sent": 0, "reason": "audience-reaches-nobody"}
+    left = _left_candidate_ids(db)
+    people = [p for p in people if p.get("candidate_id") not in left]
+    if not people:
+        return {"sent": 0, "reason": "everyone-invited-has-left"}
+
+    # session_context reads the sitting, which already carries the NEW time — so the letter
+    # describes where things stand now, and the moved-from line below supplies the only piece of
+    # information the reader cannot get from the current state.
+    ctx = {**ctxs.year_context(), **ctxs.session_context(occ)}
+    overrides = _link_overrides(db)
+    subject = ml.render(t.subject, ctx)
+    body = ml.render(t.body, ctx)
+
+    # Name is the one field that is deliberately still standing here: it is filled per reader in
+    # the loop below, so counting it as missing would block every send. Everything else with
+    # nothing behind it is a real hole and stops the batch.
+    missing = _still_missing(subject, body, {**ctx, "Name": "there"}, overrides)
+    if missing:
+        return {"sent": 0, "reason": "draft-incomplete", "missing": missing}
+
+    moved_from = ctxs.pretty_date(was) if was else ""
+    notice = (
+        f"**Please note this session has been rescheduled.** It was earlier on {moved_from}, "
+        f"and now takes place on {ctx.get('Session Date', '')}"
+        f"{', ' + ctx['Session Time'] if ctx.get('Session Time') else ''}. "
+        "The details below are the current ones.\n\n"
+    ) if moved_from else ""
+
+    sent, failed = 0, []
+    for p in people:
+        person = {"Name": p.get("display_name") or p.get("name") or "there"}
+        msg = mailer.compose(
+            db, to_email=p["email"], to_name=p.get("display_name") or "",
+            template=f"onboarding:{t.key}",
+            subject=rt.strip(f"Rescheduled: {ml.render(subject, person)}"),
+            **_mail_parts(notice + ml.render(body, person), overrides),
+            candidate_id=p.get("candidate_id"), sender_user=user,
+            thread_key=f"session:{occ.id}",
+        )
+        if getattr(msg, "status", "") == "sent":
+            sent += 1
+        else:
+            failed.append(p["email"])
+
+    if sent:
+        occ.invites_sent_at = datetime.now(timezone.utc)
+    return {"sent": sent, "failed": failed, "reason": "" if sent else "delivery-failed"}
+
+
 @router.post("/occurrences", status_code=201)
 def create_occurrence(body: OccurrenceIn, db: Session = Depends(get_db),
                       user: models.User = Depends(current_user)):
@@ -447,6 +625,13 @@ def create_occurrence(body: OccurrenceIn, db: Session = Depends(get_db),
     )
     db.add(o)
     db.flush()
+    # One calendar event for the sitting, and with it one Meet link everybody uses. Attendees are
+    # added to that single event rather than sent separate ones: guestsCanSeeOtherGuests is off
+    # (services/gcal.py), so each person sees only their own invitation and never the roster of
+    # who else is joining. A typed-in link wins — somebody who pasted a Zoom room meant it.
+    if not (o.meet_link or "").strip():
+        made = _calendar_event_for_sitting(db, o, d, user)
+        o.meet_link, o.calendar_event_id = made["link"], made["id"]
     log(db, "onboarding.session_scheduled", "session_occurrence", o.id,
         {"session": body.session_key, "entity": entity, "starts_at": body.starts_at.isoformat()})
     db.commit()
@@ -462,12 +647,21 @@ class OccurrencePatch(BaseModel):
     meet_link: str | None = None
     status: str | None = None
     notes: str | None = None
+    #: Whether moving this sitting should tell the people already invited. On by default, because a
+    #: date changed in a system and not in anybody's inbox is the failure this exists to prevent.
+    #: Off is for corrections made in the same breath as the mistake, before anyone has read it.
+    notify: bool = True
 
 
 @router.patch("/occurrences/{occ_id}")
 def update_occurrence(occ_id: int, body: OccurrencePatch, db: Session = Depends(get_db),
                       user: models.User = Depends(current_user)):
-    """Move or cancel a sitting. This is the reschedule the calendar view needs."""
+    """Move or cancel a sitting. This is the reschedule the calendar view needs.
+
+    A move is three things, not one: the sitting's own record, the calendar event people already
+    hold, and the mail telling them. Doing only the first — which is all this used to do — leaves
+    everybody turning up at the old time.
+    """
     o = db.get(models.SessionOccurrence, occ_id)
     if not o:
         raise HTTPException(404, "Sitting not found")
@@ -476,13 +670,22 @@ def update_occurrence(occ_id: int, body: OccurrencePatch, db: Session = Depends(
         v = getattr(body, f)
         if v is not None:
             setattr(o, f, v)
+
+    notified = None
     if body.starts_at is not None and body.starts_at != was:
+        moved_event = _move_sitting_event(o, user)
+        notified = _notify_moved(db, o, was, user) if body.notify else {"sent": 0,
+                                                                        "reason": "notify-off"}
         log(db, "onboarding.session_rescheduled", "session_occurrence", o.id,
             {"from": was.isoformat() if was else None, "to": body.starts_at.isoformat(),
-             "by": getattr(user, "email", "")})
+             "by": getattr(user, "email", ""), "calendar_event_moved": moved_event,
+             "notified": notified.get("sent", 0), "notify_reason": notified.get("reason", "")})
     db.commit()
     db.refresh(o)
-    return _occurrence_out(db, o)
+    out = _occurrence_out(db, o)
+    if notified is not None:
+        out["reschedule_notice"] = notified
+    return out
 
 
 class AttendeeIn(BaseModel):
@@ -504,7 +707,12 @@ def add_attendee(occ_id: int, body: AttendeeIn, db: Session = Depends(get_db),
 
 
 class AttendancePatch(BaseModel):
-    attended: bool
+    """Either half can be sent on its own: taking the register and writing why somebody missed it
+    are separate acts. `attended` is three-state — null means nobody has looked yet, which is not
+    the same as marked absent, and the chase-up mail depends on the difference."""
+
+    attended: bool | None = None
+    comment: str | None = None
 
 
 @router.patch("/attendees/{attendee_id}")
@@ -514,7 +722,12 @@ def mark_attendance(attendee_id: int, body: AttendancePatch, db: Session = Depen
     p = db.get(models.SessionAttendee, attendee_id)
     if not p:
         raise HTTPException(404, "Attendee not found")
-    p.attended = body.attended
+    # Only touch what was actually sent: a PATCH carrying just a comment must not silently clear
+    # the register, and one carrying just the register must not wipe the note.
+    if "attended" in body.model_fields_set:
+        p.attended = body.attended
+    if body.comment is not None:
+        p.comment = body.comment.strip()
     db.commit()
     return _occurrence_out(db, db.get(models.SessionOccurrence, p.occurrence_id))
 
@@ -656,13 +869,20 @@ def mail_draft(plan_id: int, template_key: str, db: Session = Depends(get_db),
     }
 
 
-def _record_sent(db: Session, plan_id: int, t, mode: str) -> None:
+def _record_sent(db: Session, plan_id: int, t, mode: str, msg=None) -> None:
     """Mark one mail as gone against its step, so the checklist and the queues never disagree.
 
     Shared by the single send and the bulk send: two copies of this would drift, and the thing
     they would drift about is whether somebody gets the same mail twice.
+
+    `msg` is what mailer.compose returned. compose does NOT raise when delivery fails — it returns
+    a row with status "failed" and an error — so without this check a mail that never left was
+    written down as sent, the step went green, and nobody ever chased it. On this deployment that
+    is not hypothetical: 18 of 243 messages on record failed, all of them egress errors.
     """
     if not t.step_key:
+        return
+    if msg is not None and getattr(msg, "status", "") != "sent":
         return
     row = db.scalar(
         select(models.OnboardingStepState)
@@ -715,7 +935,7 @@ def send_mail(plan_id: int, template_key: str, payload: MailSend, db: Session = 
         sender_user=user,
     )
 
-    _record_sent(db, plan_id, t, mode)
+    _record_sent(db, plan_id, t, mode, msg)
 
     log(db, "onboarding.mail_sent", "onboarding_plan", plan_id,
         {"template": t.key, "to": to_email, "by": getattr(user, "email", "")})
@@ -867,6 +1087,29 @@ def mails_by_template(db: Session = Depends(get_db), _user: models.User = Depend
     order = {"Overdue": 0, "Due today": 1, "Waiting": 2, "Sent": 3, "Nobody waiting": 4}
     out.sort(key=lambda g: (order[g["state"]], g["next_due"] or "9999", g["name"]))
     return out
+
+
+@router.get("/autosend/preview")
+def autosend_preview(on: str | None = None, db: Session = Depends(get_db),
+                     _user: models.User = Depends(current_user)):
+    """What an automatic sender WOULD send, and what is stopping each one. Sends nothing.
+
+    `on` (YYYY-MM-DD) asks the question for a future date, so a schedule can be checked before it
+    arrives rather than after somebody's inbox has proved it wrong.
+
+    Nothing sends onboarding mail on its own today. This is the queue that would exist if it did,
+    and it is deliberately the first thing built: it is the only way to see, before trusting it,
+    that the sender would pick the right mails, address them to the right people, and skip the ones
+    the People team already sent by hand.
+    """
+    from ..services.onboarding import autosend
+    from ..services.onboarding import schedule as sc
+
+    when = sc._as_date(on) if on else None
+    if on and not when:
+        raise HTTPException(422, f"Could not read {on!r} as a date. Use YYYY-MM-DD.")
+    return {"summary": autosend.summary(db, today=when),
+            "mails": autosend.due_mails(db, today=when)}
 
 
 @router.get("/mails")
@@ -1023,7 +1266,7 @@ def bulk_mail_send(payload: BulkMail, db: Session = Depends(get_db),
         ctx, mode = _plan_mail_context(db, plan)
         try:
             _guard(ml.render(t.subject, ctx), ml.render(t.body, ctx), r["name"])
-            mailer.compose(
+            msg = mailer.compose(
                 db, to_email=r["to"], to_name=r["to_name"],
                 template=f"onboarding:{t.key}",
                 subject=rt.strip(ml.render(t.subject, ctx)),
@@ -1035,7 +1278,13 @@ def bulk_mail_send(payload: BulkMail, db: Session = Depends(get_db),
         except Exception as e:                      # one bad address must not stop the other five
             failed.append({"plan_id": plan.id, "name": r["name"], "error": str(e)[:200]})
             continue
-        _record_sent(db, plan.id, t, mode)
+        # compose returns rather than raises when delivery fails, so a non-"sent" status has to be
+        # reported here or the caller is told five went out when four did.
+        if getattr(msg, "status", "") != "sent":
+            failed.append({"plan_id": plan.id, "name": r["name"],
+                           "error": (getattr(msg, "error", "") or "delivery failed")[:200]})
+            continue
+        _record_sent(db, plan.id, t, mode, msg)
         sent.append({"plan_id": plan.id, "name": r["name"], "to": r["to"]})
 
     log(db, "onboarding.bulk_mail_sent", "onboarding_plan", 0,
@@ -1106,6 +1355,8 @@ class BulkReschedule(BaseModel):
     #: Either move every sitting by this many days, or put them all on this date and keep the time.
     shift_days: int | None = None
     move_to: date | None = None
+    #: Tell the people already invited to each sitting. See OccurrencePatch.notify.
+    notify: bool = True
 
 
 @router.post("/occurrences/bulk-reschedule")
@@ -1131,10 +1382,20 @@ def bulk_reschedule(payload: BulkReschedule, db: Session = Depends(get_db),
         else:
             occ.starts_at = datetime.combine(payload.move_to, was.time())
         occ.ends_at = occ.starts_at + length
-        # The invite was written for the old date, so it has to go again.
-        occ.invites_sent_at = None
+        moved_event = _move_sitting_event(occ, user)
+        # The invite was written for the old date, so it has to go again. Where invites had already
+        # gone this now happens by itself, in the original thread; where it could not, the sitting
+        # drops back to un-invited so the calendar keeps showing it as a mail still owed rather
+        # than quietly claiming everyone has been told.
+        notice = (_notify_moved(db, occ, was, user) if payload.notify
+                  else {"sent": 0, "reason": "notify-off"})
+        if not notice.get("sent"):
+            occ.invites_sent_at = None
         d = sess.BY_KEY.get(occ.session_key)
         moved.append({"id": occ.id, "name": d.name if d else occ.session_key,
+                      "notified": notice.get("sent", 0),
+                      "notify_reason": notice.get("reason", ""),
+                      "calendar_event_moved": moved_event,
                       "was": was.isoformat(), "now": occ.starts_at.isoformat(),
                       "invite_due": (schedule.invite_date(occ.starts_at, d.invite_weeks_before,
                                                           d.invite_weekday).isoformat()
@@ -1477,7 +1738,11 @@ def send_session_catalogue_mail(session_key: str, role: str, payload: SessionMai
                        template=f"onboarding:{t.key}",
                        subject=rt.strip(ml.render(payload.subject, person)),
                        **_mail_parts(ml.render(payload.body, person), overrides),
-                       candidate_id=p.get("candidate_id"), sender_user=user)
+                       candidate_id=p.get("candidate_id"), sender_user=user,
+                       # Every mail about one sitting — the invite, a reschedule, the follow-up —
+                       # belongs to the same conversation. Without this a moved session arrives as
+                       # a second unrelated mail and the reader has to work out which date won.
+                       thread_key=f"session:{occ.id}" if occ else "")
         sent += 1
 
     if occ:

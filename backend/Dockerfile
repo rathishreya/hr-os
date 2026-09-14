@@ -6,7 +6,9 @@
 FROM node:22-slim AS web
 WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+# onnxruntime-node ships ~600MB of native/CUDA binaries we never use (the browser bundle uses
+# onnxruntime-web WASM). Skip that download — keeps the build within the box's memory/disk.
+RUN ONNXRUNTIME_NODE_INSTALL=skip npm ci
 COPY frontend/ ./
 RUN npm run build
 

@@ -116,9 +116,9 @@ export function ScoreBar({ value, label }) {
   )
 }
 
-export function Field({ label, children, hint }) {
+export function Field({ label, children, hint, className }) {
   return (
-    <label className="block">
+    <label className={`block ${className || ''}`}>
       <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
       {children}
       {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}

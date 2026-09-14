@@ -92,6 +92,7 @@ const BOARD_COLUMNS = [
   { key: 'role', label: 'Role', get: (r) => r.role || '' },
   { key: 'joining', label: 'Joining', get: (r) => fmtDate(r.joining_date) },
   { key: 'progress', label: 'Progress', get: (r) => `${r.progress.percent}%` },
+  { key: 'form', label: 'Onboarding form', get: (r) => (r.form_submitted ? 'Filled' : 'Not filled') },
   { key: 'overdue', label: 'Overdue', get: (r) => (r.overdue ? `${r.overdue} overdue` : 'On track') },
   { key: 'next', label: 'Next due', get: (r) => (r.next_due ? fmtDate(r.next_due.on) : '') },
 ]
@@ -205,6 +206,17 @@ function CandidatesView({ rows, onOpen, mails, onChanged }) {
                       <span className="shrink-0 text-xs tabular-nums text-slate-600">{r.progress.percent}%</span>
                     </div>
                     <span className="mt-0.5 block text-[11px] text-slate-500">{r.progress.done} of {r.progress.counted} done</span>
+                  </td>
+                  <td className={TD}>
+                    {r.form_submitted ? (
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                        <Check className="h-3 w-3" aria-hidden />Filled
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                        Not filled
+                      </span>
+                    )}
                   </td>
                   <td className={TD}>
                     {r.overdue ? (
@@ -1079,16 +1091,17 @@ function StepValue({ step, busy, onSave }) {
     ? `From ${SOURCE_LABEL[step.source] || 'elsewhere'}`
     : PROMPTS[step.key] || 'Type it here'
 
-  if (step.kind === 'source' && !editing) {
+  // A sourced step is not editable here. Its value comes off the offer paperwork, and every
+  // working-day due date counts from the joining date — so a copy typed over the top would put
+  // this checklist and the letter the candidate signed at odds with each other, with no sign of
+  // which was right. Change it on the document; it reads through from there.
+  if (step.kind === 'source') {
     return (
-      <span className="flex items-center gap-1.5">
+      <span className="flex items-center gap-1.5"
+        title={`Comes from ${SOURCE_LABEL[step.source] || 'their paperwork'} — change it there.`}>
         {v
           ? <span className="text-sm text-slate-800">{asDate ? fmtDate(v) : v}</span>
           : <span className="text-xs text-slate-500">Not on their paperwork yet</span>}
-        <button type="button" onClick={() => setEditing(true)} aria-label={`Edit ${step.label}`}
-          className={cx('rounded p-0.5 text-slate-400 hover:text-brand-700', focusRing)}>
-          <PencilLine className="h-3 w-3" aria-hidden />
-        </button>
       </span>
     )
   }
@@ -1558,6 +1571,7 @@ const hhmm = (v) => {
 function CalendarView({ occurrences, onReschedule, onOpen, onMail, onChanged }) {
   const { toast } = useToast()
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
+  const [view, setView] = useState('month')              // 'month' | 'fridays'
   const [picking, setPicking] = useState(false)          // selection mode
   const [chosen, setChosen] = useState(() => new Set())
   const [openDay, setOpenDay] = useState(null)           // a Date
@@ -1584,6 +1598,53 @@ function CalendarView({ occurrences, onReschedule, onOpen, onMail, onChanged }) 
   }, [occurrences])
 
   const weeks = useMemo(() => weeksOf(month), [month])
+
+  // Most recurring sittings land on a Friday, so "is this Friday free?" is a question the month
+  // grid answers twelve times over. This answers it once for the whole year.
+  const fridays = useMemo(() => {
+    const year = month.getFullYear()
+    const d = new Date(year, 0, 1)
+    while (d.getDay() !== 5) d.setDate(d.getDate() + 1)
+    const out = []
+    while (d.getFullYear() === year) {
+      out.push(new Date(d))
+      d.setDate(d.getDate() + 7)
+    }
+    return out
+  }, [month])
+
+  // The year in twelve rows of five rather than one column of fifty-two. Scrolling a flat list
+  // means holding "which month am I in now" in your head the whole way down; laid out by month,
+  // a free run of Fridays is a gap you can see without counting.
+  const fridaysByMonth = useMemo(() => {
+    const rows = []
+    for (const d of fridays) {
+      const m = d.getMonth()
+      if (!rows.length || rows[rows.length - 1].m !== m) {
+        rows.push({ m, label: d.toLocaleDateString('en-GB', { month: 'short' }), days: [] })
+      }
+      rows[rows.length - 1].days.push(d)
+    }
+    return rows
+  }, [fridays])
+
+  // What the year adds up to. "Booked" answers which Fridays are free; "needing invites" is the
+  // only one of the two that is actually somebody's job today.
+  const fridayTally = useMemo(() => {
+    let booked = 0, needInvites = 0
+    for (const d of fridays) {
+      const list = byDay.get(dayKey(d)) || []
+      if (!list.length) continue
+      booked += 1
+      if (list.some((o) => ['overdue', 'upcoming'].includes(sittingState(o, today)))) needInvites += 1
+    }
+    return { booked, needInvites }
+  }, [fridays, byDay, today])
+
+  const inYear = useMemo(
+    () => occurrences.filter((o) => new Date(o.starts_at).getFullYear() === month.getFullYear()),
+    [occurrences, month],
+  )
   const inMonth = useMemo(
     () => occurrences.filter((o) => {
       const d = new Date(o.starts_at)
@@ -1627,25 +1688,40 @@ function CalendarView({ occurrences, onReschedule, onOpen, onMail, onChanged }) 
   }
 
   const monthLabel = month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  const yearly = view === 'fridays'
 
   return (
     <div className="space-y-3">
       {/* Toolbar: where you are, how to move, and the one mode switch. */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* The step has to match what is on screen: one click of ◀ in a view of the whole year
+            should not move you one twelfth of the way. */}
         <div className="flex items-center gap-1">
-          <IconButton aria-label="Previous month" onClick={() => setMonth(addMonths(month, -1))}>
+          <IconButton aria-label={yearly ? 'Previous year' : 'Previous month'}
+            onClick={() => setMonth(addMonths(month, yearly ? -12 : -1))}>
             <ChevronLeft className="h-4 w-4" aria-hidden />
           </IconButton>
-          <IconButton aria-label="Next month" onClick={() => setMonth(addMonths(month, 1))}>
+          <IconButton aria-label={yearly ? 'Next year' : 'Next month'}
+            onClick={() => setMonth(addMonths(month, yearly ? 12 : 1))}>
             <ChevronRight className="h-4 w-4" aria-hidden />
           </IconButton>
         </div>
-        <h3 className="text-base font-semibold tracking-tight text-slate-900">{monthLabel}</h3>
+        <h3 className="text-base font-semibold tracking-tight text-slate-900">
+          {yearly ? month.getFullYear() : monthLabel}
+        </h3>
         <button type="button" onClick={() => setMonth(startOfMonth(new Date()))}
           className={cx(TOOLBAR, 'h-8')}>Today</button>
+        <select value={view} onChange={(e) => setView(e.target.value)}
+          aria-label="How to view the calendar"
+          className={cx(TOOLBAR, 'h-8 w-36 px-2')}>
+          <option value="month">Month</option>
+          <option value="fridays">All Fridays</option>
+        </select>
 
         <span className="ml-auto text-xs tabular-nums text-slate-500">
-          {inMonth.length} sitting{inMonth.length === 1 ? '' : 's'} this month
+          {yearly
+            ? `${inYear.length} sitting${inYear.length === 1 ? '' : 's'} this year`
+            : `${inMonth.length} sitting${inMonth.length === 1 ? '' : 's'} this month`}
         </span>
         {picking ? (
           <button type="button" onClick={leavePicking} className={cx(TOOLBAR, 'h-8')}>Done selecting</button>
@@ -1663,7 +1739,124 @@ function CalendarView({ occurrences, onReschedule, onOpen, onMail, onChanged }) 
         </p>
       )}
 
+      {/* Every Friday of the year, twelve rows of five. Most recurring sittings land on a Friday,
+          so "which Fridays are still free" is the scheduling question, and a flat list of
+          fifty-two rows answers it only if you count. Laid out by month, a free run is a visible
+          gap and a booked one carries the same colour it has in the month grid. */}
+      {view === 'fridays' && (
+        <div className={TABLE_WRAP}>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-brand-200 bg-brand-100 px-3 py-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-800">
+              Every Friday in {month.getFullYear()}
+            </span>
+            <span className="flex items-center gap-3 text-[11px] tabular-nums text-brand-800">
+              <span>{fridayTally.booked} of {fridays.length} booked</span>
+              {fridayTally.needInvites > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-px font-medium text-amber-900">
+                  {fridayTally.needInvites} still to invite
+                </span>
+              )}
+            </span>
+          </div>
+
+          <div className="divide-y divide-slate-100">
+            {fridaysByMonth.map((row) => {
+              const busyCount = row.days.filter((d) => (byDay.get(dayKey(d)) || []).length).length
+              return (
+                <div key={row.m} className="flex items-stretch gap-3 px-3 py-2">
+                  <div className="w-11 shrink-0 pt-1">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      {row.label}
+                    </div>
+                    {busyCount > 0 && (
+                      <div className="mt-0.5 text-[10px] tabular-nums text-slate-500">
+                        {busyCount} on
+                      </div>
+                    )}
+                  </div>
+                  {/* items-start, not stretch: a free Friday should be a gap in the row, not a box
+                      the same size as a booked one. Stretched, the thirty-five empty cells were
+                      the loudest thing on a screen whose whole question is which of them are free. */}
+                  <div className="grid flex-1 grid-cols-2 items-start gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
+                    {row.days.map((d) => {
+                      const list = byDay.get(dayKey(d)) || []
+                      const past = d < today
+                      const isToday = sameDay(d, today)
+                      // The one that most needs attention colours the cell: an invite nobody has
+                      // sent matters more than one already gone out on the same day.
+                      const state = list.length
+                        ? ['overdue', 'upcoming', 'invited', 'past']
+                          .find((s) => list.some((o) => sittingState(o, today) === s)) || 'past'
+                        : null
+                      const dayLabel = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
+
+                      // A free Friday is a date and nothing else. It keeps its column so the year
+                      // still reads in lines, and it stops there.
+                      if (!list.length) {
+                        return (
+                          <div key={dayKey(d)} title={`${dayLabel} — free`}
+                            className={cx('rounded-md bg-slate-50 px-2 py-1 text-[11px] font-medium tabular-nums',
+                              past ? 'text-slate-400' : 'text-slate-500',
+                              isToday && 'ring-2 ring-brand-500 ring-offset-1')}>
+                            {d.getDate()}
+                          </div>
+                        )
+                      }
+                      return (
+                        <button
+                          key={dayKey(d)} type="button" onClick={() => setOpenDay(d)}
+                          title={`${dayLabel} — ${list.map((o) => `${o.name} ${hhmm(o.starts_at)}`).join(', ')}`}
+                          className={cx(
+                            'flex flex-col rounded-lg border px-2 py-1.5 text-left',
+                            'transition-colors duration-150 ease-snappy', focusRing,
+                            CHIP_TONE[state], 'cursor-pointer hover:brightness-[0.97]',
+                            isToday && 'ring-2 ring-brand-500 ring-offset-1',
+                          )}>
+                          <span className={cx('text-[11px] tabular-nums',
+                            isToday ? 'font-bold' : 'font-semibold')}>
+                            {d.getDate()}
+                          </span>
+                          {list.slice(0, 2).map((o) => (
+                            <span key={o.id} className="mt-0.5 truncate text-[11px] font-medium leading-tight">
+                              {o.name}
+                            </span>
+                          ))}
+                          {list.length > 2 && (
+                            <span className="mt-0.5 text-[10px] leading-tight opacity-80">
+                              +{list.length - 2} more
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                    {/* Keep the columns aligned down the year: February's four Fridays should sit
+                        under January's first four, not spread across the row. */}
+                    {Array.from({ length: 5 - row.days.length }, (_, i) => (
+                      <div key={`pad-${i}`} className="hidden lg:block" aria-hidden />
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500">
+            {['overdue', 'upcoming', 'invited', 'past'].map((k) => (
+              <span key={k} className="inline-flex items-center gap-1.5">
+                <span className={cx('h-2.5 w-2.5 rounded-sm border', CHIP_TONE[k])} aria-hidden />
+                {STATE_WORD[k]}
+              </span>
+            ))}
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-slate-100" aria-hidden />
+              Free
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* The month. */}
+      {view === 'month' && (
       <div className={TABLE_WRAP}>
         <div className="grid grid-cols-7 border-b border-brand-200 bg-brand-100">
           {WEEKDAYS.map((w) => (
@@ -1737,9 +1930,11 @@ function CalendarView({ occurrences, onReschedule, onOpen, onMail, onChanged }) 
           ))}
         </div>
       </div>
+      )}
 
       {/* What the colours mean, said once rather than guessed at. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-0.5 text-[11px] text-slate-500">
+      <div className={cx('flex flex-wrap items-center gap-x-4 gap-y-1 px-0.5 text-[11px] text-slate-500',
+        view !== 'month' && 'hidden')}>
         {['upcoming', 'overdue', 'invited', 'past'].map((k) => (
           <span key={k} className="inline-flex items-center gap-1.5">
             <span className={cx('h-2.5 w-2.5 rounded-sm border', CHIP_TONE[k])} aria-hidden />
@@ -1865,7 +2060,9 @@ function BulkRescheduleModal({ sittings, onClose, onDone }) {
     try {
       const body = how === 'shift' ? { shift_days: Number(days) } : { move_to: when }
       const res = await api.onboardingBulkReschedule(sittings.map((s) => s.id), body)
-      toast(`Moved ${res.moved.length} sitting${res.moved.length === 1 ? '' : 's'}`, 'success')
+      const told = res.moved.reduce((n, m) => n + (m.notified || 0), 0)
+      toast(`Moved ${res.moved.length} sitting${res.moved.length === 1 ? '' : 's'}`
+        + (told ? ` · ${told} told, each in their existing thread` : ''), 'success')
       onDone()
     } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
   }
@@ -1941,7 +2138,21 @@ function SittingModal({ session, occurrence, onClose, onSaved }) {
         : await api.onboardingCreateOccurrence({
           session_key: session.key, entity, starts_at: new Date(when).toISOString(), location,
         })
-      toast(editing ? 'Sitting moved' : 'Sitting scheduled')
+      if (editing) {
+        // Moving a sitting now mails the people already invited. Saying so is the point: a send
+        // that happens without a word on screen is one nobody can catch before it lands.
+        const n = saved?.reschedule_notice
+        if (n?.sent) toast(`Sitting moved · ${n.sent} told, in the same email thread`)
+        else if (n?.reason === 'draft-incomplete') {
+          toast(`Sitting moved, but nobody was told: the invite still needs ${n.missing.join(', ')}`, 'error')
+        } else if (n?.reason === 'delivery-failed') {
+          toast('Sitting moved, but the notice could not be delivered', 'error')
+        } else if (n?.reason === 'never-invited') {
+          toast('Sitting moved · nobody told, invites have not gone out yet')
+        } else if (n?.reason === 'everyone-invited-has-left') {
+          toast('Sitting moved · nobody told, everyone invited has a last working day on file')
+        } else toast('Sitting moved')
+      } else toast('Sitting scheduled')
       onSaved(saved)
     } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
   }
@@ -1990,14 +2201,23 @@ function AttendanceModal({ occurrence, onClose, onSaved }) {
   const [occ, setOcc] = useState(occurrence)
   const [busy, setBusy] = useState(0)
 
-  async function mark(id, attended) {
+  async function mark(id, patch) {
     setBusy(id)
     try {
-      const up = await api.onboardingMarkAttendance(id, attended)
+      const up = await api.onboardingMarkAttendance(id, patch)
       setOcc(up)
       onSaved?.(up)
     } catch (e) { toast(e.message, 'error') } finally { setBusy(0) }
   }
+
+  // Three states, not a tick. A checkbox can only say came / did-not-come, and "nobody has taken
+  // the register yet" is a third thing — the chase-up mail goes to the people marked absent, so
+  // reading unmarked as absent would chase somebody nobody has looked at.
+  const CAME = [
+    { v: 'null', label: 'Not marked' },
+    { v: 'true', label: 'Attended' },
+    { v: 'false', label: 'Did not attend' },
+  ]
 
   return (
     <Modal open onClose={onClose} size="lg" title={`${occ.name} — who came`}>
@@ -2011,6 +2231,7 @@ function AttendanceModal({ occurrence, onClose, onSaved }) {
                 <th scope="col" className={TH}>Name</th>
                 <th scope="col" className={TH}>Email</th>
                 <th scope="col" className={TH}>Came</th>
+                <th scope="col" className={TH}>Comment</th>
               </tr>
             </thead>
             <tbody>
@@ -2019,12 +2240,28 @@ function AttendanceModal({ occurrence, onClose, onSaved }) {
                   <td className={cx(TD, 'font-medium text-slate-800')}>{a.name || <span className={EMPTY}>—</span>}</td>
                   <td className={cx(TD, 'text-slate-600')}>{a.email || <span className={EMPTY}>—</span>}</td>
                   <td className={TD}>
-                    <label className="inline-flex items-center gap-2 text-xs text-slate-600">
-                      <input type="checkbox" checked={!!a.attended} disabled={busy === a.id}
-                        onChange={(e) => mark(a.id, e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300 accent-brand-600" />
-                      Attended
-                    </label>
+                    <select
+                      value={a.attended === true ? 'true' : a.attended === false ? 'false' : 'null'}
+                      disabled={busy === a.id}
+                      onChange={(e) => mark(a.id, {
+                        attended: e.target.value === 'null' ? null : e.target.value === 'true',
+                      })}
+                      className={cx(inputClass, 'w-40 py-1.5 text-sm')}>
+                      {CAME.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                    </select>
+                  </td>
+                  <td className={TD}>
+                    {/* Committed on blur, not on every keystroke: a PATCH per character would
+                        fight the register dropdown for the same row. */}
+                    <input
+                      defaultValue={a.comment || ''}
+                      disabled={busy === a.id}
+                      placeholder="Why they missed it, or anything worth noting"
+                      onBlur={(e) => {
+                        const next = e.target.value.trim()
+                        if (next !== (a.comment || '')) mark(a.id, { comment: next })
+                      }}
+                      className={cx(inputClass, 'py-1.5 text-sm')} />
                   </td>
                 </tr>
               ))}

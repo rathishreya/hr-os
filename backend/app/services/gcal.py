@@ -160,10 +160,15 @@ def gmail_send_as(user_email: str, raw_message: bytes) -> None:
 def _insert_meet_event(
     access_token: str, *, summary: str, start: datetime, duration_minutes: int,
     description: str, attendees: list[str], request_id: str, timezone: str | None = None,
-) -> str:
-    """Create a Calendar event with a Google Meet conference (given an access token) and return the
-    Meet link (or ''). sendUpdates=none so Google does NOT email attendees — our own preview-and-send
-    flow is the single notification. The event still lands on the organizer's calendar."""
+) -> dict:
+    """Create a Calendar event with a Google Meet conference (given an access token) and return
+    {"link": <meet url or ''>, "id": <event id or ''>}. sendUpdates=none so Google does NOT email
+    attendees — our own preview-and-send flow is the single notification. The event still lands on
+    the organizer's calendar.
+
+    The id comes back alongside the link because an event we cannot name later is an event we can
+    only ever create: moving a sitting has to move its calendar entry too, and that needs the id.
+    """
     end = start + timedelta(minutes=max(15, duration_minutes or 60))
     tz = timezone or settings.COMPANY_TIMEZONE
     body = {
@@ -172,6 +177,14 @@ def _insert_meet_event(
         "start": {"dateTime": start.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": tz},
         "end": {"dateTime": end.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": tz},
         "attendees": [{"email": e} for e in attendees if e],
+        # Google defaults guestsCanSeeOtherGuests to TRUE, which would show every joiner the full
+        # invitee list of an induction or a POSH session — who else was hired, who is on a
+        # performance check-in. Nobody invited to one of these needs to see who else was.
+        # The other two follow from the same decision: a guest list nobody can read is not one
+        # they should be able to add to or edit.
+        "guestsCanSeeOtherGuests": False,
+        "guestsCanInviteOthers": False,
+        "guestsCanModify": False,
         "conferenceData": {"createRequest": {
             "requestId": request_id,
             "conferenceSolutionKey": {"type": "hangoutsMeet"},
@@ -192,14 +205,62 @@ def _insert_meet_event(
             if ep.get("entryPointType") == "video" and ep.get("uri"):
                 link = ep["uri"]
                 break
-    return link
+    return {"link": link, "id": data.get("id") or ""}
 
 
 def create_meet_event(refresh_token: str, **kw) -> str:
     """Create a Meet event via the user's OWN OAuth connection. See _insert_meet_event for kwargs."""
-    return _insert_meet_event(_access_token(refresh_token), **kw)
+    return create_meet_event_detail(refresh_token, **kw)["link"]
 
 
 def create_meet_event_as(user_email: str, **kw) -> str:
     """Create a Meet event AS the user via Workspace domain-wide delegation — no per-user OAuth."""
+    return create_meet_event_as_detail(user_email, **kw)["link"]
+
+
+def create_meet_event_detail(refresh_token: str, **kw) -> dict:
+    """As create_meet_event, but returns {"link", "id"} so the caller can move the event later."""
+    return _insert_meet_event(_access_token(refresh_token), **kw)
+
+
+def create_meet_event_as_detail(user_email: str, **kw) -> dict:
+    """As create_meet_event_as, but returns {"link", "id"}."""
     return _insert_meet_event(_delegated_token(user_email, _CAL_SCOPE), **kw)
+
+
+def _patch_event_time(access_token: str, event_id: str, *, start: datetime,
+                      duration_minutes: int, timezone: str | None = None) -> None:
+    """Move an existing event to a new time, keeping its Meet link, its guests and its privacy
+    settings untouched.
+
+    PATCH rather than PUT precisely so those survive: a full update would need us to resend every
+    field, and any we forgot — guestsCanSeeOtherGuests above all — would silently revert to
+    Google's defaults and expose the guest list we deliberately hid.
+
+    sendUpdates=none for the same reason event creation uses it: the mail this system sends is the
+    one notification, and letting Google send its own would deliver two different-looking messages
+    about one change.
+    """
+    end = start + timedelta(minutes=max(15, duration_minutes or 60))
+    tz = timezone or settings.COMPANY_TIMEZONE
+    resp = httpx.patch(
+        f"{_EVENTS_ENDPOINT}/{urllib.parse.quote(event_id)}",
+        params={"sendUpdates": "none"},
+        headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+        json={
+            "start": {"dateTime": start.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": tz},
+            "end": {"dateTime": end.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": tz},
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+
+
+def move_event(refresh_token: str, event_id: str, **kw) -> None:
+    """Move an event via the user's OWN OAuth connection."""
+    _patch_event_time(_access_token(refresh_token), event_id, **kw)
+
+
+def move_event_as(user_email: str, event_id: str, **kw) -> None:
+    """Move an event AS the user via Workspace domain-wide delegation."""
+    _patch_event_time(_delegated_token(user_email, _CAL_SCOPE), event_id, **kw)

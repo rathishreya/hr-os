@@ -211,10 +211,8 @@ class LoginRequest(BaseModel):
     password: str = Field(max_length=200)
 
 
-class SignupRequest(BaseModel):
-    name: str = Field(max_length=160)
-    email: str = Field(max_length=200)
-    password: str = Field(min_length=8, max_length=200)
+# (No SignupRequest: self-signup was removed. Accounts are created by an admin via the
+# authenticated /users endpoints, which use UserCreate below.)
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -522,6 +520,12 @@ class MyMailboxUpdate(BaseModel):
     app_password: str = Field("", max_length=200)
 
 
+class MySignatureUpdate(BaseModel):
+    # The user's personal email signature (HTML). Empty string clears it. Sanitized server-side to
+    # an allow-list of formatting tags before storing.
+    signature: str = Field("", max_length=20000)
+
+
 class EmailOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -577,6 +581,42 @@ class DocumentTemplateOut(BaseModel):
     doc_type: str                   # offer | contract | nda | nda-tech
     party_type: str | None = None   # agency | individual; None = applies to either
     contract_type: str | None = None  # agency | freelance | trainee | full_time | professional_services
+    # What the generate form should ask for THIS template — see services/documents/form_fields.py.
+    # Empty means no list has been declared, and the caller falls back to its own default.
+    fields: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AwaitingDocumentOut(BaseModel):
+    """Someone who has reached offer or hired and holds no paperwork yet.
+
+    Offer & Docs lists documents, so without this a candidate can be moved to Offer and simply not
+    appear anywhere on the page. Nothing drafts a letter on a stage change and nothing should — the
+    template and the entity are decisions a person makes, not guesses (see routers/pipeline.py). So
+    the candidate is listed with the fields we already know, and their first letter is written when
+    somebody asks for it.
+
+    Carries the same display fields an enriched DocumentOut does, so the table renders one of these
+    beside real documents without a second set of accessors.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    application_id: int
+    candidate_id: int
+    candidate_name: str = ""
+    email: str = ""
+    contact: str = ""
+    position: str = ""
+    department: str = ""
+    compensation: str = ""
+    location: str = ""
+    reporting_manager: str = ""
+    # "" means UNSET, not EZ — a candidate's entity is settled by their FIRST document, and this
+    # row exists precisely because there isn't one. Non-empty only when they already hold a
+    # document on some other application.
+    entity: str = ""
+    stage: str = ""                       # "offer" | "hired" — what put them on this page
+    reached_at: datetime | None = None    # applications.stage_changed_at; NULL on older rows
 
 
 class DocumentOut(BaseModel):
@@ -590,7 +630,9 @@ class DocumentOut(BaseModel):
     personal_email: str = ""
     title: str
     content: str
-    content_html: str = ""  # manual rich-editor override; when set, preview/PDF render this
+    # Manual rich-editor override; when set, preview/PDF render this. Tolerate NULL (a legacy row or
+    # a cleared edit) so one stray None can never fail validation for the whole Offer & Docs list.
+    content_html: str | None = ""
     blocks: list[Any] = Field(default_factory=list)
     terms: dict[str, Any]
     status: str

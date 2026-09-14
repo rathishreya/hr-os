@@ -70,8 +70,8 @@ function enrichBoardRow(app) {
 export const api = {
   // Auth
   login: (email, password) => req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
-  signup: (name, email, password) => req('/auth/signup', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
-  canSignup: () => req('/auth/can-signup'),
+  // No signup / canSignup: the server has no self-signup route. Accounts come from
+  // Settings → Users, which goes through the authenticated /users endpoints below.
   me: () => req('/auth/me'),
   forgotPassword: (email) => req('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
   resetPassword: (token, password) => req('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
@@ -207,6 +207,8 @@ export const api = {
   getMyMailbox: () => req('/comms/my-mailbox'),
   setMyMailbox: (app_password) => req('/comms/my-mailbox', { method: 'PUT', body: JSON.stringify({ app_password }) }),
   testMyMailbox: () => req('/comms/my-mailbox/test', { method: 'POST' }),
+  getMySignature: () => req('/comms/my-signature'),
+  setMySignature: (signature) => req('/comms/my-signature', { method: 'PUT', body: JSON.stringify({ signature }) }),
   // Google Calendar / Meet (connect your Google account for real Meet links on interview rounds)
   googleStatus: () => req('/google/status'),
   googleConnect: () => req('/google/connect'),
@@ -245,8 +247,10 @@ export const api = {
     req(`/onboarding-module/occurrences/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   onboardingAddAttendee: (id, body) =>
     req(`/onboarding-module/occurrences/${id}/attendees`, { method: 'POST', body: JSON.stringify(body) }),
-  onboardingMarkAttendance: (attendeeId, attended) =>
-    req(`/onboarding-module/attendees/${attendeeId}`, { method: 'PATCH', body: JSON.stringify({ attended }) }),
+  // `patch` carries whichever half changed: {attended} (true / false / null for not-yet-marked)
+  // and/or {comment}. Sending only one must never clear the other.
+  onboardingMarkAttendance: (attendeeId, patch) =>
+    req(`/onboarding-module/attendees/${attendeeId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   // Onboarding mails. Nothing sends itself: a draft is fetched, read, and sent by a person.
   onboardingAllMails: () => req('/onboarding-module/mails'),
@@ -335,6 +339,9 @@ export const api = {
   onboardingFormLink: (candidateId) => req(`/onboarding-form/${candidateId}/link`),
 
   listAllDocuments: () => req('/documents'),
+  // Candidates who reached offer/hired with nothing drafted. They are not documents, so they
+  // arrive separately — Offer & Docs shows them beside the real letters.
+  listAwaitingDocuments: () => req('/documents/awaiting'),
   listDocumentTemplates: () => req('/documents/templates'),
   generateDocument: (body) => req('/documents/generate', { method: 'POST', body: JSON.stringify(body) }),
   regenerateDocument: (id, body) => req(`/documents/${id}/regenerate`, { method: 'POST', body: JSON.stringify(body) }),

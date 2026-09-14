@@ -214,7 +214,7 @@ function InterviewCard({ round, onSaved }) {
                 {Object.entries(round.video.scores || {}).filter(([, v]) => typeof v === 'number').map(([k, v]) => (
                   <span key={k} className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">{k.replace(/_/g, ' ')}: {v}</span>
                 ))}
-                {round.video.has_recording && <a href={api.videoRecordingUrl(round.video.id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2 py-0.5 font-medium text-white hover:bg-brand-700"><Video className="h-3 w-3" /> Watch</a>}
+                {round.video.has_recording && <a href={round.video.recording_url || api.videoRecordingUrl(round.video.id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2 py-0.5 font-medium text-white hover:bg-brand-700"><Video className="h-3 w-3" /> Watch</a>}
               </div>
               {round.video.summary && <p className="mt-2 text-pretty text-sm leading-relaxed text-slate-600">{round.video.summary}</p>}
               {round.video.transcript && (

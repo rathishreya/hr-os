@@ -73,7 +73,10 @@ _NOTICE_TIERS = [
 ]
 
 
-def _psc_responsibilities() -> list[dict]:
+def _psc_responsibilities(responsibilities: list[str] | None = None) -> list[dict]:
+    """The duties clause. What the recruiter typed wins; blank keeps the transcribed list."""
+    if responsibilities:
+        return [b.p("Your key responsibilities would include:"), b.ul(list(responsibilities))]
     return [
         b.p("Your key responsibilities would include:"),
         b.p("**1. Basic Designing:**"),
@@ -499,8 +502,8 @@ def professional_service_contract(ctx: dict) -> dict:
         "blocks": [
             # ── Cover letter ──────────────────────────────────────────────────────────────
             b.p(f"Ref # {ctx['reference']}", align="right"),
-            b.p(f"Date: {ctx['letter_date']}", align="right"),
-            b.p(f"**{who}**"),
+            # The source puts the addressee's name on the left with the date level with it.
+            b.row([b.p(f"**{who}**")], [b.p(f"Date: {ctx['letter_date']}", align="right")]),
             b.p(ctx["address"]),
             b.p(f"Dear {who},"),
             b.p(
@@ -531,6 +534,7 @@ def professional_service_contract(ctx: dict) -> dict:
                 f"and rewarding career with us."
             ),
             b.p("Sincerely,"),
+            b.space(43),   # room to sign, measured off the source letter
             b.p(f"{witness}"),
             b.p(ctx["signatory_title"]),
             b.p(
@@ -556,15 +560,18 @@ def professional_service_contract(ctx: dict) -> dict:
                     b.p(f"**{ctx['manager']}**, {ctx['manager_role']}"),
                     b.p(f"**{ctx['approving_manager']}**, {ctx['approving_manager_role']}"),
                 ]),
-                ("Responsibilities", _psc_responsibilities()),
+                ("Responsibilities", _psc_responsibilities(ctx["responsibilities"])),
                 ("Base Pay", [b.p("Fixed INR 000 per month. We expect you to do **00 coins per month**.")]),
                 ("Performance Bonus", [b.p("INR 00 (applicable after 3 months and paid quarterly as per PPR)")]),
                 ("Incentive", [b.p(
                     "If you process above the defined coins volume, you will be incentivized as per "
                     "the rate list. (applicable after 3 months and paid quarterly along with PPR Bonus)"
                 )]),
-                ("Coins Conversion Rate list", [
-                    b.p("Cost per coin = INR 1"),
+                # The source sets these as TWO rows of the terms table, not one: "Coins Conversion"
+                # carrying the rate, then "Rate List" carrying the skill table. Merging them lost a
+                # row label a reader looks for.
+                ("Coins Conversion", [b.p("Cost per coin = INR 1")]),
+                ("Rate List", [
                     b.table(
                         ["Skill Name", "Rate List (coins/unit)", "Incentive/Unit"],
                         [list(r) for r in _COINS_RATE_LIST],
@@ -650,10 +657,11 @@ def professional_service_contract(ctx: dict) -> dict:
             b.p(
                 f"**IN WITNESS WHEREOF** EZ has caused this Agreement to be executed as of the **{start}**."
             ),
-            b.p("**Signed in the presence of:**", align="right"),
             b.signature(
                 ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
                 ("WITNESS to PARTICIPANT - NAME", witness.upper(), witness),
+                heading="Signed in the presence of:",
+                heading_align="right",
             ),
             b.divider(),
 
@@ -670,10 +678,11 @@ def professional_service_contract(ctx: dict) -> dict:
             b.p(
                 f"**IN WITNESS WHEREOF** EZ has caused this Agreement to be executed as of the **{start}**."
             ),
-            b.p("**Signed in the presence of:**", align="right"),
             b.signature(
                 ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
                 ("WITNESS to PARTICIPANT - NAME", witness.upper(), witness),
+                heading="Signed in the presence of:",
+                heading_align="right",
             ),
         ],
     }
@@ -683,6 +692,7 @@ register(
     "aez_professional_service_contract",
     professional_service_contract,
     label="Professional Service Contract",
+    preferred=True,
     description=(
         "ArabEasy LLC professional-service engagement: cover letter with acknowledgement, "
         "Schedule A terms (including the coins conversion rate list) and Schedule B covenants."
@@ -953,10 +963,11 @@ def freelance_contract(ctx: dict) -> dict:
     witness = ctx["signatory_name"]
     execution = [
         b.p(f"**IN WITNESS WHEREOF** EZ has caused this Agreement to be executed as of the **{start}**."),
-        b.p("**Signed in the presence of:**", align="right"),
         b.signature(
             ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
             ("WITNESS to PARTICIPANT - NAME", witness.upper(), witness),
+            heading="Signed in the presence of:",
+            heading_align="right",
         ),
     ]
 
@@ -966,8 +977,8 @@ def freelance_contract(ctx: dict) -> dict:
         "blocks": [
             # ── Cover letter ──────────────────────────────────────────────────────────────
             b.p(f"Ref # {ctx['reference']}", align="right"),
-            b.p(f"Date: {ctx['letter_date']}", align="right"),
-            b.p(f"**{who}**"),
+            # The source puts the addressee's name on the left with the date level with it.
+            b.row([b.p(f"**{who}**")], [b.p(f"Date: {ctx['letter_date']}", align="right")]),
             b.p(ctx["address"]),
             b.p(f"Dear {who},"),
             b.p(
@@ -998,6 +1009,7 @@ def freelance_contract(ctx: dict) -> dict:
                 f"and rewarding career with us."
             ),
             b.p("Sincerely,"),
+            b.space(56),   # room to sign, measured off the source letter
             b.p(witness),
             b.p(ctx["signatory_title"]),
             b.p(
@@ -1176,26 +1188,31 @@ def agency_nda(ctx: dict) -> dict:
     ez_title = ctx["contract_signatory_title"]
 
     return {
-        "title": f"NDA - {agency}",
+        "title": f"NDA - {ctx['agency_name_raw']}",
         "doc_type": "nda",
         "blocks": [
             b.p(f"Ref # {ctx['reference']}", align="right"),
             b.p(f"Date: {ctx['letter_date']}", align="right"),
             b.h(1, "Schedule B", underline=True),
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
-            b.p(f"This Agreement is made on this {ctx['effective_date']} by and between:"),
+            b.p(f"This Agreement is made on this {b.dots(ctx['effective_date'])} (Date) by and between:"),
             b.p(
-                f"{ctx['legal_entity']} (\"**EZ**\"), having its business address at "
+                # The AEZ agency-NDA source names the disclosing party "EZ Lab Private Limited" in
+                # its recital, even though the letterhead is ArabEasy LLC (the customer's own PDF
+                # crosses the two — the EZ version of this NDA names "ArabEasy LLC" instead). We
+                # reproduce the source exactly, as asked; flagged to the owner as a likely
+                # copy-paste in the original template worth confirming.
+                f"EZ Lab Private Limited (\"**EZ**\"), having its business address at "
                 f"{ctx['contracting_office']}, hereinafter duly represented by **{ez_name}** in his "
                 f"capacity as {ez_title} (hereinafter referred to as \"**EZ**\" or \"**Disclosing "
                 f"Party**\")"
             ),
             b.p("And"),
             b.p(
-                f"**{agency}** (Name of the Agency/ service provider), a {ctx['service_type']} "
-                f"service provider with its principal office at {ctx['agency_address']}, hereinafter "
-                f"duly represented by {signatory} in his capacity as {ctx['agency_signatory_title']} "
-                f"(hereinafter referred to as \"**Service Provider**\" or \"**Receiving Party**\");"
+                f"**{b.dots(agency)}** (Name of the Agency/ service provider), a {b.dots(ctx['service_type'])} "
+                f"(type of service) service provider with its principal office at {b.dots(ctx['agency_address'])}, hereinafter "
+                f"duly represented by {b.dots(signatory)} (Name of the authorized signatory) in his capacity as {b.dots(ctx['agency_signatory_title'])} "
+                f"(Position/Designation) (hereinafter referred to as \"**Service Provider**\" or \"**Receiving Party**\");"
             ),
             b.p("(Collectively hereinafter referred to as Parties and individually as Party)"),
             b.p("**WHEREAS**:"),
@@ -1324,8 +1341,8 @@ def agency_nda(ctx: dict) -> dict:
                 f"{ctx['effective_date']}."
             ),
             b.signature(
-                ("SIGNED for and on behalf of Service Provider - Name / Title / Date", ""),
-                (f"SIGNED for and on behalf of EZ - {ez_title} / Date", ez_name.upper()),
+                ("SIGNED for and on behalf of Service Provider", ""),
+                ("SIGNED for and on behalf of EZ", ez_name.upper(), None, ez_title),
             ),
         ],
     }
@@ -1483,23 +1500,32 @@ def agency_contract(ctx: dict) -> dict:
     ez_title = ctx["contract_signatory_title"]
     services = [str(s).strip() for s in (ctx.get("services") or []) if str(s).strip()] or _AEZ_AGENCY_SERVICES
     fees = [str(f).strip() for f in (ctx.get("fees") or []) if str(f).strip()] or _AEZ_AGENCY_FEES
-    sign_off = b.signature(
-        ("For Service Provider - Name / Title / Date", ""),
-        (f"For EZ Services - {ez_title} / Date", ez_name.upper()),
+    # The heading rides inside the block: kept as a loose paragraph it gets orphaned, ending one
+    # page while the rules it introduces start the next, jammed under the letterhead.
+    #
+    # Two variants because this document signs twice — once at the end of Schedule A and once at
+    # the end of Schedule B — and the source only announces it the first time. Baking the heading
+    # into one shared block printed "Signed in the presence of:" twice.
+    _cols = (
+        ("For Service Provider", ""),
+        ("For EZ Services", ez_name.upper(), None, ez_title),
     )
+    sign_off_headed = b.signature(*_cols, heading="Signed in the presence of:", heading_align="right")
+    sign_off = b.signature(*_cols)
 
     return {
-        "title": f"Agency Contract - {agency}",
+        "title": f"Agency Contract - {ctx['agency_name_raw']}",
         "doc_type": "contract",
         "blocks": [
             # ── Cover letter ──────────────────────────────────────────────────────────────
             b.p(f"Ref # {ctx['reference']}", align="right"),
-            b.p(f"Date: {ctx['letter_date']}", align="right"),
-            b.p(f"Dear {ctx['agency_poc_name']} (Name of the POC or authorized signatory),"),
+            # The source sets the salutation and the date on one band, not stacked.
+            b.row([b.p(f"Dear {b.dots(ctx['agency_poc_name'])} (Name of the POC or authorized signatory),")],
+                  [b.p(f"Date: {ctx['letter_date']}", align="right")]),
             b.p(
                 f"We are pleased to confirm our verbal discussion to bring you on as a Service "
-                f"Provider for {ctx['service_type']} at ARABEASY LLC (hereinafter referred to as "
-                f"\"**EZ**\"), effective {ctx['commencement_date']} (Start Date). You are to keep all our "
+                f"Provider for {b.dots(ctx['service_type'])} (type of Services) at ARABEASY LLC (hereinafter referred to as "
+                f"\"**EZ**\"), effective {b.dots(ctx['commencement_date'])} (Start Date). You are to keep all our "
                 f"client and EZ’s information confidential. Additional details regarding the work "
                 f"process and a non-disclosure agreement is attached for your review and "
                 f"confirmation."
@@ -1510,8 +1536,8 @@ def agency_contract(ctx: dict) -> dict:
             ),
             b.p(
                 f"Please take the time to carefully review our offer. This letter, along with the "
-                f"enclosed schedules, outlines the obligations of both EZ and {agency}, represented "
-                f"for the purpose of this Agreement through its authorized signatory, {signatory}."
+                f"enclosed schedules, outlines the obligations of both EZ and {b.dots(agency)} (Name of the Agency), represented "
+                f"for the purpose of this Agreement through its authorized signatory, {b.dots(signatory)} (Name of the authorized signatory)."
             ),
             b.p(
                 "Accepting the offer will be conditional upon agreeing to and signing the attached "
@@ -1520,10 +1546,11 @@ def agency_contract(ctx: dict) -> dict:
                 "prior to the first day of our business cooperation."
             ),
             b.p(
-                f"{signatory}, we look forward to welcoming you to the EZ team and wish you all the "
+                f"{b.dots(signatory)} (Name of the authorized signatory), we look forward to welcoming you to the EZ team and wish you all the "
                 f"success."
             ),
             b.p("Sincerely,"),
+            b.space(43),   # room to sign, measured off the source letter
             b.p(f"**{ez_name}**"),
             b.p(ez_title),
             b.divider(),
@@ -1533,8 +1560,8 @@ def agency_contract(ctx: dict) -> dict:
             b.h(3, f"Terms and Conditions of Contract between {agency} and EZ"),
             b.p("The following outlines the terms and conditions of a contract by and between:"),
             b.p(
-                f"{agency} (Name of the Agency), represented for the purpose of this Agreement by "
-                f"**{signatory}**, having its registered office at {ctx['agency_address']} (the "
+                f"{b.dots(agency)} (Name of the Agency), represented for the purpose of this Agreement by "
+                f"**{b.dots(signatory)}**, having its registered office at {b.dots(ctx['agency_address'])} (the "
                 f"\"**Service Provider**\")."
             ),
             b.p("And"),
@@ -1727,14 +1754,13 @@ def agency_contract(ctx: dict) -> dict:
                 "to be invalid or unenforceable, that provision shall be deleted and the other "
                 "provisions shall remain in effect.",
             ]),
-            b.p("Signed in the presence of:", align="right"),
-            sign_off,
+            sign_off_headed,
             b.divider(),
 
             # ── Schedule B ────────────────────────────────────────────────────────────────
             b.h(1, "Schedule B", underline=True),
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
-            b.p(f"This Agreement is made on this **{ctx['effective_date']}** by and between:"),
+            b.p(f"This Agreement is made on this **{b.dots(ctx['effective_date'])}** (Date) by and between:"),
             b.p(
                 f"ArabEasy LLC (“**EZ**”), having its business address at {office}, hereinafter duly "
                 f"represented by **{ez_name}** in his capacity as Founder and CEO (hereinafter "
@@ -1742,10 +1768,10 @@ def agency_contract(ctx: dict) -> dict:
             ),
             b.p("And"),
             b.p(
-                f"**{agency}** (Name of the Agency), a {ctx['service_type']} (type of service) with "
-                f"its principal office at {ctx['agency_address']}, hereinafter duly represented by "
-                f"{signatory} (Name of the Authorized Signatory) in his capacity as "
-                f"{ctx['agency_signatory_title']} (Position/Designation) (hereinafter referred to as "
+                f"**{b.dots(agency)}** (Name of the Agency), a {b.dots(ctx['service_type'])} (type of service) with "
+                f"its principal office at {b.dots(ctx['agency_address'])}, hereinafter duly represented by "
+                f"{b.dots(signatory)} (Name of the Authorized Signatory) in his capacity as "
+                f"{b.dots(ctx['agency_signatory_title'])} (Position/Designation) (hereinafter referred to as "
                 f"“**Service Provider**” or “**Receiving Party**”);"
             ),
             b.p("(Collectively hereinafter referred to as Parties and individually as Party)"),
@@ -1860,7 +1886,7 @@ def freelance_nda(ctx: dict) -> dict:
         "blocks": [
             b.p(f"Ref # {ctx['reference']}", align="right"),
             b.p(f"Date: {ctx['letter_date']}", align="right"),
-            b.p("Schedule B"),
+            b.h(1, "Schedule B", underline=True),
             b.h(3, "Covenants"),
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
             b.p(
@@ -2063,10 +2089,11 @@ def freelance_nda(ctx: dict) -> dict:
                 f"**IN WITNESS WHEREOF** EZ has caused this Agreement to be executed as of the "
                 f"{ctx['execution_date']}."
             ),
-            b.p("**Signed in the presence of:**", align="right"),
             b.signature(
                 ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
-                ("WITNESS to PARTICIPANT - NAME", f"{witness.upper()} – {ctx['signatory_title']}", witness),
+                ("WITNESS to PARTICIPANT - NAME", witness.upper(), witness, ctx["signatory_title"]),
+                heading="Signed in the presence of:",
+                heading_align="right",
             ),
         ],
     }
@@ -2329,10 +2356,11 @@ def professional_service_nda(ctx: dict) -> dict:
                 f"**IN WITNESS WHEREOF** EZ has caused this Agreement to be executed as of the "
                 f"**{ctx['start_date']}**."
             ),
-            b.p("**Signed in the presence of:**", align="right"),
             b.signature(
                 ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
                 ("WITNESS to PARTICIPANT - NAME", witness.upper(), witness),
+                heading="Signed in the presence of:",
+                heading_align="right",
             ),
         ],
     }

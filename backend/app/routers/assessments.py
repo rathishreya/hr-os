@@ -12,7 +12,7 @@ from .. import models, schemas
 from ..deps import current_user
 from ..config import settings
 from ..database import get_db
-from ..services import mailer, security
+from ..services import mailer, security, upload_safety
 from ..services.ai import ai
 from ..services.recruitment import log
 
@@ -168,17 +168,10 @@ async def update_assessment(assessment_id: int, request: Request, db: Session = 
 
 
 def _file_response(filename: str, mime: str, blob: bytes) -> Response:
-    # Strip CR/LF/quotes/control chars from the (uploader-controlled) filename to prevent
-    # response-header injection, and send nosniff so the browser won't MIME-sniff the blob.
-    safe = re.sub(r'[\r\n"\x00-\x1f]+', "", filename or "assessment") or "assessment"
-    return Response(
-        content=blob,
-        media_type=mime or "application/octet-stream",
-        headers={
-            "Content-Disposition": f'inline; filename="{safe}"',
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    # The stored `mime` is uploader-controlled and deliberately ignored: upload_safety serves the
+    # file under a type derived from its extension, so an assessment "attachment" declared as
+    # text/html can't execute on our origin. (This route is reachable by a signed public link.)
+    return upload_safety.serve(blob, filename)
 
 
 @router.get("/{assessment_id}/file")

@@ -251,6 +251,11 @@ def session_context(occurrence: models.SessionOccurrence | None) -> dict:
     return out
 
 
+def pretty_date(d) -> str:
+    """The date format these mails use, for callers outside this module."""
+    return _pretty(d)
+
+
 def year_context() -> dict:
     """The one field a session mail can always answer on its own."""
     return {"Year": str(date.today().year)}

@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useR
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowRight, ArrowRightCircle, Building2, Check, ChevronDown, ChevronRight, Copy, Eye, FilePlus2,
+  AlertTriangle, ArrowRightCircle, Building2, Check, ChevronDown, ChevronRight, Copy, Eye, FilePlus2,
   ClipboardList, FileText, Link as LinkIcon, Lock, Mail, MoreHorizontal, PenLine, Printer, RefreshCw,
   Rocket, RotateCcw,
   Search, Trash2, Upload, X,
@@ -41,7 +41,6 @@ const DOC_LABEL = {
 
 /** The single next step this document is waiting on. Everything else stays reachable. */
 function nextStep(d) {
-  if (d.move_to_onboarding) return 'locked'
   if (d.has_upload) return 'done'
   if (d.email_sent_at) return 'upload'
   if (d.status === 'approved') return 'send'
@@ -120,21 +119,24 @@ const TERM_FIELDS = [
 function prefillTerms(doc) {
   const t = doc.terms || {}
   return {
-    name: doc.candidate_name || '',
-    email: doc.email || '',
-    contact: doc.contact || '',
-    designation: doc.position || '',
-    department: doc.department || '',
-    annual_ctc: doc.compensation || '',
-    location: doc.location || '',
-    start_date: doc.joining_date || '',
-    manager: doc.reporting_manager || '',
-    manager_role: t.manager_role || '',
-    approving_manager: doc.approving_manager || '',
-    approving_manager_role: t.approving_manager_role || '',
-    notice_period: t.notice_period || '',
-    validity_date: t.validity_date || '',
-    address: t.address || '',
+    // Everything the document already carries comes through first, so a template's own fields —
+    // an agency's name and registered office, the services, the fees — survive a re-open instead
+    // of being dropped by a fixed list that only knew about candidate letters.
+    ...t,
+    // The duties box is a textarea; the document stores a list.
+    responsibilities: Array.isArray(t.responsibilities) ? t.responsibilities.join('\n') : (t.responsibilities || ''),
+    // Then what we can work out from the candidate and the role — but only where the document
+    // does not already say something. A blank derived value must never wipe a stored one.
+    name: doc.candidate_name || t.name || '',
+    email: doc.email || t.email || '',
+    contact: doc.contact || t.contact || '',
+    designation: doc.position || t.designation || '',
+    department: doc.department || t.department || '',
+    annual_ctc: doc.compensation || t.annual_ctc || '',
+    location: doc.location || t.location || '',
+    start_date: doc.joining_date || t.start_date || '',
+    manager: doc.reporting_manager || t.manager || '',
+    approving_manager: doc.approving_manager || t.approving_manager || '',
   }
 }
 
@@ -147,9 +149,6 @@ function DocFormModal({ doc, mode, templates, lockedEntity, onClose, onDone }) {
   )
   const [entity, setEntity] = useState(lockedEntity || doc.entity || 'EZ')
   const [terms, setTerms] = useState(prefillTerms(doc))
-  const [resp, setResp] = useState(
-    Array.isArray(doc.terms?.responsibilities) ? doc.terms.responsibilities.join('\n') : '',
-  )
   const [busy, setBusy] = useState(false)
 
   // Templates the recruiter can pick, narrowed to the letters the selected entity actually
@@ -158,15 +157,34 @@ function DocFormModal({ doc, mode, templates, lockedEntity, onClose, onDone }) {
   const options = templates.filter((t) => !t.entity || t.entity === entity)
   const noTemplates = options.length === 0
 
-  // Switching entity can strand a template the new entity doesn't issue — fall back to its first.
+  // What THIS template needs, not one list for all of them. An agency contract has no candidate,
+  // no CTC and no reporting manager; it needs the agency's name, its registered office, its
+  // authorised signatory, the service and the fees — none of which the old fixed list asked for,
+  // so they printed as blanks nobody could fill. A template with no declared list falls back to
+  // the old set rather than showing an empty form.
+  const picked = templates.find((t) => t.key === templateKey)
+  const formFields = (picked?.fields?.length ? picked.fields : TERM_FIELDS)
+  // Anything already stored on the document that this template does not ask for stays in `terms`
+  // and is still submitted, so switching template never quietly discards a value.
+
+  // Switching entity can strand a template the new entity doesn't issue — fall back to one it does.
+  // Each entity marks the letter a recruiter reaches for first; registration order alone put an
+  // agency contract in front, which is the wrong paper to default an individual hire to. The flag
+  // is explicit rather than guessed from doc_type, because EZ now issues its employment contract
+  // AS the offer letter, so doc_type no longer identifies it.
   useEffect(() => {
-    if (options.length && !options.some((t) => t.key === templateKey)) setTemplateKey(options[0].key)
+    if (options.length && !options.some((t) => t.key === templateKey)) {
+      setTemplateKey((options.find((t) => t.preferred) || options[0]).key)
+    }
   }, [entity, templates]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save() {
     setBusy(true)
     try {
-      const responsibilities = resp.split('\n').map((s) => s.trim()).filter(Boolean)
+      // The duties box is a textarea in `terms` like every other field; the templates want a list,
+      // so it is split here. Blank sends [], and each letter keeps its own job description.
+      const responsibilities = String(terms.responsibilities || '')
+        .split('\n').map((x) => x.trim()).filter(Boolean)
       const payload = { entity, ...terms, responsibilities }
       const up =
         mode === 'new'
@@ -204,9 +222,14 @@ function DocFormModal({ doc, mode, templates, lockedEntity, onClose, onDone }) {
         )}>
           {isNew ? <FilePlus2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /> : <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />}
           <span>
-            {isNew
-              ? <>This creates an <strong>additional</strong> document for {doc.candidate_name || 'this candidate'} — your existing documents are kept. The template starts at Offer letter; change it below.</>
-              : <>This <strong>replaces</strong> the current draft of this document in place with your edits. Only drafts can be regenerated; approved documents are locked.</>}
+            {/* A pending row carries no document id, so this is the candidate's first letter and
+                there is nothing to keep. Saying "additional ... your existing documents are kept"
+                to somebody with none reads as though a document already existed somewhere. */}
+            {isNew && !doc.id
+              ? <>This is the <strong>first</strong> document for {doc.candidate_name || 'this candidate'}, so it settles which entity they are on. Pick the letter below.</>
+              : isNew
+                ? <>This creates an <strong>additional</strong> document for {doc.candidate_name || 'this candidate'} — your existing documents are kept. Pick the letter below.</>
+                : <>This <strong>replaces</strong> the current draft of this document in place with your edits. Only drafts can be regenerated; approved documents are locked.</>}
           </span>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -231,7 +254,12 @@ function DocFormModal({ doc, mode, templates, lockedEntity, onClose, onDone }) {
           </Field>
           <Field
             label="Document to generate"
-            hint={noTemplates ? `No templates are configured for ${entity} yet.` : undefined}
+            /* What this particular letter IS. Two full-time templates sit next to each other here
+               — the offer letter and the employment contract — and by their names alone it is not
+               obvious which is which, so the picked one describes itself. */
+            hint={noTemplates
+              ? `No templates are configured for ${entity} yet.`
+              : picked?.description}
           >
             <select
               className={inputClass}
@@ -246,19 +274,23 @@ function DocFormModal({ doc, mode, templates, lockedEntity, onClose, onDone }) {
           </Field>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {TERM_FIELDS.map((f) => (
-            <Field key={f.key} label={f.label}>
-              <input className={inputClass} value={terms[f.key] || ''} placeholder={f.placeholder}
-                onChange={(e) => setTerms((p) => ({ ...p, [f.key]: e.target.value }))} />
+          {formFields.map((f) => (
+            <Field key={f.key} label={f.label + (f.required ? ' *' : '')}
+              className={f.type === 'lines' ? 'sm:col-span-2' : undefined}>
+              {f.type === 'lines' ? (
+                <textarea rows={3} className={inputClass} value={terms[f.key] || ''} placeholder={f.placeholder}
+                  onChange={(e) => setTerms((p) => ({ ...p, [f.key]: e.target.value }))} />
+              ) : (
+                <input className={inputClass} value={terms[f.key] || ''} placeholder={f.placeholder}
+                  onChange={(e) => setTerms((p) => ({ ...p, [f.key]: e.target.value }))} />
+              )}
             </Field>
           ))}
         </div>
-        <Field label="Responsibilities (one per line)" hint="Defaults to the role's job description when left blank.">
-          <textarea className={`${inputClass} h-24 resize-y`} value={resp} onChange={(e) => setResp(e.target.value)}
-            placeholder={'Design and operate high-throughput APIs\nMentor junior engineers'} />
-        </Field>
         <p className="text-xs leading-relaxed text-slate-500">
-          Autofilled from the candidate &amp; role — edit anything. The compensation table is computed from the CTC; leave a field blank to use the template default.
+          These are the fields this letter actually uses — a different template asks for different
+          things. Autofilled from the candidate &amp; role where we know them; leave a field blank to
+          print the template&rsquo;s own blank for it.
         </p>
       </div>
     </Modal>
@@ -276,13 +308,19 @@ const B1 = 'flex h-7 min-w-0 items-center gap-2'
 // A document's status is not a column anyone can write: each state is the trace of a real event
 // — approving it, emailing it, filing the signed copy back, moving the candidate to onboarding.
 // So the dropdown reads as a status and behaves as the control that performs the next event.
+// The Status column filter can tick these off like any document state, but it is deliberately NOT
+// in STATUS: every entry there maps to an action StatusSelect can perform, and there is no
+// document here to move.
+const AWAITING_LABEL = 'Awaiting paperwork'
 const STATUS = [
   { key: 'draft', label: 'Draft', tone: 'text-amber-700' },
   { key: 'approved', label: 'Approved', tone: 'text-amber-700' },
   { key: 'sent', label: 'Sent for signature', tone: 'text-sky-700' },
   { key: 'signed', label: 'Signed', tone: 'text-emerald-700' },
-  { key: 'onboarding', label: 'In onboarding', tone: 'text-slate-500' },
 ]
+// Sending somebody to onboarding is not a state of their PAPERWORK — a signed letter is still
+// signed afterwards — so it is no longer one of these. It is an action on the candidate, offered
+// on their row.
 // One tone per state, carried by the chip, its dot and its caret together — so status is legible
 // as a colour at a glance and still reads as a control you can open.
 const TONE = {
@@ -292,31 +330,25 @@ const TONE = {
   signed: { dot: 'bg-emerald-500', chip: 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300 hover:bg-emerald-100' },
   onboarding: { dot: 'bg-slate-400', chip: 'border-slate-200 bg-slate-100 text-slate-600' },
 }
-const statusOf = (d) => (d.move_to_onboarding ? 'onboarding'
-  : d.has_upload ? 'signed'
+const statusOf = (d) => (d.has_upload ? 'signed'
     : d.email_sent_at ? 'sent'
       : d.status === 'approved' ? 'approved' : 'draft')
 
-function StatusSelect({ doc: d, person: p, busy, title, onApprove, onEmail, onUpload, onOnboard }) {
+function StatusSelect({ doc: d, person: p, busy, title, onApprove, onEmail, onUpload }) {
   const now = statusOf(d)
-  const locked = !!d.move_to_onboarding
   const tone = TONE[now] || TONE.draft
 
   // What each option would actually do. Anything with no honest action behind it is disabled
   // rather than silently doing nothing.
   const run = {
     draft: null,                                   // nothing un-approves a document
-    approved: !locked && d.status !== 'approved' ? () => onApprove(d) : null,
-    sent: !locked ? () => onEmail(d) : null,
-    signed: !locked ? onUpload : null,
-    onboarding: !locked && p.appDoc?.id ? () => onOnboard(p) : null,
+    approved: d.status !== 'approved' ? () => onApprove(d) : null,
+    sent: () => onEmail(d),
+    signed: onUpload,
   }
   const why = {
     draft: 'A document cannot be moved back to draft',
-    approved: locked ? 'Locked — the candidate is in onboarding' : 'Already approved',
-    sent: 'Locked — the candidate is in onboarding',
-    signed: 'Locked — the candidate is in onboarding',
-    onboarding: locked ? 'Already in onboarding' : 'This candidate has no linked application',
+    approved: 'Already approved',
   }
 
   return (
@@ -324,7 +356,7 @@ function StatusSelect({ doc: d, person: p, busy, title, onApprove, onEmail, onUp
       <span aria-hidden className={cx('pointer-events-none absolute left-2.5 h-1.5 w-1.5 rounded-full', tone.dot)} />
       <select
         value={now}
-        disabled={busy || locked}
+        disabled={busy}
         aria-label={`Status of this document for ${p.name}`}
         onChange={(e) => run[e.target.value]?.()}
         className={cx(
@@ -339,7 +371,7 @@ function StatusSelect({ doc: d, person: p, busy, title, onApprove, onEmail, onUp
           </option>
         ))}
       </select>
-      {!locked && <ChevronDown aria-hidden className="pointer-events-none absolute right-2 h-3 w-3 opacity-60" />}
+      <ChevronDown aria-hidden className="pointer-events-none absolute right-2 h-3 w-3 opacity-60" />
     </span>
   )
 }
@@ -547,7 +579,9 @@ function useUpload(doc, onUploaded) {
 // across ALL of them, never merely the ones a filter happens to be showing.
 function PersonField({ person, field, label, placeholder, note: extraNote, onSaved }) {
   const { toast } = useToast()
-  const targets = person.all.filter((d) => !d.move_to_onboarding)
+  // Being in onboarding no longer freezes the paperwork: the move creates the onboarding entry
+  // and nothing else, so a joining date corrected afterwards still writes through to the letters.
+  const targets = person.all
   const values = [...new Set(targets.map((d) => d[field] || ''))]
   const shared = values.length <= 1 ? values[0] || '' : ''
   const differs = values.length > 1
@@ -578,6 +612,18 @@ function PersonField({ person, field, label, placeholder, note: extraNote, onSav
   }
 
   if (!targets.length) {
+    // No documents at all is not the same as no EDITABLE documents. Someone who has simply not
+    // been drafted anything yet has nothing to lock, and showing them a padlock claiming their
+    // letters moved to onboarding states something that never happened. This is the defect that
+    // got the whole awaiting row deleted the first time round.
+    if (!person.all.length) {
+      return (
+        <span className={cx(B1, 'px-2 text-sm text-slate-400')}
+          title={`Set on ${person.name}’s first document — there isn’t one yet.`}>
+          —
+        </span>
+      )
+    }
     const value = person.all[0]?.[field] || ''
     return (
       <span className={cx(B1, 'px-2 text-sm text-slate-700')}>
@@ -649,9 +695,8 @@ function FilterHead({ label, colKey, values, filters, onFilter, align }) {
 
 // ── One document ────────────────────────────────────────────────────────────────────────────
 function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview, onAskDelete,
-  onEditLetter, onEmail, onDetails, onApprove, onEntity, onAskOnboard }) {
+  onEditLetter, onEmail, onDetails, onApprove, onEntity }) {
   const { toast } = useToast()
-  const locked = !!d.move_to_onboarding
   const step = nextStep(d)
   const isDraft = d.status !== 'approved'
   const age = ageOf(d)
@@ -677,17 +722,17 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview, o
       : `${ENTITY_LEGAL[d.entity] || d.entity} — settled: ${p.name} holds documents on this entity`
 
   const menuItems = [
-    !locked && isDraft && step !== 'approve' && {
+    isDraft && step !== 'approve' && {
       label: 'Approve now', icon: <Check className="h-3.5 w-3.5 text-slate-400" />, onClick: runApprove,
     },
-    !locked && isDraft && { label: 'Edit the wording…', icon: <PenLine className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onEditLetter(d) },
-    !locked && isDraft && templateBacked && d.application_id && {
+    isDraft && { label: 'Edit the wording…', icon: <PenLine className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onEditLetter(d) },
+    isDraft && templateBacked && d.application_id && {
       label: 'Details & template…', icon: <RefreshCw className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onDetails(d),
     },
-    !locked && step !== 'send' && {
+    step !== 'send' && {
       label: d.email_sent_at ? 'Email again…' : 'Email now…', icon: <Mail className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onEmail(d),
     },
-    !locked && step !== 'upload' && {
+    step !== 'upload' && {
       label: d.has_upload ? 'Replace signed copy' : 'Upload signed copy',
       icon: <Upload className="h-3.5 w-3.5 text-slate-400" />, onClick: pickFile,
     },
@@ -706,13 +751,13 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview, o
       label: 'Copy letter text', icon: <Copy className="h-3.5 w-3.5 text-slate-400" />,
       onClick: () => { navigator.clipboard.writeText(d.content || ''); toast('Copied to clipboard') },
     },
-    !locked && !templateBacked && p.all.length === 1 && {
+    !templateBacked && p.all.length === 1 && {
       label: `Switch entity to ${d.entity === 'EZ' ? 'AEZ' : 'EZ'}`,
       icon: <Building2 className="h-3.5 w-3.5 text-slate-400" />,
       onClick: () => onEntity(d, d.entity === 'EZ' ? 'AEZ' : 'EZ'),
     },
-    !locked && !d.has_upload && { sep: true },
-    !locked && !d.has_upload && {
+    !d.has_upload && { sep: true },
+    !d.has_upload && {
       label: 'Delete this document', icon: <Trash2 className="h-3.5 w-3.5 text-rose-500" />,
       note: d.email_sent_at ? 'already emailed' : undefined,
       onClick: () => onAskDelete(d),
@@ -759,7 +804,6 @@ function DocRow({ doc: d, person: p, name, templateBacked, onMerge, onPreview, o
             onApprove={onApprove}
             onEmail={onEmail}
             onUpload={pickFile}
-            onOnboard={onAskOnboard}
           />
           {age != null && age >= 1 && (
             <span className={cx('shrink-0 text-xs tabular-nums', ageClass(age))} title={`${age} days since the covering email was sent`}>{age}d</span>
@@ -813,6 +857,11 @@ function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard,
     return STATUS.filter((o) => by[o.key]).map((o) => `${by[o.key]} ${o.label.toLowerCase()}`).join(' · ')
   }, [shown])
 
+  // Reached offer or hired with nothing drafted. The row exists so they are not invisible on the
+  // page they were just added to; the only move available is to start their first letter.
+  const empty = count === 0 && !!p.pending
+  const stageWord = p.pending?.stage === 'hired' ? 'Hired' : 'At offer'
+
 
   const items = [
     p.appDoc && { label: 'Add document…', icon: <FilePlus2 className="h-3.5 w-3.5 text-slate-400" />, onClick: () => onAddDoc(p) },
@@ -852,7 +901,10 @@ function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard,
             aria-expanded={open}
             aria-label={`${open ? 'Hide' : 'Show'} ${p.name}’s documents`}
             onClick={onToggle}
+            disabled={empty}
             className={cx('inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200/70 hover:text-slate-600',
+              // Nothing to unfold. Kept in the layout rather than removed so the names stay aligned.
+              empty && 'invisible',
               focusRing)}
           >
             <ChevronRight className={cx('h-4 w-4 transition-transform duration-150 ease-snappy', open && 'rotate-90')} />
@@ -864,7 +916,9 @@ function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard,
             <span className="block truncate text-sm font-semibold text-slate-900">{p.name}</span>
             <span className="block truncate text-xs text-slate-500" title={p.email}>
               {p.email || '—'}
-              <span className="text-slate-400"> · <span className="tabular-nums">{count}</span> {count === 1 ? 'document' : 'documents'}</span>
+              <span className="text-slate-400"> · {empty
+                ? `${stageWord}, no documents yet`
+                : <><span className="tabular-nums">{count}</span> {count === 1 ? 'document' : 'documents'}</>}</span>
             </span>
           </span>
         </div>
@@ -873,7 +927,8 @@ function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard,
         <div className="flex min-w-0 items-center gap-1">
           {p.entity
             ? <EntityChip value={p.entity} />
-            : <span className={cx('text-sm', EMPTY)}>—</span>}
+            : <span className={cx('text-sm', EMPTY)}
+                title="Not set yet — a candidate's first document settles which entity they are on.">—</span>}
           {p.entityConflict && (
             <span
               className="shrink-0 cursor-help text-amber-700"
@@ -887,19 +942,42 @@ function CandidateRow({ person: p, shown, open, onToggle, onMerge, onAskOnboard,
       </td>
       <td className={TD}>
         <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate text-xs text-slate-500">{summary}</span>
-          {p.anyMoved ? (
-            <Badge size="sm" tone="gray" className="shrink-0"><Rocket className="mr-1 h-3 w-3" aria-hidden />Onboarding</Badge>
-          ) : p.allSigned ? (
+          {empty ? (
             <button
               type="button"
-              onClick={() => onAskOnboard(p)}
-              title={`Send ${p.name} to onboarding — every document is signed`}
-              className={cx('inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 transition-colors duration-150 ease-snappy hover:border-emerald-300 hover:bg-emerald-100', focusRing)}
+              onClick={() => onAddDoc(p)}
+              title={`Start ${p.name}’s paperwork — nothing is drafted until you ask for it`}
+              className={cx('inline-flex shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 transition-colors duration-150 ease-snappy hover:border-brand-300 hover:bg-brand-100', focusRing)}
             >
-              Ready <ArrowRight className="h-3 w-3" aria-hidden />
+              <FilePlus2 className="h-3 w-3" aria-hidden /> Add the first document
             </button>
-          ) : null}
+          ) : (
+            <span className="min-w-0 truncate text-xs text-slate-500">{summary}</span>
+          )}
+          {/* Where the candidate is, as opposed to where any one letter is. "Send to onboarding"
+              creates their entry in the Onboarding module and does nothing else — it locks no
+              paperwork, so a joining date corrected next week still writes through to the
+              letters. */}
+          {!empty && (
+            <select
+              value={p.anyMoved ? 'onboarding' : 'draft'}
+              disabled={!p.appDoc?.id || p.anyMoved}
+              aria-label={`Where ${p.name} is`}
+              title={p.anyMoved ? `${p.name} is already in Onboarding`
+                : !p.appDoc?.id ? 'This candidate has no linked application'
+                  : `Create ${p.name}'s entry in Onboarding`}
+              onChange={(e) => { if (e.target.value === 'onboarding') onAskOnboard(p) }}
+              className={cx('h-7 shrink-0 rounded-full border px-2 text-xs font-medium outline-none',
+                'transition-colors duration-150 ease-snappy disabled:cursor-not-allowed disabled:opacity-80',
+                focusRing,
+                p.anyMoved
+                  ? 'border-slate-200 bg-slate-100 text-slate-600'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50')}
+            >
+              <option value="draft">Draft</option>
+              <option value="onboarding">Send to onboarding</option>
+            </select>
+          )}
         </div>
       </td>
       <td className={TD}>
@@ -926,6 +1004,9 @@ export default function OfferDocs() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const [docs, setDocs] = useState(null)
+  // Candidates who reached offer/hired with nothing drafted. They have no documents to list, and
+  // listing only documents is exactly how somebody moved to Offer vanishes off this page.
+  const [awaiting, setAwaiting] = useState([])
   const [templates, setTemplates] = useState([])
   const [view, setView] = useState(null)
   const [editing, setEditing] = useState(false)     // rich-editor mode for the viewed document
@@ -948,7 +1029,10 @@ export default function OfferDocs() {
   const openEditor = (d) => { setView(d); setEditing(true) }
   const closeView = () => { setEditing(false); setView(null) }
 
-  const load = () => api.listAllDocuments().then(setDocs).catch(() => setDocs([]))
+  const load = () => {
+    api.listAwaitingDocuments().then(setAwaiting).catch(() => setAwaiting([]))
+    return api.listAllDocuments().then(setDocs).catch(() => setDocs([]))
+  }
   useEffect(() => { load() }, [])
   useEffect(() => { api.listDocumentTemplates().then(setTemplates).catch(() => setTemplates([])) }, [])
 
@@ -966,24 +1050,32 @@ export default function OfferDocs() {
   // write to only the rows that happen to be visible.
   const people = useMemo(() => {
     const m = new Map()
-    for (const d of docs || []) {
+    const person = (d) => {
       const k = personKey(d)
       let p = m.get(k)
       if (!p) m.set(k, (p = { key: k, name: d.candidate_name || 'Candidate', email: d.email || '', contact: d.contact || '', all: [] }))
-      p.all.push(d)
+      return p
     }
+    for (const d of docs || []) person(d).all.push(d)
+    // Somebody at offer/hired with no letters still belongs here. `pending` stands in for the
+    // document nobody has asked for yet: it is what "Add document" starts from, and it carries the
+    // candidate and role facts the form prefills with. Only set when they hold nothing at all —
+    // a candidate whose file already has letters is not awaiting anything.
+    for (const a of awaiting || []) { const p = person(a); if (!p.all.length) p.pending = a }
     for (const p of m.values()) {
-      p.live = p.all.filter((x) => !x.move_to_onboarding)
+      p.live = p.all
       p.drafts = p.live.filter((x) => x.status !== 'approved')
       p.anyMoved = p.all.some((x) => x.move_to_onboarding)
       p.allSigned = p.live.length > 0 && p.live.every((x) => x.has_upload)
       p.anySent = p.all.some((x) => x.email_sent_at)
-      p.appDoc = p.all.find((x) => x.application_id)
+      p.appDoc = p.all.find((x) => x.application_id) || p.pending || null
       p.newest = p.all.reduce((t, x) => Math.max(t, +new Date(x.created_at) || 0), 0)
+        || (+new Date(p.pending?.reached_at) || 0)
       // A candidate belongs to ONE operating entity. Their first document establishes it;
-      // everything after must be issued on the same paper.
+      // everything after must be issued on the same paper. Nothing drafted yet means nothing
+      // settled yet — unless they already hold paper on another application.
       const inOrder = [...p.all].sort((a, b) => a.id - b.id)
-      p.entity = inOrder[0]?.entity || ''
+      p.entity = inOrder[0]?.entity || p.pending?.entity || ''
       // Documents that predate the rule can still disagree. Say so rather than picking one and
       // pretending — the odd letter is on the wrong company's paper and somebody must decide.
       const spread = [...new Set(p.all.map((x) => x.entity).filter(Boolean))]
@@ -995,6 +1087,14 @@ export default function OfferDocs() {
       p.firstAt = made.length ? new Date(Math.min(...made)).toISOString() : ''
       p.lastTouch = touched.length ? Math.max(...touched) : 0
       p.lastAt = p.lastTouch ? new Date(p.lastTouch).toISOString() : ''
+      // A candidate with no documents has no document dates. Reaching offer is the only thing
+      // that has happened to them, so that is what the date columns and "Recent first" use;
+      // without it a just-offered candidate sorts to the very bottom of the page they were
+      // added to. reached_at is NULL on applications moved before the column existed.
+      if (p.pending && !p.all.length && p.pending.reached_at) {
+        p.firstAt = p.lastAt = p.pending.reached_at
+        p.lastTouch = +new Date(p.pending.reached_at) || 0
+      }
       p.waiting = p.all.reduce((t, x) => Math.max(t, ageOf(x) ?? -1), -1)
       p.differs = (f) => new Set(p.live.map((x) => x[f] || '')).size > 1
       const seen = new Map()
@@ -1002,7 +1102,7 @@ export default function OfferDocs() {
       p.twin = (x) => seen.get(identOf(x)) > 1
     }
     return m
-  }, [docs, identOf])
+  }, [docs, awaiting, identOf])
 
   const searched = useMemo(() => {
     const n = q.trim().toLowerCase()
@@ -1038,13 +1138,14 @@ export default function OfferDocs() {
       candidate: distinctValues(all, accessors.candidate),
       document: distinctValues(all, accessors.document),
       entity: distinctValues(all, accessors.entity),
-      status: distinctValues(all, accessors.status),
+      status: [...distinctValues(all, accessors.status),
+        ...((awaiting || []).length ? [AWAITING_LABEL] : [])],
       joining: distinctValues(all, accessors.joining),
       email: distinctValues(all, accessors.email),
       created: byDate((d) => d.created_at),
       updated: byDate((d) => d.updated_at || ''),
     }
-  }, [docs, accessors])
+  }, [docs, awaiting, accessors])
 
   const onFilter = useCallback(
     (key) => (excluded) => { colFilters.setFilter(key, excluded); setPage(0) },
@@ -1062,6 +1163,27 @@ export default function OfferDocs() {
       if (!blocks.has(k)) blocks.set(k, [])
       blocks.get(k).push(d)
     }
+    // A candidate with nothing drafted contributes no documents, so the loop above never creates a
+    // block for them and they never reach the table. Add them here, subject to the same search and
+    // the filters they can honestly answer.
+    const nq = q.trim().toLowerCase()
+    const f = colFilters.filters
+    // Narrowing by a column only documents have (Document, Joining date, Created, Updated) is a
+    // search through paperwork; somebody with none of it is not a match.
+    const docOnlyFilter = !!(f.document?.length || f.joining?.length || f.created?.length || f.updated?.length)
+    const pendingPasses = (p) => {
+      if (docOnlyFilter) return false
+      if (nq && ![p.name, p.email, p.contact].some((v) => String(v || '').toLowerCase().includes(nq))) return false
+      if (f.candidate?.includes(p.name)) return false
+      if (f.entity?.includes(p.entity || '')) return false
+      if (f.email?.includes(p.email || '')) return false
+      if (f.status?.includes(AWAITING_LABEL)) return false
+      return true
+    }
+    for (const p of people.values()) {
+      if (p.pending && !p.all.length && !blocks.has(p.key) && pendingPasses(p)) blocks.set(p.key, [])
+    }
+
     const list = [...blocks.entries()].map(([k, shown]) => ({ p: people.get(k), shown })).filter((b) => b.p)
     const cmp = {
       recent: (a, b) => b.p.newest - a.p.newest,
@@ -1074,7 +1196,7 @@ export default function OfferDocs() {
       p,
       rows: [...shown].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
     }))
-  }, [filteredDocs, people, sortKey])
+  }, [filteredDocs, people, sortKey, q, colFilters.filters])
 
   // A page holds whole candidates: splitting someone's letters across a page break would leave
   // their name, joining date and email on one page and the rest of their documents on the next.
@@ -1095,13 +1217,15 @@ export default function OfferDocs() {
     return out.length ? out : [[]]
   }, [groups])
   const pageIdx = Math.min(page, pages.length - 1)
-  // Alternate candidates onto a faint ground: a person's letters read as one block without a
-  // header band boxing them in, and without leaving cells empty to mark the seam.
-  const rows = useMemo(() => pages[pageIdx].flatMap(
-    (g, gi) => g.rows.map((d, i) => ({ d, p: g.p, first: i === 0, last: i === g.rows.length - 1, band: gi % 2 === 1 })),
-  ), [pages, pageIdx])
+  // "N documents" stays literally true: a candidate with none is never counted as one. They are
+  // reported separately so the extra rows on screen are still accounted for.
   const total = groups.reduce((n, g) => n + g.rows.length, 0)
-  const from = pages.slice(0, pageIdx).reduce((n, gs) => n + gs.reduce((m, g) => m + g.rows.length, 0), 0)
+  const awaitingShown = groups.reduce((n, g) => n + (g.rows.length ? 0 : 1), 0)
+  // A candidate heading takes a line whether or not it has letters under it — the same rule the
+  // pager splits pages by, so "showing 1–25" matches what the page actually holds.
+  const lineCount = (gs) => gs.reduce((n, g) => n + Math.max(1, g.rows.length), 0)
+  const from = pages.slice(0, pageIdx).reduce((n, gs) => n + lineCount(gs), 0)
+  const shownLines = lineCount(pages[pageIdx])
 
 
   async function approveDoc(d) {
@@ -1120,7 +1244,7 @@ export default function OfferDocs() {
 
   const askOnboard = (p) => setConfirm({
     p,
-    body: `Send ${p.name} to onboarding? This creates their onboarding tracker; the document used to do it is locked from further edits. There is no undo from this screen.`,
+    body: `Send ${p.name} to onboarding? This creates their entry in the Onboarding module and nothing else — their documents stay editable. There is no undo from this screen.`,
   })
 
   async function runConfirm() {
@@ -1129,6 +1253,9 @@ export default function OfferDocs() {
       if (confirm.kind === 'delete') {
         await api.deleteDocument(confirm.doc.id)
         setDocs((list) => (list || []).filter((x) => x.id !== confirm.doc.id))
+        // Deleting somebody's last letter puts them back among the candidates awaiting paperwork,
+        // so that list has to be asked again or they drop off the page entirely.
+        api.listAwaitingDocuments().then(setAwaiting).catch(() => {})
         toast('Document deleted')
       } else {
         mergeDoc(await api.moveDocumentToOnboarding(confirm.p.appDoc.id, true))
@@ -1222,11 +1349,11 @@ export default function OfferDocs() {
             </div>
           </Card>
         </div>
-      ) : docs.length === 0 ? (
+      ) : docs.length === 0 && awaiting.length === 0 ? (
         <EmptyState
           icon={FileText}
-          title="No documents yet"
-          description="Documents show up here once generated — automatically when a candidate is marked Hired, or from a candidate’s Offer tab."
+          title="Nothing to paper yet"
+          description="A candidate appears here as soon as they reach Offer or Hired. Their first letter is written when you ask for it — nothing is drafted on its own."
         />
       ) : (
         <>
@@ -1246,7 +1373,8 @@ export default function OfferDocs() {
             <p className="text-sm text-slate-500">
               <span className="font-medium tabular-nums text-slate-700">{total}</span>
               {total === 1 ? ' document' : ' documents'}
-              {pages.length > 1 && <span className="tabular-nums"> · showing {from + 1}–{from + rows.length}</span>}
+              {awaitingShown > 0 && <> · <span className="tabular-nums">{awaitingShown}</span> awaiting paperwork</>}
+              {pages.length > 1 && <span className="tabular-nums"> · showing {from + 1}–{from + shownLines}</span>}
             </p>
             {colFilters.active > 0 && (
               <button
@@ -1284,7 +1412,7 @@ export default function OfferDocs() {
             <EmptyState
               icon={Search}
               title="Nothing matches these filters"
-              description="No document matches what you’re narrowing by."
+              description="No candidate or document matches what you’re narrowing by."
               action={<Button variant="ghost" onClick={clearAll}>Clear filters</Button>}
             />
           ) : (
@@ -1347,7 +1475,6 @@ export default function OfferDocs() {
                             onDetails={(x) => setForm({ doc: x, mode: 'edit' })}
                             onApprove={approveDoc}
                             onEntity={setEntity}
-                            onAskOnboard={askOnboard}
                             onAskDelete={askDelete}
                           />
                         ))}

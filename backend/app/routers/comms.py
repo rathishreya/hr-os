@@ -53,6 +53,23 @@ def set_my_mailbox(payload: schemas.MyMailboxUpdate, db: Session = Depends(get_d
     return {"connected": bool(pw), "status": security_note}
 
 
+@router.get("/my-signature")
+def get_my_signature(user: models.User = Depends(current_user)):
+    """This user's personal email signature (HTML), shown in Settings for editing."""
+    return {"signature": user.signature or ""}
+
+
+@router.put("/my-signature")
+def set_my_signature(payload: schemas.MySignatureUpdate, db: Session = Depends(get_db),
+                     user: models.User = Depends(current_user)):
+    """Save this user's signature. Sanitized to an allow-list of formatting tags before storing, so
+    it can carry a name/title/links but never a script. Appended to the bottom of every mail they
+    send (see mailer.compose)."""
+    user.signature = mailer.sanitize_signature(payload.signature or "")
+    db.commit()
+    return {"signature": user.signature, "set": bool(user.signature)}
+
+
 @router.post("/my-mailbox/test")
 def test_my_mailbox(db: Session = Depends(get_db), user: models.User = Depends(current_user)):
     """Send a test email to the user's own address through their resolved mailbox."""

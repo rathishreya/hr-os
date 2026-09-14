@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..deps import current_user, require_roles
-from ..services import designations, recruitment, resume_extract, resume_parser
+from ..services import designations, recruitment, resume_extract, resume_parser, upload_safety
 from ..services.ai import ai
 
 router = APIRouter(prefix="/api/candidates", tags=["candidates"])
@@ -147,18 +147,19 @@ def reparse_all_candidates(db: Session = Depends(get_db), _user: models.User = D
 
 @router.get("/{cand_id}/resume-file")
 def resume_file(cand_id: int, db: Session = Depends(get_db)):
-    """Serve the original uploaded resume file inline (for in-app preview)."""
+    """Serve the original uploaded resume file for in-app preview.
+
+    The stored Content-Type is deliberately NOT used: an applicant controls it, so echoing it back
+    on our own origin is a stored-XSS hole. upload_safety picks a safe type from the extension —
+    a PDF renders inline, anything else downloads — so a "résumé" full of HTML can never execute
+    in a recruiter's session.
+    """
     cand = db.get(models.Candidate, cand_id)
     if not cand:
         raise HTTPException(404, "Candidate not found")
     if not cand.resume_file:
         raise HTTPException(404, "No original file on record (this candidate was added as text).")
-    filename = cand.resume_filename or "resume"
-    return Response(
-        content=cand.resume_file,
-        media_type=cand.resume_mime or "application/octet-stream",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
-    )
+    return upload_safety.serve(cand.resume_file, cand.resume_filename or "resume")
 
 
 @router.get("")

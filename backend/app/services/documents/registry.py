@@ -58,6 +58,15 @@ class Template:
     # it invisible to half the searches that should find it.
     party_type: str | None = None
     contract_type: str | None = None
+    #: The one to preselect for its entity. Picked explicitly rather than guessed from doc_type:
+    #: EZ now issues its employment contract AS the offer letter, so doc_type no longer identifies
+    #: the letter a recruiter reaches for first.
+    preferred: bool = False
+    #: Registered but not offered. A retired template must stay registered — documents already
+    #: drafted from it store its key, and render_document raises on a key it does not know, so
+    #: deleting one would stop those letters opening, printing or being emailed. Hiding it takes
+    #: it out of the picker and leaves every existing document working.
+    hidden: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -68,6 +77,7 @@ class Template:
             "party_type": self.party_type,
             "contract_type": self.contract_type,
             "doc_type": self.doc_type,
+            "preferred": self.preferred,
         }
 
 
@@ -85,6 +95,8 @@ def register(
     doc_type: str,
     party_type: str | None = None,
     contract_type: str | None = None,
+    preferred: bool = False,
+    hidden: bool = False,
 ) -> Template:
     """Add a template to the registry, validating every axis against its vocabulary.
 
@@ -103,7 +115,8 @@ def register(
             continue
         if value not in allowed:
             raise ValueError(f"template {key!r}: {axis}={value!r} must be one of {allowed}")
-    tpl = Template(key, builder, label, description, entity, doc_type, party_type, contract_type)
+    tpl = Template(key, builder, label, description, entity, doc_type, party_type, contract_type,
+                   preferred, hidden)
     TEMPLATES[key] = tpl
     return tpl
 
@@ -118,6 +131,8 @@ def find(
     than matching nothing, so a stale filter from the UI can never blank the list silently."""
 
     def keep(tpl: Template) -> bool:
+        if tpl.hidden:          # retired: still renderable, no longer offered
+            return False
         for want, allowed, got in (
             (entity, ENTITY_KEYS, tpl.entity),
             (doc_type, DOC_TYPES, tpl.doc_type),

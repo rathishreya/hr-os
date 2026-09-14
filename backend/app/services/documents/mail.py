@@ -43,10 +43,21 @@ def _body(*paras: str) -> str:
 _ATTACHED_CONTRACT = "Please find the contract attached and kindly share the signed copy by tomorrow EOD."
 _ATTACHED_NDA = "Please find the NDA attached and kindly share the signed copy by tomorrow EOD."
 
-# The plain covering note: greeting, "here's the paper", sign-off.
-_PLAIN_CONTRACT = _body(_GREETING, _ATTACHED_CONTRACT, _SIGN_OFF)
+# The onboarding-form link, worded exactly as the offer letter carries it. It goes into every
+# contract's covering mail (offer letters and all contracts) so the candidate gets their form
+# alongside the paper — but NOT into the NDAs, which are a signature-only exchange with no form.
+# {{Onboarding Link}} is filled by render() from the candidate's own signed link.
+_ONBOARDING_LINK = _body(
+    "The link for the onboarding form is mentioned below; kindly fill out this form by "
+    "{{Next day's Date}}.",
+    "Fill it out here: {{Onboarding Link}}",
+)
+
+# The plain covering note: greeting, "here's the paper", the onboarding-form link, sign-off.
+_PLAIN_CONTRACT = _body(_GREETING, _ATTACHED_CONTRACT, _ONBOARDING_LINK, _SIGN_OFF)
 # The same, prefaced by the onboarding-process introduction.
-_ONBOARDING_CONTRACT = _body(_GREETING, _ONBOARDING_INTRO, _ATTACHED_CONTRACT, _SIGN_OFF)
+_ONBOARDING_CONTRACT = _body(_GREETING, _ONBOARDING_INTRO, _ATTACHED_CONTRACT, _ONBOARDING_LINK, _SIGN_OFF)
+# NDAs are a signature-only exchange: no onboarding form, so no link.
 _ONBOARDING_NDA = _body(_GREETING, _ONBOARDING_INTRO, _ATTACHED_NDA, _SIGN_OFF)
 
 _OFFER_BODY = _body(
@@ -55,9 +66,7 @@ _OFFER_BODY = _body(
     "bring you on as a full-time {{Role}}.",
     "Please find the offer letter attached below. Kindly share the signed copy with us by "
     "{{Next day's Date}}.",
-    "The link for the onboarding form is mentioned below; kindly fill out this form by "
-    "{{Next day's Date}}.",
-    "Fill it out here: {{Onboarding Link}}",
+    _ONBOARDING_LINK,
     "Feel free to let us know if you have any questions.",
 )
 
@@ -145,9 +154,48 @@ def _first_name(full: str) -> str:
     return parts[0] if parts else ""
 
 
+_URL = re.compile(r"(https?://[^\s<>\"]+)")
+
+
+def _esc(text: str) -> str:
+    return (text.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def to_html(body: str) -> str:
+    """The covering mail as HTML.
+
+    These went out as bare plain text: a naked tracking URL on its own line and no styling at all,
+    which is not what a candidate should receive alongside their offer letter. Blank-line-separated
+    paragraphs become <p>, single newlines become <br>, and any URL becomes a real link so the
+    reader gets something to click rather than a wall of query string.
+    """
+    paras = [b.strip() for b in re.split(r"\n\s*\n", body or "") if b.strip()]
+    out = []
+    for para in paras:
+        html = "<br>".join(_esc(line) for line in para.splitlines())
+        html = _URL.sub(r'<a href="\1" style="color:#6d28d9">\1</a>', html)
+        out.append(f'<p style="margin:0 0 14px">{html}</p>')
+    return (
+        '<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;'
+        'font-size:14px;line-height:1.6;color:#1f2937">' + "".join(out) + "</div>"
+    )
+
+
+def sign_off(name: str, title: str = "") -> str:
+    """The closing block. A letter of this kind arriving with no name on it reads as machine spam;
+    the sender is whoever pressed send, so it is their name that belongs here."""
+    if not (name or "").strip():
+        return ""
+    lines = ["Best regards,", name.strip()]
+    if (title or "").strip():
+        lines.append(title.strip())
+    return "\n".join(lines)
+
+
 def render(template_key: str, *, full_name: str, role: str, today: date | None = None,
-           onboarding_link: str = "") -> dict:
-    """Render the covering mail for a document. Returns {subject, body, cc, from_email, known}.
+           onboarding_link: str = "", sender_name: str = "", sender_title: str = "") -> dict:
+    """Render the covering mail for a document. Returns {subject, body, html, cc, from_email, known}.
 
     `known` is False when the template has no People-team-approved draft, so the review step can
     say so rather than presenting inherited wording as if it were signed off.
@@ -184,9 +232,16 @@ def render(template_key: str, *, full_name: str, role: str, today: date | None =
             text = text.replace(token, value)
         return text
 
+    body = fill(spec.body)
+    # Signed by whoever is sending it. Part of the DRAFT rather than bolted on at send time, so the
+    # recruiter sees the name that will go out and can change it before anything leaves.
+    closing = sign_off(sender_name, sender_title)
+    if closing:
+        body = body + "\n\n" + closing
     return {
         "subject": fill(spec.subject),
-        "body": fill(spec.body),
+        "body": body,
+        "html": to_html(body),
         "cc": list(spec.cc),
         "from_email": spec.from_email,
         "known": not borrowed and template_key not in UNSPECIFIED,

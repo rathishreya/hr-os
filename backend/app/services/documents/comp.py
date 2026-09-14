@@ -72,12 +72,17 @@ def parse_ctc(value: Any) -> int | None:
     return int(round(amount))
 
 
-def breakdown(annual_ctc: int | None) -> dict[str, Any]:
+def breakdown(annual_ctc: int | None, overrides: dict | None = None) -> dict[str, Any]:
     """Compute the full EZ Lab compensation breakdown from an annual CTC (rupees).
 
     Returns a dict with raw integers (for any downstream math) and a `rows` list ready to render
     as the Compensation table: each row is {label, value, emphasis}. When `annual_ctc` is missing
     or non-positive, every amount is left as the '₹ —' placeholder so the recruiter fills it in.
+
+    `overrides` maps a component key (basic, hra, special, pf_employer, esi_employer, lwf_employer,
+    health, pf_employee, esi_employee, lwf_employee, bonus) to a rupee figure that replaces the
+    computed one. The subtotals and totals are always re-derived from whatever ends up printed, so
+    the table adds up whichever way it was filled.
     """
     if not annual_ctc or annual_ctc <= 0:
         return {"known": False, "rows": _placeholder_rows(), "notes": _NOTES, "annual_ctc": None}
@@ -117,24 +122,48 @@ def breakdown(annual_ctc: int | None) -> dict[str, Any]:
     basic = round(monthly_a * 0.5)
     hra = round(basic * 0.5)
     special = monthly_a - basic - hra  # absorbs rounding so Basic + HRA + Special == A
+    bonus = 0
+
+    # Anything HR typed on the form wins over the computed figure. The computation is a good first
+    # guess, not a rule: a negotiated Basic or a real insurance premium has to be typeable, and
+    # before this the table could only be driven by the single CTC number.
+    o = {k: v for k, v in (overrides or {}).items() if isinstance(v, (int, float)) and v >= 0}
+    basic = int(o.get("basic", basic))
+    hra = int(o.get("hra", hra))
+    special = int(o.get("special", special))
+    pf_employer = int(o.get("pf_employer", pf))
+    esi_employer = int(o.get("esi_employer", esi_employer))
+    lwf_employer = int(o.get("lwf_employer", LWF_EMPLOYER))
+    health = int(o.get("health", health))
+    pf_employee = int(o.get("pf_employee", pf))
+    esi_employee = int(o.get("esi_employee", esi_employee))
+    lwf_employee = int(o.get("lwf_employee", LWF_EMPLOYEE))
+    bonus = int(o.get("bonus", bonus))
+
+    # Totals are always the sum of what is printed above them. A hand-typed total that disagreed
+    # with its own components would be the one number nobody could trust.
+    monthly_a = basic + hra + special
+    employer_b = pf_employer + esi_employer + lwf_employer + health
+    employee_c = pf_employee + esi_employee + lwf_employee
+    gross_d = monthly_a + bonus
     total_monthly = employer_b + gross_d
     total_annual = total_monthly * 12
 
     rows = [
-        {"label": "Basic Salary", "value": _inr(basic)},
-        {"label": "HRA", "value": _inr(hra)},
-        {"label": "Special Allowance", "value": _inr(special)},
+        {"key": "basic", "label": "Basic Salary", "value": _inr(basic)},
+        {"key": "hra", "label": "HRA", "value": _inr(hra)},
+        {"key": "special", "label": "Special Allowance", "value": _inr(special)},
         {"label": "Monthly Salary (A)", "value": _inr(monthly_a), "emphasis": True},
-        {"label": "Provident Fund", "value": _inr(pf)},
-        {"label": "ESI", "value": _inr(esi_employer)},
-        {"label": "LWF", "value": _inr(LWF_EMPLOYER)},
-        {"label": "Health Insurance Premium", "value": _inr(health)},
+        {"key": "pf_employer", "label": "Provident Fund", "value": _inr(pf_employer)},
+        {"key": "esi_employer", "label": "ESI", "value": _inr(esi_employer)},
+        {"key": "lwf_employer", "label": "LWF", "value": _inr(lwf_employer)},
+        {"key": "health", "label": "Health Insurance Premium", "value": _inr(health)},
         {"label": "Statutory and Misc. Benefits Employer Contribution (B)", "value": _inr(employer_b), "emphasis": True},
-        {"label": "Provident Fund", "value": _inr(pf)},
-        {"label": "ESI", "value": _inr(esi_employee)},
-        {"label": "LWF", "value": _inr(LWF_EMPLOYEE)},
+        {"key": "pf_employee", "label": "Provident Fund", "value": _inr(pf_employee)},
+        {"key": "esi_employee", "label": "ESI", "value": _inr(esi_employee)},
+        {"key": "lwf_employee", "label": "LWF", "value": _inr(lwf_employee)},
         {"label": "Statutory Benefits Employee Contribution (C)", "value": _inr(employee_c), "emphasis": True},
-        {"label": "Performance Bonus (Paid Quarterly, as per PPR) *", "value": _inr(0)},
+        {"key": "bonus", "label": "Performance Bonus (Paid Quarterly, as per PPR) *", "value": _inr(bonus)},
         {"label": "Gross Salary (D)", "value": _inr(gross_d), "emphasis": True},
         {"label": "Total Monthly CTC (B+D)", "value": _inr(total_monthly), "emphasis": True},
         {"label": "Total Annual CTC", "value": _inr(total_annual), "emphasis": True},
@@ -148,7 +177,12 @@ def breakdown(annual_ctc: int | None) -> dict[str, Any]:
         "annual_ctc": total_annual,
         "raw": {
             "basic": basic, "hra": hra, "special": special, "monthly_a": monthly_a,
-            "pf": pf, "esi_employer": esi_employer, "esi_employee": esi_employee,
+            # pf_employer / pf_employee are separate: the two sides can be typed independently.
+            # `pf` stays as the employer figure for callers written before overrides existed.
+            "pf": pf_employer, "pf_employer": pf_employer, "pf_employee": pf_employee,
+            "esi_employer": esi_employer, "esi_employee": esi_employee,
+            "lwf_employer": lwf_employer, "lwf_employee": lwf_employee,
+            "health": health, "bonus": bonus,
             "employer_b": employer_b, "employee_c": employee_c,
             "gross_d": gross_d, "total_monthly": total_monthly, "total_annual": total_annual,
         },
@@ -159,8 +193,13 @@ _NOTES = [
     "* Employee share of PF, ESI, LWF i.e. (C) shall be deducted from the Monthly Salary (A) mentioned above.",
     "** Gratuity, as applicable under Payment of Gratuity Act, shall be over and above the CTC.",
     "*** The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
-    "**** The performance bonus will be applicable after 3 months of your joining and is paid quarterly as per PPR ratings: "
-    "A: Distinctive 125% · B: Meets Expectations 100% · C: Needs Improvement 75% · D: Needs Assistance 0% · E: Probation 0%.",
+    "**** The performance bonus will be applicable after 3 months of your joining and is paid quarterly as "
+    "per PPR ratings:",
+    "A: Distinctive 125%",
+    "B: Meets Expectations 100%",
+    "C: Needs Improvement 75%",
+    "D: Needs Assistance 0%",
+    "E: Probation 0%",
 ]
 
 _COMP_LABELS = [
@@ -195,8 +234,12 @@ _OFFER_NOTES = [
     "**** Insurance coverage premium is the notional approx. value of premium paid by the Company towards "
     "your Group Mediclaim & Personal Accidental Insurance.",
     "***** The performance bonus will be applicable after 3 months of your joining and is paid quarterly as "
-    "per PPR ratings defined below. A: Distinctive: 125% · B: Meets Expectations: 100% · "
-    "C: Needs Improvement: 75% · D: Needs Assistance: 0% · E: Probation: 0%",
+    "per PPR ratings defined below.",
+    "A: Distinctive: 125%",
+    "B: Meets Expectations: 100%",
+    "C: Needs Improvement: 75%",
+    "D: Needs Assistance: 0%",
+    "E: Probation: 0%",
     "Based on past trends, nearly 75% of employees have consistently received the full 100% of their "
     "eligible quarterly bonus, reflecting strong performance and adherence to set targets.",
 ]
@@ -236,19 +279,23 @@ _CONTRACT_NOTES = [
     "** Gratuity, as applicable under Payment of Gratuity Act, shall be over and above the CTC.",
     "*** The compensation shall be subject to Tax Deduction as per applicable slabs and regime.",
     "**** The performance bonus will be applicable after 3 months of your joining and is paid quarterly as "
-    "per PPR ratings defined below. A: Distinctive: 125% · B: Meets Expectations: 100% · "
-    "C: Needs Improvement: 75% · D: Needs Assistance: 0% · E: Probation: 0%",
+    "per PPR ratings defined below.",
+    "A: Distinctive: 125%",
+    "B: Meets Expectations: 100%",
+    "C: Needs Improvement: 75%",
+    "D: Needs Assistance: 0%",
+    "E: Probation: 0%",
 ]
 
 
-def contract_annexure(annual_ctc: int | None) -> dict[str, Any]:
+def contract_annexure(annual_ctc: int | None, overrides: dict | None = None) -> dict[str, Any]:
     """The Compensation table inside Schedule A of the full employment contract."""
-    return _annexure(annual_ctc, _CONTRACT_LABELS, _CONTRACT_EMPHASIS, _CONTRACT_NOTES)
+    return _annexure(annual_ctc, _CONTRACT_LABELS, _CONTRACT_EMPHASIS, _CONTRACT_NOTES, overrides)
 
 
-def offer_annexure(annual_ctc: int | None) -> dict[str, Any]:
+def offer_annexure(annual_ctc: int | None, overrides: dict | None = None) -> dict[str, Any]:
     """Annexure-2 of the offer letter."""
-    return _annexure(annual_ctc, _OFFER_LABELS, _OFFER_EMPHASIS, _OFFER_NOTES)
+    return _annexure(annual_ctc, _OFFER_LABELS, _OFFER_EMPHASIS, _OFFER_NOTES, overrides)
 
 
 def _annexure(
@@ -256,10 +303,14 @@ def _annexure(
     labels: list[str],
     emphasis: set[str],
     notes: list[str],
+    overrides: dict | None = None,
 ) -> dict[str, Any]:
     """{known, rows, notes} for an 18-row A/B/C/D/E compensation table. Unparseable CTC yields the
-    same labelled table with '₹ —' placeholders, so the letter still prints with its structure."""
-    base = breakdown(annual_ctc)
+    same labelled table with '₹ —' placeholders, so the letter still prints with its structure.
+
+    `overrides` is passed straight through to breakdown(): any component HR typed replaces the
+    computed one, and every subtotal here is re-derived from what is actually printed."""
+    base = breakdown(annual_ctc, overrides)
     if not base["known"]:
         return {
             "known": False,
@@ -267,14 +318,15 @@ def _annexure(
             "notes": notes,
         }
     r = base["raw"]
-    health = r["employer_b"] - r["pf"] - r["esi_employer"] - LWF_EMPLOYER
+    # This table splits the Mediclaim premium out of (B) into its own Additional Benefits (E).
+    health = r["health"]
     employer_b = r["employer_b"] - health          # (B) without the Mediclaim premium
     additional_e = health                          # (E)
     values = [
         r["basic"], r["hra"], r["special"], r["monthly_a"],
-        r["pf"], r["esi_employer"], LWF_EMPLOYER, employer_b,
-        r["pf"], r["esi_employee"], LWF_EMPLOYEE, r["employee_c"],
-        0, r["gross_d"],
+        r["pf_employer"], r["esi_employer"], r["lwf_employer"], employer_b,
+        r["pf_employee"], r["esi_employee"], r["lwf_employee"], r["employee_c"],
+        r["bonus"], r["gross_d"],
         additional_e, additional_e,
         employer_b + r["gross_d"] + additional_e,
         (employer_b + r["gross_d"] + additional_e) * 12,

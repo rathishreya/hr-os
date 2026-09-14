@@ -19,8 +19,12 @@ from .services.ai import ai
 
 
 def _ensure_admin() -> None:
-    """Optionally bootstrap an admin from ADMIN_EMAIL/ADMIN_PASSWORD. If ADMIN_PASSWORD is
-    NOT set, we create nothing — the first person to sign up via the UI becomes the admin."""
+    """Bootstrap the first admin from ADMIN_EMAIL/ADMIN_PASSWORD, on an empty database only.
+
+    This is now the ONLY way a fresh deployment gets its first account: self-signup was removed
+    (see routers/auth.py), so account creation always begins with someone who already has access
+    to the server's environment. Does nothing if any user already exists.
+    """
     if not settings.ADMIN_PASSWORD:
         return
     from . import models
@@ -53,6 +57,12 @@ app = FastAPI(
     version="0.2.0",
     description="Open-source, AI-powered recruitment operating system.",
     lifespan=lifespan,
+    # No interactive docs in production: /docs, /redoc and the raw /openapi.json handed an
+    # anonymous visitor a labelled map of every route and its request shape. This is a private
+    # internal tool with no third-party API consumers, so nothing legitimate needs them.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.add_middleware(
@@ -76,19 +86,43 @@ app.add_middleware(
 # Require a valid token on every /api/* route except the public allowlist. Non-/api
 # paths (the careers pages, the static UI, the candidate video-interview flow) are
 # public by design. Sets request.state.user_id for the current_user dependency.
-_PUBLIC_API = {"/api/auth/login", "/api/auth/signup", "/api/auth/can-signup", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/company", "/api/ai-status", "/api/google/callback", "/api/tpos/intake", "/api/onboarding-form/submit"}
+#: /api/auth/signup and /api/auth/can-signup are deliberately absent: self-signup was removed
+#: outright (see routers/auth.py), so there is nothing to allow through.
+_PUBLIC_API = {"/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/company", "/api/ai-status", "/api/google/callback", "/api/tpos/intake", "/api/onboarding-form/submit"}
 
 
 _ASSESS_FILE_RE = re.compile(r"^/api/assessments/(\d+)/files?(?:/\d+)?$")
 _ONBOARD_FORM_RE = re.compile(r"^/api/onboarding-form/(\d+)/(prefill|submit)$")
+#: The only video-interview paths a candidate reaches without logging in. Everything else in that
+#: router (recordings, transcripts, the AI evaluation, delete, re-run) is recruiter-only and goes
+#: through the normal auth gate — the router used to be exempt WHOLESALE, which made every
+#: candidate's recording and AI verdict readable, and deletable, by anyone on the internet.
+_VIDEO_CANDIDATE_POST_RE = re.compile(r"^/api/video-interview/\d+/(recording|answer)$")
+#: A reviewer's signed recording link (GET), verified against the HMAC in the query string.
+_VIDEO_REC_RE = re.compile(r"^/api/video-interview/(\d+)/recording$")
+
+
+def _is_public_video(request: Request) -> bool:
+    path = request.url.path
+    method = request.method
+    # get_or_create: returns only the questions + status to an anonymous caller (the candidate's
+    # own page), the full record only to a logged-in recruiter — the split lives in the handler.
+    if path == "/api/video-interview" and method == "GET":
+        return True
+    # The candidate enters their emailed access code here...
+    if path == "/api/video-interview/verify" and method == "POST":
+        return True
+    # ...and submits under it here; each of these verifies the code itself before writing.
+    if method == "POST" and _VIDEO_CANDIDATE_POST_RE.match(path):
+        return True
+    return False
 
 
 def _is_public_api(request: Request) -> bool:
     path = request.url.path
     if path in _PUBLIC_API:
         return True
-    # Candidate-facing async video interview (no login — secured per-interview is a TODO).
-    if path.startswith("/api/video-interview"):
+    if _is_public_video(request):
         return True
     # Candidate assessment-file download via a SIGNED token (the link we email them). Recruiters
     # hit the same route WITH an auth header (no token) and fall through to the normal gate below.
@@ -104,6 +138,15 @@ def _is_public_api(request: Request) -> bool:
         f"onboarding:{m.group(1)}:form", request.query_params.get("t", ""), settings.SECRET_KEY
     ):
         return True
+    # An interview recording opened in a plain <video>/<a> element (which cannot carry the bearer
+    # header) by an authenticated reviewer. The signed `t` is minted server-side and handed only to
+    # a logged-in recruiter inside the interview payload, so the recording is unguessable by id —
+    # a request without a valid signature falls through to the normal gate.
+    m = _VIDEO_REC_RE.match(path)
+    if m and request.method == "GET" and security.verify_resource(
+        f"interview:{m.group(1)}:recording", request.query_params.get("t", ""), settings.SECRET_KEY
+    ):
+        return True
     return False
 
 
@@ -117,6 +160,15 @@ async def auth_gate(request: Request, call_next):
     uid = security.decode_token(token, settings.SECRET_KEY) if token else None
     if not uid:
         return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+    # A valid signature is not enough: confirm the user still exists and is active on every request,
+    # here in the gate rather than trusting each of ~60 handlers to remember Depends(current_user).
+    # Otherwise a 7-day token kept working for a full week after the account was deactivated or
+    # deleted. One indexed primary-key lookup per API call.
+    from . import models
+    with SessionLocal() as db:
+        u = db.get(models.User, uid)
+        if not u or not u.active:
+            return JSONResponse({"detail": "Not authenticated"}, status_code=401)
     request.state.user_id = uid
     return await call_next(request)
 
@@ -214,12 +266,18 @@ if _DIST is not None:
     if (_DIST / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=str(_DIST / "assets")), name="assets")
 
+    _DIST_ROOT = _DIST.resolve()
+
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa(full_path: str):
         # The API and careers pages are handled by the routers above; never shadow them.
         if full_path == "api" or full_path.startswith("api/") or full_path == "careers" or full_path.startswith("careers/"):
             raise HTTPException(status_code=404, detail="Not found")
-        target = _DIST / full_path
-        if full_path and target.is_file():
+        # Confine the join to the dist directory before serving. Without this, a path like
+        # ../../etc/passwd (or an absolute path) would resolve outside the build and FileResponse
+        # would hand back an arbitrary file from the container. Resolve, then require the result to
+        # sit inside dist; anything else falls through to the SPA's index.html.
+        target = (_DIST_ROOT / full_path).resolve()
+        if full_path and target.is_file() and (target == _DIST_ROOT or _DIST_ROOT in target.parents):
             return FileResponse(str(target))
-        return FileResponse(str(_DIST / "index.html"))  # SPA fallback for client routes
+        return FileResponse(str(_DIST_ROOT / "index.html"))  # SPA fallback for client routes

@@ -11,8 +11,8 @@
   --shadow-card-hover: 0 6px 16px -6px rgb(16 24 40 / 0.12), 0 2px 6px -2px rgb(16 24 40 / 0.06);
   --shadow-pop: 0 16px 40px -12px rgb(16 24 40 / 0.20), 0 4px 12px -4px rgb(16 24 40 / 0.08);
 
-  /* Brand accent — the single source of truth. Generates the `*-brand-50…950`
-     utilities used app-wide (bg-brand-600, text-brand-700, ring-brand-500/50, …).
+  /* Brand accent — the single source of truth. Generates the `*-brand-50…950` utilities used
+     app-wide (bg-brand-600, text-brand-700, ring-brand-500/50, …).
      Currently violet (Tailwind's exact OKLCH values). To rebrand the entire app,
      edit only these eleven lines; nothing else changes. */
   --color-brand-50: oklch(96.9% 0.016 293.756);
@@ -26,6 +26,7 @@
   --color-brand-800: oklch(43.2% 0.232 292.759);
   --color-brand-900: oklch(38% 0.189 293.745);
   --color-brand-950: oklch(28.3% 0.141 291.089);
+
 }
 
 :root {
@@ -101,7 +102,10 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 
 /* On-screen rendering of a document's rich HTML (offer letters/contracts) — mirrors the print CSS
    in printDocument.js so the editor/preview looks like the saved PDF. Poppins body, bordered tables. */
-.doc-html { font-family: 'Exo2', 'Segoe UI', Arial, sans-serif; color: #1f2430; font-size: 14px; line-height: 1.55; }
+/* line-height and paragraph spacing MATCH pdfmake (lineHeight 1.3, para margin ~5pt) so the editor's
+   text flows to the same height as the saved PDF and pages break at the same points. A looser
+   line-height made the editor drift from the PDF over a long document. */
+.doc-html { font-family: 'Exo2', 'Segoe UI', Arial, sans-serif; color: #1f2430; font-size: 14px; line-height: 1.3; }
 /* EZ documents color the Reference/Date meta lines green, as the sources do; ArabEasy sources
    set them in ink. The paper wrapper flips this class per entity. */
 .doc-font-ez .doc-html p.right { color: #538135; }
@@ -110,7 +114,7 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 .doc-html h3 { font-size: 13.5px; text-align: center; font-weight: 700; margin: 8px 0; }
 .doc-html h1.ul, .doc-html h2.ul, .doc-html h3.ul { text-decoration: underline; text-underline-offset: 3px; }
 .doc-html u { text-decoration: underline; }
-.doc-html p { margin: 7px 0; text-align: left; }
+.doc-html p { margin: 0 0 6px; text-align: left; }
 /* A numbered clause hangs: the number sits in the gutter and wrapped lines align under the
    text, matching how the source contracts are set. */
 .doc-html p.clause { padding-left: 2em; text-indent: -2em; }
@@ -119,6 +123,8 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 .doc-html ol, .doc-html ul { margin: 6px 0; padding-left: 26px; }
 .doc-html ol { list-style: decimal; } .doc-html ul { list-style: disc; }
 .doc-html li { margin: 3px 0; text-align: left; padding-left: 4px; }
+/* A bullet's own second level, as the source letters set it. */
+.doc-html ul.sub { list-style: circle; margin: 3px 0 3px 0; padding-left: 22px; }
 .doc-html ul.plain { list-style: none; padding-left: 14px; }
 .doc-html ul.plain li { padding-left: 2em; text-indent: -2em; }
 .doc-html strong { font-weight: 600; }
@@ -131,10 +137,36 @@ input[type="checkbox"], input[type="radio"] { vertical-align: middle; }
 .doc-html table.comp .r { text-align: right; } .doc-html table.comp tr.em { font-weight: 600; background: #D9D9D9; }
 .doc-html table.comp tr.ni td { font-style: italic; font-size: 11.5px; }
 .doc-html p.script, .doc-html .sig .scr { font-family: 'Great Vibes', cursive; font-size: 26px; line-height: 1.1; margin: 2px 0; }
-.doc-html .sig { display: flex; flex-wrap: wrap; gap: 40px; margin-top: 22px; }
-.doc-html .sig .col { min-width: 200px; } .doc-html .sig .line { border-bottom: 1px solid #475569; height: 26px; padding-left: 2px; }
-.doc-html .sig .lbl { font-family: Arial, sans-serif; font-size: 10px; text-transform: uppercase; font-weight: 700; color: #475569; margin-top: 3px; }
+/* The handwritten-signature image: Tailwind's reset sets img{height:auto}, which overrides the
+   element's height="30" and blew the sign up to full size. Pin its height (width follows). */
+.doc-html p.script img { height: 30px; width: auto; }
+.doc-html .sighd { font-weight: 700; margin: 20px 0 2px; }
+/* The signature is a real two-column table (see docHtml.js) so it survives editing and renders
+   identically in the browser and the PDF. The names are the header row; the line under them is the
+   signature rule; the roles are the body row. */
+/* The signature, exactly as the source contracts set it: two columns with a gap, a rule PER column
+   (never joined), the handwritten sign sitting just above its rule, and under the rule the role and
+   "NAME: <name>", both bold. Structurally: signer | gap | signer — the outer cells carry the rule as
+   their bottom border, the middle cell is the empty gap. Borderless everywhere else. */
+.doc-html table.sig { width: 100%; border: 0; border-collapse: collapse; margin-top: 6px; break-inside: avoid; table-layout: fixed; }
+.doc-html table.sig td { border: 0; padding: 0; }
+.doc-html table.sig td.siggap { width: 34px; }
+.doc-html table.sig td.sigrule { border-bottom: 1px solid #000; height: 46px; vertical-align: bottom; padding-bottom: 3px; }
+.doc-html table.sig td.siglbl { font-weight: 700; color: #1f2937; font-size: 11px; line-height: 1.35; vertical-align: top; padding-top: 5px; }
+.doc-html table.sig .scr { font-family: 'Great Vibes', cursive; font-size: 26px; line-height: 1; text-transform: none; }
+.doc-html table.sig .scr img { height: 28px; }
+/* The salutation and the date level with each other, as the source letters set them. */
+.doc-html table.drow { width: 100%; border: 0; border-collapse: collapse; margin: 0; table-layout: auto; }
+.doc-html table.drow td { border: 0; padding: 0; vertical-align: top; }
+.doc-html table.drow td.dr { text-align: right; white-space: nowrap; width: 1%; padding-left: 16px; }
+.doc-html table.drow p { margin: 0 0 4px; }
+
+/* A page break. In the editor DocumentPaper.paginate() stretches this to fill the rest of the
+   sheet, so the next block starts the next page exactly as the PDF does; the dashed rule marks
+   where the page ends. Outside the editor (the emailed HTML) there are no sheets, so it is just
+   a separator. */
 .doc-html .pb { border-top: 1px dashed #cbd5e1; margin: 14px 0; }
+.doc-paper .doc-html .pb { border-top: 1px dashed #e2e8f0; margin: 0; }
 .doc-html pre { white-space: pre-wrap; font-family: inherit; }
 /* Placeholder for an empty editable body. */
 .doc-html[contenteditable]:empty::before { content: 'Start typing the document…'; color: #94a3b8; }

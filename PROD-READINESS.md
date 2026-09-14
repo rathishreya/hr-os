@@ -38,6 +38,8 @@ and rotate the Gemini key + Gmail App Password before real production.
 
 ---
 
+
+
 This document is the original prioritized fix list (kept for reference). Severity:
 - **P0** — must fix before any real production use (data exposure, data loss, broken deploy).
 - **P1** — important; fix before scaling or shortly after a guarded pilot.
@@ -199,3 +201,19 @@ Hiring data will not survive on the free plan, and large files will exhaust it.
 6. Background tasks for transcription/evaluation; pagination (P1).
 7. Bulk email via a transactional provider with a retry queue (P0 #4).
 8. Alembic migrations, CORS tightening, CSRF, deploy automation (P1).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

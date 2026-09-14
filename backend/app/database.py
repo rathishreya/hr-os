@@ -110,8 +110,16 @@ def _ensure_sqlite_columns() -> None:
             ("due_override", "DATE"),
             ("completed_at", "DATE"),
         ],
+        "session_attendees": [
+            ("comment", "TEXT DEFAULT ''"),
+        ],
+        "email_messages": [
+            ("message_id", "TEXT DEFAULT ''"),
+            ("thread_key", "TEXT DEFAULT ''"),
+        ],
         "session_occurrences": [
             ("audience", "TEXT DEFAULT '{}'"),
+            ("calendar_event_id", "TEXT DEFAULT ''"),
         ],
         "tpos": [
             ("kind", "VARCHAR DEFAULT 'college'"),
@@ -122,6 +130,7 @@ def _ensure_sqlite_columns() -> None:
             ("smtp_password", "VARCHAR DEFAULT ''"),
             ("google_refresh_token", "VARCHAR DEFAULT ''"),
             ("google_scope", "VARCHAR DEFAULT ''"),
+            ("signature", "TEXT DEFAULT ''"),
         ],
     }
     with engine.begin() as conn:
@@ -168,6 +177,11 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP",
             "ALTER TABLE onboarding_step_states ADD COLUMN IF NOT EXISTS sent_mails JSONB DEFAULT '{}'::jsonb",
             "ALTER TABLE session_occurrences ADD COLUMN IF NOT EXISTS audience JSONB DEFAULT '{}'::jsonb",
+            "ALTER TABLE session_occurrences ADD COLUMN IF NOT EXISTS calendar_event_id VARCHAR(200) DEFAULT ''",
+            "ALTER TABLE session_attendees ADD COLUMN IF NOT EXISTS comment TEXT DEFAULT ''",
+            "ALTER TABLE email_messages ADD COLUMN IF NOT EXISTS message_id VARCHAR(200) DEFAULT ''",
+            "ALTER TABLE email_messages ADD COLUMN IF NOT EXISTS thread_key VARCHAR(120) DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS signature TEXT DEFAULT ''",
             "ALTER TABLE onboarding_step_states ADD COLUMN IF NOT EXISTS due_override DATE",
             "ALTER TABLE onboarding_step_states ADD COLUMN IF NOT EXISTS completed_at DATE",
             "ALTER TABLE documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP",

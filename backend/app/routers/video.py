@@ -9,14 +9,15 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import models
 from ..config import settings
 from ..database import SessionLocal, get_db
+from ..deps import current_user
 from ..services import security, storage
 from ..services.ai import ai
 from ..services.recruitment import hr_to_dict, log, str_list, to_rating
@@ -186,17 +187,53 @@ def _answer_out(a: models.VideoAnswer) -> dict:
     }
 
 
+def recording_url(interview_id: int) -> str:
+    """A signed, header-free URL for one interview's recording. Handed only to a logged-in reviewer
+    (this appears in the full `_out`, never the candidate view), it lets a plain <video>/<a> load
+    the recording that the auth gate otherwise blocks."""
+    t = security.sign_resource(f"interview:{int(interview_id)}:recording", settings.SECRET_KEY)
+    return f"/api/video-interview/{int(interview_id)}/recording?t={t}"
+
+
 def _out(vi: models.VideoInterview) -> dict:
     answers = sorted(vi.answers, key=lambda a: a.q_index)
+    has_rec = bool(vi.recording is not None or getattr(vi, "recording_key", ""))
     return {
         "id": vi.id, "application_id": vi.application_id, "candidate_id": vi.candidate_id,
         "role_position": vi.role_position, "questions": vi.questions or [], "status": vi.status,
         "summary": vi.summary or "", "scores": vi.scores or {}, "evaluation": vi.evaluation or {},
         "transcript": vi.transcript or "", "timeline": vi.timeline or [], "proctoring": vi.proctoring or {},
-        "duration": vi.duration or 0, "has_recording": bool(vi.recording is not None or getattr(vi, "recording_key", "")),
+        "duration": vi.duration or 0, "has_recording": has_rec,
+        "recording_url": recording_url(vi.id) if has_rec else "",
         "created_at": vi.created_at, "completed_at": vi.completed_at,
         "answers": [_answer_out(a) for a in answers],
     }
+
+
+def _candidate_out(vi: models.VideoInterview, candidate_name: str) -> dict:
+    """What the candidate's own (un-authenticated) interview page needs — and nothing the reviewer
+    sees. The questions to answer, the name for the greeting, and the status so an already-submitted
+    link shows the finished screen. Deliberately no transcript, evaluation, scores, summary,
+    recording, timeline, proctoring or per-answer data: this endpoint is reachable without logging
+    in, and those belong to the recruiter reviewing the interview, not to whoever opens the link."""
+    return {
+        "id": vi.id, "application_id": vi.application_id, "candidate_id": vi.candidate_id,
+        "role_position": vi.role_position, "questions": vi.questions or [], "status": vi.status,
+        "candidate_name": candidate_name,
+    }
+
+
+def _is_staff(request: Request, db: Session) -> bool:
+    """Is this request carrying a valid session token for an active user? Used only to decide how
+    much of an interview to return from the dual-audience GET below — the candidate view when not,
+    the full reviewer view when so."""
+    header = request.headers.get("authorization", "")
+    token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+    uid = security.decode_token(token, settings.SECRET_KEY) if token else None
+    if not uid:
+        return False
+    u = db.get(models.User, uid)
+    return bool(u and u.active)
 
 
 def _role_questions(db: Session, app: models.Application):
@@ -208,9 +245,12 @@ def _role_questions(db: Session, app: models.Application):
 
 
 @router.post("/generate-questions")
-def generate_questions(application_id: int, db: Session = Depends(get_db)):
+def generate_questions(application_id: int, db: Session = Depends(get_db),
+                       _user: models.User = Depends(current_user)):
     """AI-generate video interview questions tailored to the role/JD. Stateless — returns the
-    questions for the recruiter to review/edit and save; does not persist on its own."""
+    questions for the recruiter to review/edit and save; does not persist on its own.
+
+    Recruiter-only (it spends the AI budget): behind the auth gate, not the candidate allowlist."""
     app = db.get(models.Application, application_id)
     if not app:
         raise HTTPException(404, "Application not found")
@@ -232,7 +272,15 @@ def generate_questions(application_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("")
-def get_or_create(application_id: int, db: Session = Depends(get_db)):
+def get_or_create(application_id: int, request: Request, db: Session = Depends(get_db)):
+    """Load (or first-time create) the interview for an application.
+
+    Two audiences hit this one route: the candidate opening their link (not logged in) and the
+    recruiter reviewing it (logged in). A logged-in staff request gets the full record; everyone
+    else gets `_candidate_out` — the questions and status only, never the transcript, recording or
+    AI verdict. Without this split, anyone could enumerate application_id and read every
+    candidate's evaluation and recording anonymously.
+    """
     app = db.get(models.Application, application_id)
     if not app:
         raise HTTPException(404, "Application not found")
@@ -249,9 +297,12 @@ def get_or_create(application_id: int, db: Session = Depends(get_db)):
         vi.questions = questions
         db.commit()
         db.refresh(vi)
-    out = _out(vi)
     cand = db.get(models.Candidate, vi.candidate_id)
-    out["candidate_name"] = cand.name if cand else ""
+    cand_name = cand.name if cand else ""
+    if not _is_staff(request, db):
+        return _candidate_out(vi, cand_name)
+    out = _out(vi)
+    out["candidate_name"] = cand_name
     return out
 
 
@@ -275,12 +326,17 @@ def submit_answer(
     question: str = Form(""),
     transcript: str = Form(""),
     duration: float = Form(0),
+    code: str = Form(""),
     file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
     vi = db.get(models.VideoInterview, interview_id)
     if not vi:
         raise HTTPException(404, "Interview not found")
+    # Same emailed-access-code gate the single-recording path uses: the interview link is an
+    # enumerable id, so without this an anonymous caller could overwrite anyone's answers.
+    if not security.verify_interview_code(vi.application_id, code, settings.SECRET_KEY):
+        raise HTTPException(403, "Invalid or missing access code — re-open your invite link and enter the code from your email.")
     ans = db.scalar(
         select(models.VideoAnswer).where(
             models.VideoAnswer.interview_id == interview_id,
@@ -304,7 +360,9 @@ def submit_answer(
 
 
 @router.get("/answers/{answer_id}/video")
-def serve_answer_video(answer_id: int, db: Session = Depends(get_db)):
+def serve_answer_video(answer_id: int, db: Session = Depends(get_db),
+                       _user: models.User = Depends(current_user)):
+    """Reviewer-only: the raw answer video. Behind the auth gate."""
     ans = db.get(models.VideoAnswer, answer_id)
     if not ans or not ans.video:
         raise HTTPException(404, "No video on record")
@@ -379,6 +437,10 @@ def submit_recording(
 
 @router.get("/{interview_id}/recording")
 def serve_recording(interview_id: int, db: Session = Depends(get_db)):
+    """The candidate's recording, for a reviewer. No longer world-readable by id: the auth gate
+    admits this only with a valid signed `t` (minted into the interview payload for a logged-in
+    recruiter) or a valid bearer token. The signature is what lets a plain <video> element, which
+    can't send an Authorization header, still load it."""
     vi = db.get(models.VideoInterview, interview_id)
     if not vi:
         raise HTTPException(404, "No recording on record")
@@ -393,9 +455,13 @@ def serve_recording(interview_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{interview_id}/transcribe")
-def retranscribe(interview_id: int, db: Session = Depends(get_db)):
+def retranscribe(interview_id: int, db: Session = Depends(get_db),
+                 _user: models.User = Depends(current_user)):
     """(Re)transcribe the stored recording server-side + regenerate the summary — useful to
-    retry after an AI quota hit, without re-recording. Surfaces the reason on failure."""
+    retry after an AI quota hit, without re-recording. Surfaces the reason on failure.
+
+    Recruiter-only and behind the auth gate: it spends the Gemini budget, so it must not be
+    triggerable by an anonymous caller."""
     vi = db.get(models.VideoInterview, interview_id)
     if not vi:
         raise HTTPException(404, "Interview not found")
@@ -413,9 +479,12 @@ def retranscribe(interview_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{interview_id}/evaluate")
-def evaluate(interview_id: int, db: Session = Depends(get_db)):
+def evaluate(interview_id: int, db: Session = Depends(get_db),
+             _user: models.User = Depends(current_user)):
     """(Re)generate the structured AI evaluation (per-question Q/A/rating + overall fit verdict,
-    reasoning, strengths, gaps) from the stored transcript — without re-transcribing."""
+    reasoning, strengths, gaps) from the stored transcript — without re-transcribing.
+
+    Recruiter-only and behind the auth gate: it spends the AI budget."""
     vi = db.get(models.VideoInterview, interview_id)
     if not vi:
         raise HTTPException(404, "Interview not found")
@@ -430,9 +499,12 @@ def evaluate(interview_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{interview_id}", status_code=204)
-def delete_interview(interview_id: int, db: Session = Depends(get_db)):
+def delete_interview(interview_id: int, db: Session = Depends(get_db),
+                     _user: models.User = Depends(current_user)):
     """Delete the interview recording + transcript/summary (cascades answers). The next
-    time the candidate opens the link a fresh interview is created, so they can re-record."""
+    time the candidate opens the link a fresh interview is created, so they can re-record.
+
+    Recruiter-only: this used to be an unauthenticated destroy-any-interview endpoint."""
     vi = db.get(models.VideoInterview, interview_id)
     if not vi:
         raise HTTPException(404, "Interview not found")
@@ -444,7 +516,9 @@ def delete_interview(interview_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{interview_id}/complete")
-def complete(interview_id: int, db: Session = Depends(get_db)):
+def complete(interview_id: int, db: Session = Depends(get_db),
+             _user: models.User = Depends(current_user)):
+    """Reviewer-only: mark an interview complete by hand. Behind the auth gate."""
     vi = db.get(models.VideoInterview, interview_id)
     if not vi:
         raise HTTPException(404, "Interview not found")

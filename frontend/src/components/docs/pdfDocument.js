@@ -11,6 +11,7 @@
 import { richSegments } from './rich'
 import { ENTITY, C, logoImage } from './letterhead'
 import { signImageFor } from './signatureAssets'
+import { sigCaptionLines } from './docHtml'
 
 // ── Poppins, embedded so the attached PDF sets the same face as the preview and print paths.
 // Fetched once from the app's own /fonts (they ship in the build) and cached; if the fetch
@@ -59,6 +60,69 @@ function headingStyle(level) {
 // EZ documents set the right-aligned Reference/Date meta in green (Word Green Accent-6 D25),
 // ArabEasy ones in ink. Set per build; rendering is sequential so a module flag is safe.
 let metaGreen = false
+
+// ── Signature strip, laid out exactly as the source contracts set it (see the rendered source
+// PDFs): "Signed in the presence of:" then, per column with a gap between them — a signing zone
+// that carries the handwritten sign at its foot (blank paper to sign on otherwise), a rule PER
+// column (never one rule joined across both), and UNDER the rule the caption lines (role / "NAME:…",
+// plus Title/Date for signatory blocks — see sigCaptionLines in docHtml.js). The single builder below
+// is shared by the freshly generated PDF (blockToPdf) and the edited-letter PDF, so they are identical.
+function signatureToPdf(b) {
+  const cols = b.columns || []
+  // A pdfmake TABLE, not columns: cells in a row share one height, so every rule lands on exactly the
+  // same line no matter what sits above it (a tall handwritten sign on one side, blank paper on the
+  // other). The rule is each signer cell's bottom border; the middle gap cell has none, so the two
+  // rules are separate with a gap between — as the source sets them. defaultBorder:false means only
+  // those explicit bottom borders draw.
+  const GAP = 34
+  const zoneRow = []
+  const lblRow = []
+  const widths = []
+  cols.forEach((c, idx) => {
+    if (idx > 0) {
+      zoneRow.push({ text: '', border: [false, false, false, false] })
+      lblRow.push({ text: '' })
+      widths.push(GAP)
+    }
+    widths.push('*')
+    const img = c.script ? signImageFor(c.script) : null
+    const sign = c.script
+      ? (img ? { image: img, fit: [150, 28] } : { text: c.script, font: 'GreatVibes', fontSize: 20, lineHeight: 1 })
+      : { text: ' ', fontSize: 1 }
+    // Signing room above the sign, then the rule (the cell's bottom border). Kept compact so a
+    // signature at the end of a letter fits in the space left on the current page instead of forcing
+    // a near-empty extra page — while still leaving room to sign.
+    zoneRow.push({ stack: [sign], margin: [0, 14, 0, 2], border: [false, false, false, true] })
+    // The caption lines under the rule (role / "NAME: …" — plus Title/Date for signatory blocks),
+    // shared with the editor and email so all three read identically.
+    lblRow.push({
+      margin: [0, 5, 0, 0],
+      stack: sigCaptionLines(c).map((text, i) => ({ text, bold: true, fontSize: 9.5, color: INK, margin: [0, i ? 1 : 0, 0, 0] })),
+    })
+  })
+  return {
+    unbreakable: true, // heading + rules can never split across a page
+    stack: [
+      ...(b.heading
+        ? [{ text: b.heading, bold: true, fontSize: 10.5, alignment: b.heading_align || 'left', margin: [0, 10, 0, 6] }]
+        : []),
+      {
+        table: { widths, body: [zoneRow, lblRow] },
+        layout: {
+          defaultBorder: false,
+          hLineWidth: () => 0.7,
+          hLineColor: () => '#000000',
+          vLineWidth: () => 0,
+          paddingLeft: () => 0,
+          paddingRight: () => 0,
+          paddingTop: () => 0,
+          paddingBottom: () => 0,
+        },
+        margin: [0, 0, 0, 6],
+      },
+    ],
+  }
+}
 
 /** One document block -> pdfmake content node(s). Mirrors DocumentBlocks.jsx case for case. */
 function blockToPdf(b) {
@@ -123,7 +187,20 @@ function blockToPdf(b) {
         }
       }
       return {
-        [b.ordered ? 'ol' : 'ul']: items.map((i) => runs(i)),
+        // An item may be {text, subs}: a bullet carrying its own indented second level, the way
+        // the source letters set the brand list under "for the following brands:".
+        [b.ordered ? 'ol' : 'ul']: items.map((i) => (
+          i && typeof i === 'object'
+            ? {
+                stack: [
+                  runs(i.text || ''),
+                  ...((i.subs || []).length
+                    ? [{ ul: (i.subs || []).map((s) => runs(s)), type: 'circle', margin: [6, 2, 0, 0] }]
+                    : []),
+                ],
+              }
+            : runs(i)
+        )),
         ...(b.ordered && b.start ? { start: Number(b.start) } : {}),
         fontSize: 10.5,
         color: INK,
@@ -163,7 +240,10 @@ function blockToPdf(b) {
         }
       }
       return {
-        table: { widths: ['*', 90], headerRows: 1, body },
+        // No headerRows: the Important Points and the PPR ratings are rows of this same table, so
+        // repeating the header at a page break printed "Component INR" in the middle of the rating
+        // list. The source prints the header once.
+        table: { widths: ['*', 90], body },
         layout: { hLineColor: () => RULE, vLineColor: () => RULE, hLineWidth: () => 0.5, vLineWidth: () => 0.5 },
         margin: [0, 4, 0, 8],
       }
@@ -198,24 +278,18 @@ function blockToPdf(b) {
       return { text: b.text || '', font: 'GreatVibes', fontSize: 20, lineHeight: 1, margin: [0, 4, 0, 2] }
     }
     case 'signature':
+      return signatureToPdf(b)
+    case 'row':
+      // Two stacks level with each other, as the source letters set the salutation and the date.
       return {
-        columns: (b.columns || []).map((c) => ({
-          width: '*',
-          stack: [
-            ...(c.script
-              ? [signImageFor(c.script)
-                  ? { image: signImageFor(c.script), fit: [95, 26], margin: [0, 6, 0, 0] }
-                  : { text: c.script, font: 'GreatVibes', fontSize: 17, lineHeight: 1, margin: [0, 6, 0, 0] }]
-              : []),
-            { text: c.name || ' ', fontSize: 10.5, bold: true, margin: [0, c.script ? 2 : 14, 0, 2] },
-            { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 0.7, lineColor: '#6b7280' }] },
-            { text: c.label || '', fontSize: 7.5, bold: true, color: MUTED, margin: [0, 3, 0, 0] },
-          ],
-          margin: [0, 0, 16, 0],
-        })),
+        columns: [
+          { width: '*', stack: (b.left || []).map(blockToPdf).filter(Boolean) },
+          { width: 'auto', stack: (b.right || []).map(blockToPdf).filter(Boolean) },
+        ],
         columnGap: 16,
-        margin: [0, 8, 0, 10],
       }
+    case 'space':
+      return { text: ' ', fontSize: 1, margin: [0, 0, 0, Number(b.points) || 40] }
     case 'divider':
       return { text: '', pageBreak: 'after' }
     default:
@@ -310,6 +384,191 @@ function pageBackground() {
 const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="27" height="20.4" viewBox="0 0 27 20.4"><rect x="0" y="0" width="37" height="20.4" rx="10.2" fill="#D8D8D8"/><path transform="translate(2.65,1.78) scale(0.71)" d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="#242628"/></svg>`
 const GLOBE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="27" height="19.7" viewBox="0 0 27 19.7"><rect x="0" y="0" width="37" height="19.7" rx="9.85" fill="#D8D8D8"/></svg>`
 
+/** html-to-pdfmake reads INLINE styles only — it ignores our `.doc-html` CSS classes. So the meta
+ *  lines the editor marks with `class="right"` (Reference / Date) and `class="muted"` would flatten
+ *  to plain left-aligned ink in an edited letter's PDF, even though the on-screen editor (which does
+ *  read the classes) shows them right-aligned. Copy those class meanings onto the element as inline
+ *  styles before conversion, so the edited PDF matches the editor — for HTML saved before the editor
+ *  started emitting these inline styles as well as new saves. Browser-only path (uses the DOM). */
+function inlineClassStyles(html) {
+  try {
+    const tpl = document.createElement('template')
+    tpl.innerHTML = String(html || '')
+    tpl.content.querySelectorAll('.right').forEach((el) => {
+      const s = el.getAttribute('style') || ''
+      if (!/text-align/i.test(s)) el.style.textAlign = 'right'
+      if (!/font-weight/i.test(s)) el.style.fontWeight = '600'
+      // EZ meta lines are green as the sources set them; ArabEasy ones stay ink.
+      if (metaGreen && !/color/i.test(s)) el.style.color = '#538135'
+    })
+    tpl.content.querySelectorAll('.muted').forEach((el) => {
+      if (!/color/i.test(el.getAttribute('style') || '')) el.style.color = '#6b7280'
+    })
+    return tpl.innerHTML
+  } catch {
+    return String(html || '')
+  }
+}
+
+/** An edited letter's signature is emitted (docHtml.js) as a table carrying its column data in
+ *  `data-pdfmake` (`__sig`). html-to-pdfmake cannot reproduce the source's per-column rules and
+ *  stacked bold labels — and it drops unknown data-pdfmake keys, so the data cannot ride through it.
+ *  So before conversion we pull the signature data out ourselves, swap each signature table for a
+ *  text marker html-to-pdfmake will faithfully carry, and afterwards replace the marker with the
+ *  strip built by signatureToPdf — the SAME builder the fresh PDF uses, so an edited signature is
+ *  pixel-identical to a freshly generated one. Browser-only (uses the DOM). */
+const SIG_MARKER = (n) => `@@SIGNATURE_${n}@@`
+
+// Reconstruct the signature columns from a signature element saved in ANY historical shape, so an
+// already-edited letter never loses its signature: the current table (columns in data-pdfmake
+// `__sig`); the earlier borderless table (names in <th>, labels in <td>); and the original flex
+// version (<div class="sig"><div class="col">… with .signm / .lbl / .scr). A handwritten sign is
+// carried as its text (the image's alt), which signatureToPdf re-resolves to the artwork.
+function sigColsFromElement(el) {
+  try {
+    const fromData = JSON.parse(el.getAttribute('data-pdfmake') || '{}').__sig
+    if (Array.isArray(fromData) && fromData.length) return fromData
+  } catch { /* fall through to structural parsing */ }
+  const scriptOf = (scope) => {
+    const img = scope && scope.querySelector('.scr img')
+    if (img) return img.getAttribute('alt') || ''
+    const scr = scope && scope.querySelector('.scr')
+    return scr && !scr.querySelector('img') ? (scr.textContent || '').trim() : ''
+  }
+  const txt = (n) => (n ? (n.textContent || '').trim() : '')
+  // Earlier borderless table: <thead><th>name</th></thead><tbody><td>label</td></tbody>.
+  const ths = [...el.querySelectorAll('thead th')]
+  if (ths.length) {
+    const tds = [...el.querySelectorAll('tbody td')]
+    return ths.map((th, i) => ({ label: txt(tds[i]), name: txt(th.querySelector('.signm')), script: scriptOf(th) }))
+  }
+  // Original flex version: div.sig > div.col with .signm / .lbl / .scr.
+  const flexCols = [...el.querySelectorAll(':scope > .col')]
+  if (flexCols.length) {
+    return flexCols.map((col) => ({ label: txt(col.querySelector('.lbl')), name: txt(col.querySelector('.signm')), script: scriptOf(col) }))
+  }
+  return []
+}
+
+// Pull the structural blocks html-to-pdfmake can't reproduce (the signature strip and the two-column
+// reference/date row) out of the HTML before conversion, leaving a text marker in each one's place;
+// pdfDocument rebuilds them from data afterwards with the same builders the fresh PDF uses. Text
+// blocks (paragraphs, headings, lists, the Schedule A table) still flow through html-to-pdfmake.
+function extractStructured(html) {
+  try {
+    const tpl = document.createElement('template')
+    tpl.innerHTML = String(html || '')
+    const items = []
+    // Structural blocks html-to-pdfmake can't reproduce from CSS: table.sig / div.sig (signature) and
+    // table.drow (reference/date row) — flex/canvas layouts it can't build — plus div.pb (a `divider`
+    // page break it ignores, which let Schedule A ride up onto the previous page). Each is rebuilt
+    // from data with the same builders the fresh PDF uses. (The compensation table stays editable and
+    // renders through html-to-pdfmake via inline styles — see docHtml.js — so it is NOT extracted.)
+    tpl.content.querySelectorAll('table.sig, div.sig, table.drow, div.pb').forEach((el) => {
+      let item
+      if (el.tagName === 'DIV' && el.classList.contains('pb')) {
+        item = { kind: 'divider' }
+      } else if (el.tagName === 'TABLE' && el.classList.contains('drow')) {
+        let row = null
+        try { row = JSON.parse(el.getAttribute('data-pdfmake') || '{}').__row } catch { row = null }
+        item = { kind: 'row', row }
+      } else {
+        item = { kind: 'sig', cols: sigColsFromElement(el) }
+      }
+      const marker = document.createElement('p')
+      marker.textContent = SIG_MARKER(items.length)
+      el.replaceWith(marker)
+      items.push(item)
+    })
+    return { html: tpl.innerHTML, items }
+  } catch {
+    return { html: String(html || ''), items: [] }
+  }
+}
+
+// The plain text of a pdfmake text node, whether it is a string or an array of runs.
+const nodeText = (t) => (typeof t === 'string' ? t : Array.isArray(t) ? t.map((r) => (typeof r === 'string' ? r : r?.text || '')).join('') : '')
+
+// Build the pdfmake node for one extracted structural item, with the SAME builders the fresh PDF
+// uses — a signature strip, or a reference/date row (blockToPdf handles the 'row' block).
+function _buildStructured(item) {
+  if (!item) return { text: '' }
+  if (item.kind === 'divider') return { text: '', pageBreak: 'after' }
+  if (item.kind === 'row') {
+    return item.row ? blockToPdf({ type: 'row', left: item.row.left || [], right: item.row.right || [] }) : { text: '' }
+  }
+  return signatureToPdf({ columns: item.cols || [] })
+}
+
+/** pdfmake rejects a table row that has fewer cells than the table has columns ("a cell is
+ *  undefined"). That happens when a spanning cell lost its colspan — e.g. the compensation table's
+ *  "Important Points" note (one cell meant to span both columns) saved before colspan was allowed
+ *  through the sanitiser. Make any short row span the full width so the PDF renders instead of
+ *  throwing. A no-op when html-to-pdfmake already produced full-width rows. */
+function fixTableColSpans(node) {
+  if (Array.isArray(node)) { node.forEach(fixTableColSpans); return }
+  if (!node || typeof node !== 'object') return
+  const t = node.table
+  if (t && Array.isArray(t.body) && t.body.length) {
+    // Column count is the widest row's ARRAY length — each entry is one column (a colSpan:N cell is
+    // one entry followed by N-1 placeholder entries, so summing colSpans would double-count). A row
+    // shorter than that lost a spanning cell's fillers: make its last cell span the gap and pad it.
+    let colCount = 0
+    t.body.forEach((row) => { if (Array.isArray(row) && row.length > colCount) colCount = row.length })
+    t.body.forEach((row) => {
+      if (!Array.isArray(row) || !row.length) return
+      const deficit = colCount - row.length
+      if (deficit > 0) {
+        const last = row[row.length - 1]
+        if (last && typeof last === 'object') last.colSpan = ((last.colSpan) || 1) + deficit
+        for (let k = 0; k < deficit; k += 1) row.push({})
+      }
+    })
+  }
+  for (const k of Object.keys(node)) {
+    if (node[k] && typeof node[k] === 'object') fixTableColSpans(node[k])
+  }
+}
+
+function replaceStructuredMarkers(node, items) {
+  const RE = /^@@SIGNATURE_(\d+)@@$/
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i += 1) {
+      const el = node[i]
+      const m = el && typeof el === 'object' && RE.exec(nodeText(el.text).trim())
+      if (m) node[i] = _buildStructured(items[Number(m[1])])
+      else replaceStructuredMarkers(el, items)
+    }
+    return
+  }
+  if (!node || typeof node !== 'object') return
+  for (const k of Object.keys(node)) {
+    const v = node[k]
+    const m = v && typeof v === 'object' && RE.exec(nodeText(v.text).trim())
+    if (m) node[k] = _buildStructured(items[Number(m[1])])
+    else if (v && typeof v === 'object') replaceStructuredMarkers(v, items)
+  }
+}
+
+/** A divider is built as an empty node carrying `pageBreak:'after'`. If that empty node happens to
+ *  land at the top of a fresh page (because the block before it filled the previous page), pdfmake
+ *  gives it a page to itself — a blank sheet before the next section. Fold each such break onto the
+ *  FOLLOWING block as `pageBreak:'before'` and drop the empty node, so the next section still starts
+ *  on a new page but no blank page is left behind. Operates on the top-level content array. */
+function foldPageBreaks(content) {
+  if (!Array.isArray(content)) return
+  for (let i = 0; i < content.length; i += 1) {
+    const el = content[i]
+    const isDivider = el && typeof el === 'object' && el.pageBreak === 'after'
+      && (el.text === '' || el.text == null) && !el.table && !el.stack && !el.columns && !el.image && !el.canvas
+    if (!isDivider) continue
+    const next = content[i + 1]
+    if (next && typeof next === 'object') next.pageBreak = 'before'
+    content.splice(i, 1)
+    i -= 1
+  }
+}
+
 /** The full pdfmake document definition — one builder shared by the emailed attachment, the
  *  page-by-page preview and any future export, so they cannot diverge. */
 async function buildDefinition(doc, bodyFont) {
@@ -318,14 +577,48 @@ async function buildDefinition(doc, bodyFont) {
   if (doc.content_html) {
     // A hand-edited letter: its blocks are stale, the edited HTML is the document. Convert it so
     // the preview and the emailed copy carry the edits.
+    //
+    // html-to-pdfmake applies its OWN heading sizes by default — h1 24pt, h2 22pt, h3 18pt, all
+    // left-aligned. Our blocks render headings at 10.5–11.5pt, centered. Without overriding these,
+    // simply opening a document in the editor and saving (even with no change) blew every heading
+    // up two-to-three times its size and shoved centered titles to the left — the "font increases /
+    // formatting breaks every time I edit" bug. These defaultStyles mirror headingStyle() and the
+    // block renderers so an edited document renders identically to an un-edited one.
     const { default: htmlToPdfmake } = await import('html-to-pdfmake')
-    content = htmlToPdfmake(doc.content_html, { window, defaultStyles: { p: { margin: [0, 3, 0, 3] } } })
+    const { html: structuredHtml, items: structuredItems } = extractStructured(inlineClassStyles(doc.content_html))
+    content = htmlToPdfmake(structuredHtml, {
+      window,
+      defaultStyles: {
+        h1: { fontSize: 11.5, bold: true, alignment: 'center', characterSpacing: 0.4, margin: [0, 10, 0, 6] },
+        h2: { fontSize: 10.5, bold: true, margin: [0, 8, 0, 4] },
+        h3: { fontSize: 10.5, bold: true, alignment: 'center', margin: [0, 6, 0, 5] },
+        h4: { fontSize: 10.5, bold: true, margin: [0, 6, 0, 4] },
+        h5: { fontSize: 10.5, bold: true, margin: [0, 6, 0, 4] },
+        h6: { fontSize: 10.5, bold: true, margin: [0, 6, 0, 4] },
+        p: { fontSize: 10.5, margin: [0, 3, 0, 3], lineHeight: 1.3 },
+        ul: { fontSize: 10.5, margin: [0, 2, 0, 4] },
+        ol: { fontSize: 10.5, margin: [0, 2, 0, 4] },
+        li: { fontSize: 10.5, margin: [0, 1, 0, 1], lineHeight: 1.25 },
+        table: { fontSize: 9.5, margin: [0, 6, 0, 6] },
+        th: { bold: true, fontSize: 9, fillColor: '#f4f6f9', margin: [4, 3, 4, 3] },
+        td: { fontSize: 9.5, margin: [4, 2, 4, 2] },
+        a: { color: C.ink, decoration: null },
+        b: { bold: true },
+        strong: { bold: true },
+        u: { decoration: 'underline' },
+        i: { italics: true },
+        em: { italics: true },
+      },
+    })
+    replaceStructuredMarkers(content, structuredItems)
+    fixTableColSpans(content)
   } else {
     const blocks = Array.isArray(doc.blocks) ? doc.blocks : []
     content = blocks.length
       ? blocks.map(blockToPdf).filter(Boolean)
       : [{ text: doc.content || '', fontSize: 10.5, lineHeight: 1.3 }]
   }
+  foldPageBreaks(content)
   return {
     pageSize: 'A4',
     // 19mm sides / 31mm top / 17mm bottom — the print window's @page box.

@@ -3,6 +3,7 @@ import {
   Mail, Users as UsersIcon, GraduationCap, Plus, Trash2, RefreshCw, Eye, EyeOff,
   ChevronDown, Check, Phone, Building2, MapPin, Globe, Pencil, Power,
   Send, CheckCircle2, AlertTriangle, XCircle, Download, KeyRound, Briefcase, Video,
+  Bold, Italic, Underline, Link2, PenLine,
 } from 'lucide-react'
 import { api } from '../api'
 import { Card, Button, Badge, Spinner, Modal, Field, inputClass, Tabs, PageHeader, EmptyState, IconButton, Avatar } from '../ui'
@@ -359,6 +360,104 @@ function DataTab() {
 // Connect the logged-in user's OWN mailbox so candidate emails are sent FROM their login
 // email (true send-from). Stores a Gmail/Workspace App Password; falls back to the shared
 // workspace account until connected.
+// One button in the signature editor's toolbar. onMouseDown+preventDefault keeps the editor's text
+// selection while the button is clicked. Module-scoped so it is a stable component.
+function SigBtn({ title, onClick, children }) {
+  return (
+    <button type="button" title={title} aria-label={title}
+      onMouseDown={(e) => { e.preventDefault(); onClick() }}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900">
+      {children}
+    </button>
+  )
+}
+
+// Your personal email signature (like a Gmail signature), appended to the bottom of every mail you
+// send. A small rich editor (bold / italic / underline / link); the server sanitizes what it stores.
+function MySignatureCard() {
+  const { toast } = useToast()
+  const ref = useRef(null)
+  const [loaded, setLoaded] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [hasSig, setHasSig] = useState(false)
+
+  useEffect(() => {
+    api.getMySignature()
+      .then((r) => {
+        if (ref.current) ref.current.innerHTML = r.signature || ''
+        setHasSig(!!(r.signature || '').trim())
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  const exec = (cmd, val) => { try { document.execCommand(cmd, false, val) } catch { /* noop */ } }
+  const addLink = () => {
+    const url = window.prompt('Link URL (https://…)')
+    if (url) exec('createLink', url.trim())
+  }
+
+  async function save() {
+    const html = ref.current ? ref.current.innerHTML : ''
+    setBusy(true)
+    try {
+      const r = await api.setMySignature(html)
+      if (ref.current) ref.current.innerHTML = r.signature || ''   // reflect the sanitized version
+      setHasSig(!!(r.signature || '').trim())
+      toast('Signature saved — it will be added to every email you send')
+    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
+  }
+
+  async function clear() {
+    if (!window.confirm('Remove your email signature?')) return
+    setBusy(true)
+    try {
+      await api.setMySignature('')
+      if (ref.current) ref.current.innerHTML = ''
+      setHasSig(false)
+      toast('Signature removed')
+    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
+  }
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-start gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${hasSig ? 'bg-emerald-100 text-emerald-600' : 'bg-brand-100 text-brand-600'}`}>
+          <PenLine className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-slate-800">Email signature</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Added to the bottom of every email you send — like a Gmail signature. Your name, title,
+            phone, links.
+          </p>
+
+          <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+            <div className="flex items-center gap-0.5 border-b border-slate-200 bg-slate-50 px-1.5 py-1">
+              <SigBtn title="Bold" onClick={() => exec('bold')}><Bold className="h-4 w-4" /></SigBtn>
+              <SigBtn title="Italic" onClick={() => exec('italic')}><Italic className="h-4 w-4" /></SigBtn>
+              <SigBtn title="Underline" onClick={() => exec('underline')}><Underline className="h-4 w-4" /></SigBtn>
+              <SigBtn title="Add link" onClick={addLink}><Link2 className="h-4 w-4" /></SigBtn>
+            </div>
+            {loaded ? (
+              <div ref={ref} contentEditable suppressContentEditableWarning
+                className="min-h-[96px] px-3 py-2 text-sm leading-relaxed text-slate-800 outline-none"
+                data-placeholder="Type your signature here…" />
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-4 text-sm text-slate-400"><Spinner /> Loading…</div>
+            )}
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <Button size="sm" onClick={save} disabled={busy || !loaded}>Save signature</Button>
+            {hasSig && <Button size="sm" variant="ghost" onClick={clear} disabled={busy}>Remove</Button>}
+          </div>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 function MyMailboxCard() {
   const { toast } = useToast()
   const [info, setInfo] = useState(null)   // { email, name, connected, active, workspace_fallback, host }
@@ -627,6 +726,9 @@ function EmailTab() {
 
       {/* Per-user mailbox — the primary path for sending as yourself. */}
       <MyMailboxCard />
+
+      {/* Your personal signature, appended to the bottom of every mail you send. */}
+      <MySignatureCard />
 
       {/* Connect Google for real Meet links on interview rounds. */}
       <GoogleCalendarCard />

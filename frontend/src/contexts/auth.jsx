@@ -28,12 +28,8 @@ export function AuthProvider({ children }) {
     return r
   }
 
-  async function signup(name, email, password) {
-    const r = await api.signup(name, email, password)
-    setAuthToken(r.token)
-    setUser(r.user)
-    return r
-  }
+  // No signup here on purpose: accounts are created by an admin in Settings → Users, and the
+  // server has no self-signup route to call.
 
   function logout() {
     clearAuthToken()
@@ -46,7 +42,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, ready, login, signup, logout, hasRole }}>
+    <AuthContext.Provider value={{ user, ready, login, logout, hasRole }}>
       {children}
     </AuthContext.Provider>
   )

@@ -19,6 +19,7 @@ from ..services.documents import comp
 from ..services.documents import (
     TEMPLATES, list_templates, render_document, settled_entity, template_supports_entity,
 )
+from ..services.documents import form_fields
 from ..services.documents import mail as doc_mail
 from ..services import mailer
 from . import onboarding_form
@@ -210,8 +211,15 @@ def get_templates(
     doc_type: str | None = None,
 ):
     """The templates on offer, narrowed by any combination of the four taxonomy axes:
-    entity (EZ|AEZ), party_type (agency|individual), contract_type and doc_type."""
-    return list_templates(entity, party_type, contract_type, doc_type)
+    entity (EZ|AEZ), party_type (agency|individual), contract_type and doc_type.
+
+    Each carries the fields its own generate form should ask for. The form used to show one fixed
+    list of sixteen boxes for every template, which meant an agency contract was asked for a
+    candidate's CTC and reporting manager and never asked for the agency's name."""
+    return [
+        {**t, "fields": form_fields.for_template(t["key"])}
+        for t in list_templates(entity, party_type, contract_type, doc_type)
+    ]
 
 
 @router.post("/generate", response_model=schemas.DocumentOut)
@@ -304,7 +312,19 @@ _WS_RE = _re.compile(r"[ \t]*\n[ \t]*")
 # security boundary for `content_html` (a client-side sanitizer is bypassable and not trusted).
 _ALLOWED_TAGS = [
     "h1", "h2", "h3", "h4", "p", "br", "hr", "strong", "b", "em", "i", "u",
-    "span", "div", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "pre",
+    "span", "div", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "pre", "img",
+]
+
+# Inline styles the letter's structure needs to survive an edit and still render in the PDF: the
+# edited HTML is turned into the PDF by html-to-pdfmake, which reads inline styles (not our CSS
+# classes), so a right-aligned date or a two-column signature is carried by style attributes, not
+# classes. Bounded to a safe allow-list so a pasted style can't smuggle anything executable.
+_CSS_PROPS = [
+    "text-align", "font-weight", "font-style", "font-size", "font-family", "text-transform",
+    "text-decoration", "color", "background-color", "border", "border-bottom", "width", "height",
+    "vertical-align", "line-height",
+    "padding", "padding-top", "padding-bottom", "padding-left", "padding-right",
+    "margin", "margin-top", "margin-bottom", "margin-left", "margin-right",
 ]
 
 
@@ -317,7 +337,34 @@ def _sanitize_html(html: str) -> str:
     except ImportError:  # sanitizer unavailable — never persist raw HTML, degrade to escaped text
         from html import escape
         return escape(html)
-    return bleach.clean(html, tags=_ALLOWED_TAGS, attributes={"*": ["class"]}, strip=True, strip_comments=True)
+    attrs = {
+        # contenteditable protects the auto-filled structural blocks (signature, reference/date row)
+        # from being edited/corrupted in the on-screen editor; it must survive a save so a reopened
+        # letter keeps them protected.
+        "*": ["class", "style", "contenteditable"],
+        # data:-URI so the handwritten-signature PNG survives; nothing script-bearing.
+        "img": ["src", "alt", "width", "height", "style"],
+        "a": ["href", "target", "rel"],
+        # data-pdfmake carries the signature/row data the PDF rebuilds those blocks from, so the edited
+        # PDF keeps their structure even though html-to-pdfmake cannot lay them out itself.
+        "table": ["style", "data-pdfmake", "contenteditable"],
+        # colspan/rowspan MUST survive: the compensation table's "Important Points" notes span both
+        # columns, and stripping the attribute left a one-cell row in a two-column table, which pdfmake
+        # rejects as a malformed row ("a cell is undefined").
+        "td": ["colspan", "rowspan"],
+        "th": ["colspan", "rowspan"],
+        # a numbered list that doesn't start at 1 (e.g. clauses continuing across a break) keeps its
+        # starting number instead of silently resetting.
+        "ol": ["start"],
+    }
+    try:
+        from bleach.css_sanitizer import CSSSanitizer
+        css = CSSSanitizer(allowed_css_properties=_CSS_PROPS)
+        return bleach.clean(html, tags=_ALLOWED_TAGS, attributes=attrs, protocols=["http", "https", "mailto", "data"],
+                            css_sanitizer=css, strip=True, strip_comments=True)
+    except ImportError:  # tinycss2 not installed — keep tags/img but drop styles rather than fail
+        return bleach.clean(html, tags=_ALLOWED_TAGS, attributes={"*": ["class"], "img": ["src", "alt", "width", "height"]},
+                            protocols=["http", "https", "mailto", "data"], strip=True, strip_comments=True)
 
 
 def _html_to_text(html: str) -> str:
@@ -382,6 +429,61 @@ def list_documents(application_id: int | None = None, candidate_id: int | None =
     for d in docs:  # enrich (transient attrs) so the Offer & Docs table can show every field
         _enrich_doc(db, d)
     return docs
+
+
+# What puts somebody on Offer & Docs before any paperwork exists. "offer" is here as well as
+# "hired" because the letter is what turns an offer into a hire: the recruiter needs the candidate
+# on this page from the moment the decision is made, not after the paperwork they came here to
+# write already exists.
+_AWAITING_STAGES = ("offer", "hired")
+
+
+# Declared before GET /{doc_id} so "awaiting" is matched as a literal path and not parsed as an id.
+@router.get("/awaiting", response_model=list[schemas.AwaitingDocumentOut])
+def list_awaiting(db: Session = Depends(get_db)):
+    """Applications at offer/hired that have no document yet.
+
+    Reaching offer is what puts someone on Offer & Docs; drafting their first letter is a separate
+    decision a person makes afterwards. Without these rows such a candidate is invisible on the
+    page entirely, which is what a recruiter hits after moving somebody to Offer and going looking
+    for their letter.
+
+    Scoped by APPLICATION, not by candidate: somebody hired onto a second role needs that role's
+    paperwork even though their first role's file is full. `is_not(None)` inside the subquery is
+    load-bearing — a NOT IN over a set containing NULL matches no rows at all.
+    """
+    drafted = select(models.Document.application_id).where(models.Document.application_id.is_not(None))
+    apps = db.scalars(
+        select(models.Application)
+        .where(models.Application.stage.in_(_AWAITING_STAGES),
+               models.Application.id.not_in(drafted))
+        .order_by(models.Application.id.desc())
+    ).all()
+
+    out: list[schemas.AwaitingDocumentOut] = []
+    for a in apps:
+        cand = db.get(models.Candidate, a.candidate_id)
+        hr = a.hiring_request
+        parsed = (cand.parsed or {}) if cand else {}
+        out.append(schemas.AwaitingDocumentOut(
+            application_id=a.id,
+            candidate_id=a.candidate_id,
+            candidate_name=(cand.name if cand else "") or str(parsed.get("name") or ""),
+            email=(cand.email if cand else "") or str(parsed.get("email") or ""),
+            contact=(cand.phone if cand else "") or str(parsed.get("phone") or ""),
+            position=hr.position if hr else "",
+            department=hr.department if hr else "",
+            # The resolved figure rather than the band, matching _enrich_doc's compensation.
+            compensation=str(comp.parse_ctc(hr.budget_ctc if hr else None) or ""),
+            location=hr.location if hr else "",
+            reporting_manager=(hr.hiring_manager if hr else "") or "",
+            # Usually "": no documents on THIS application. They may hold some on another, in
+            # which case their entity is already settled and the page must say so.
+            entity=settled_entity(db, a.candidate_id) or "",
+            stage=a.stage,
+            reached_at=a.stage_changed_at,
+        ))
+    return out
 
 
 @router.delete("/{doc_id}", status_code=204)
@@ -527,16 +629,20 @@ def _mail_context(db: Session, doc: models.Document) -> tuple[str, str, str]:
 
 
 @router.get("/{doc_id}/email-draft")
-def get_email_draft(doc_id: int, db: Session = Depends(get_db)):
+def get_email_draft(doc_id: int, db: Session = Depends(get_db),
+                    user: models.User = Depends(current_user)):
     """The covering email for this document, rendered but NOT sent — this is the review step."""
     doc = db.get(models.Document, doc_id)
     if not doc:
         raise HTTPException(404, "Document not found")
     to_email, full_name, role = _mail_context(db, doc)
     # The candidate's own signed form link, so the sentence promising one finally has one.
+    # Signed with the name of whoever is looking at the draft: these letters were going out with
+    # no name on them at all, which reads as machine spam next to an offer letter.
     draft = doc_mail.render(
         doc.template_key or "", full_name=full_name, role=role,
         onboarding_link=onboarding_form.form_url(doc.candidate_id) if doc.candidate_id else "",
+        sender_name=user.name or "", sender_title=user.title or "",
     )
     return {
         **draft,
@@ -617,6 +723,10 @@ def send_document_email(
         sender_user=user,
         cc=req.cc or [],
         attachments=attachments or None,
+        # Built from the body the recruiter actually reviewed, so the two parts of the message can
+        # never disagree. Without this the candidate got bare plain text: a naked tracking URL and
+        # no styling, alongside a typeset offer letter.
+        html_body=doc_mail.to_html(req.body),
     )
     doc.email_sent_at = datetime.now(timezone.utc)
     log(db, "document.emailed", "document", doc.id, {

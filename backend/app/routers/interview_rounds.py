@@ -221,13 +221,21 @@ def _video_brief(db: Session, application_id: int) -> dict | None:
     )
     if not vi:
         return None
+    has_rec = bool(vi.recording is not None or getattr(vi, "recording_key", ""))
+    # A signed, header-free recording link so the panellist's plain "Watch" link works while the
+    # recording stays unguessable by id (this brief is only ever served to a logged-in panellist).
+    rec_url = ""
+    if has_rec:
+        t = security.sign_resource(f"interview:{vi.id}:recording", settings.SECRET_KEY)
+        rec_url = f"/api/video-interview/{vi.id}/recording?t={t}"
     return {
         "id": vi.id,
         "status": vi.status,
         "summary": vi.summary or "",
         "scores": vi.scores or {},
         "transcript": vi.transcript or "",
-        "has_recording": bool(vi.recording),
+        "has_recording": has_rec,
+        "recording_url": rec_url,
     }
 
 VALID_TYPES = {

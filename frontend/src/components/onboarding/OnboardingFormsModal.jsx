@@ -107,12 +107,15 @@ function Detail({ submission: s, onBack, onSaved }) {
         </p>
       )}
 
-      {/* items-start so a three-row section does not stretch to match a ten-row one, and the
-          title lives inside each card so scrolling can never separate it from its own rows. */}
-      <div className="grid items-start gap-4 lg:grid-cols-2">
+      {/* Columns rather than a grid: a grid row is as tall as its tallest card, so a four-row
+          section sitting beside a twelve-row one left a block of empty space underneath it and the
+          next section started below the gap. Columns pack each card under the previous one, so a
+          short section costs four rows and nothing more. break-inside-avoid keeps a card whole.
+          The title lives inside each card so scrolling can never separate it from its own rows. */}
+      <div className="columns-1 gap-4 lg:columns-2 [&>section]:break-inside-avoid [&>section]:mb-4">
         {sections.map((sec) => (
           <section key={sec.id} className="overflow-hidden rounded-xl border border-slate-200">
-            <h3 className={cx('border-b border-brand-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-brand-800', THEAD)}>
+            <h3 className={cx('border-b border-brand-200 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-brand-800', THEAD)}>
               {sec.title}
             </h3>
             <dl className="divide-y divide-slate-100">
@@ -121,8 +124,8 @@ function Detail({ submission: s, onBack, onSaved }) {
                 const value = answers[f.key]
                 const blank = isFile(f) ? !file : !value
                 return (
-                  <div key={f.key} className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-3 px-3 py-2">
-                    <dt className="min-w-0 text-xs leading-relaxed text-slate-600">
+                  <div key={f.key} className="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)] items-center gap-4 px-4 py-2.5">
+                    <dt className="min-w-0 text-[13px] leading-relaxed text-slate-600">
                       {labelFor(f, variant)}
                       {/* The marker earns its place only when the answer is actually absent.
                           Marking a question required next to the answer somebody already gave
@@ -133,7 +136,7 @@ function Detail({ submission: s, onBack, onSaved }) {
                         </span>
                       )}
                     </dt>
-                    <dd className="min-w-0 text-sm">
+                    <dd className="min-w-0 text-[15px]">
                       {isFile(f) ? (
                         file ? (
                           <button type="button" onClick={() => openUpload(file.id, toast)}
@@ -144,14 +147,17 @@ function Detail({ submission: s, onBack, onSaved }) {
                           </button>
                         ) : <span className={EMPTY}>Not sent</span>
                       ) : editing ? (
+                        /* No fixed height and no py-0: forcing a 32px box with the padding removed
+                           cropped the text inside it, so a currency read as a sliced "CAD". Let
+                           the control size itself around its own line. */
                         f.type === 'select' || f.type === 'radio' ? (
-                          <select className={cx(inputClass, 'h-8 py-0 text-sm')} value={value || ''}
+                          <select className={cx(inputClass, 'py-1.5')} value={value || ''}
                             onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}>
                             <option value="">&mdash;</option>
                             {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
                           </select>
                         ) : (
-                          <input className={cx(inputClass, 'h-8 py-0 text-sm')} value={value || ''}
+                          <input className={cx(inputClass, 'py-1.5')} value={value || ''}
                             onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} />
                         )
                       ) : (

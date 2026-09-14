@@ -190,6 +190,12 @@ class EmailMessage(Base):
     status: Mapped[str] = mapped_column(String(20), default="queued")  # sent|logged|failed
     error: Mapped[str] = mapped_column(Text, default="")
     ai_generated: Mapped[bool] = mapped_column(default=False)
+    #: The RFC-822 Message-ID this message went out with, and the conversation it belongs to
+    #: (e.g. "session:12"). A follow-up quotes the first message's ID in In-Reply-To/References,
+    #: which is the only thing that makes a mail client file it under the original rather than
+    #: starting a second conversation about the same sitting.
+    message_id: Mapped[str] = mapped_column(String(200), default="")
+    thread_key: Mapped[str] = mapped_column(String(120), default="", index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
@@ -442,6 +448,10 @@ class User(Base):
     # via the Gmail API only when this includes gmail.send — so a calendar-only connection never
     # breaks their sending.
     google_scope: Mapped[str] = mapped_column(String(512), default="")
+    # The user's personal email signature (like a Gmail signature), appended to the bottom of every
+    # mail they send. Stored as HTML so it can carry a name, title, links and light formatting;
+    # empty means no signature is added.
+    signature: Mapped[str] = mapped_column(Text, default="")
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
@@ -584,6 +594,11 @@ class SessionOccurrence(Base):
     mode: Mapped[str] = mapped_column(String(10), default="both")   # campus|remote|both
     location: Mapped[str] = mapped_column(String(200), default="")
     meet_link: Mapped[str] = mapped_column(String(400), default="")
+    #: The Google Calendar event behind meet_link, so a reschedule can MOVE that event instead of
+    #: leaving it on the old date. Without the id we could only ever create events, never patch
+    #: them, and a moved sitting would keep sitting in everyone's calendar at the original time —
+    #: the mail would say one thing and the calendar another. Empty when no event was made.
+    calendar_event_id: Mapped[str] = mapped_column(String(200), default="")
     status: Mapped[str] = mapped_column(String(12), default="scheduled")  # scheduled|done|cancelled
     invites_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     #: Who this sitting's mails go to: {"groups": [...], "saved": [id], "emails": [...]}.
@@ -610,7 +625,12 @@ class SessionAttendee(Base):
     name: Mapped[str] = mapped_column(String(160), default="")
     email: Mapped[str] = mapped_column(String(200), default="")
     invited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: None = nobody has taken the register yet, True = came, False = marked absent. The three
+    #: states are distinct on purpose: audience.sitting_absent chases only those marked absent,
+    #: never those nobody has looked at.
     attended: Mapped[bool | None] = mapped_column(nullable=True)
+    #: Why they missed it, or anything the register needs to carry alongside the tick.
+    comment: Mapped[str] = mapped_column(Text, default="")
     feedback_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 

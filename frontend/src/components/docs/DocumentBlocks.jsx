@@ -1,5 +1,5 @@
 import { richSegments } from './rich'
-import { isClause, selfMarked } from './docHtml'
+import { isClause, selfMarked, sigCaptionLines } from './docHtml'
 import { signImageFor } from './signatureAssets'
 
 // The real handwritten sign where we hold the artwork; Great Vibes stand-in otherwise.
@@ -71,7 +71,17 @@ function List({ block, dense = false }) {
       start={block.ordered && block.start ? Number(block.start) : undefined}
       className={`${plain ? 'list-none pl-3 [&>li]:pl-8 [&>li]:-indent-8' : block.ordered ? 'list-decimal pl-6' : 'list-disc pl-6'} space-y-1 text-sm leading-relaxed text-slate-700 marker:text-slate-500 ${dense ? '' : 'my-1'}`}
     >
-      {(block.items || []).map((it, i) => (<li key={i}><Rich text={it} /></li>))}
+      {/* An item may be {text, subs}: a bullet with its own indented second level. */}
+      {(block.items || []).map((it, i) => (
+        <li key={i}>
+          <Rich text={it && typeof it === 'object' ? it.text || '' : it} />
+          {it && typeof it === 'object' && (it.subs || []).length > 0 && (
+            <ul className="mt-1 list-[circle] space-y-1 pl-6 marker:text-slate-500">
+              {it.subs.map((s, j) => (<li key={j}><Rich text={s} /></li>))}
+            </ul>
+          )}
+        </li>
+      ))}
     </Tag>
   )
 }
@@ -159,14 +169,28 @@ const SCRIPT_STYLE = { fontFamily: "'Great Vibes', cursive", fontSize: '26px', l
 
 function Signature({ block }) {
   return (
-    <div className="mt-2 flex flex-wrap gap-8">
-      {(block.columns || []).map((c, i) => (
-        <div key={i} className="min-w-[200px]">
-          {c.script && <div><ScriptSign text={c.script} height="26px" /></div>}
-          <div className="mb-1 h-6 border-b border-slate-400">{c.name}</div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{c.label}</div>
-        </div>
-      ))}
+    <div className="break-inside-avoid">
+      {block.heading && (
+        <p className={`mt-5 font-semibold text-slate-800 ${block.heading_align === 'right' ? 'text-right' : ''}`}>
+          {block.heading}
+        </p>
+      )}
+      {/* Two columns with a gap, a rule PER column: the handwritten sign sits just above its rule in
+          a fixed-height bottom-aligned zone (so every rule lands on one line), and under the rule the
+          caption lines (role / "NAME: <name>", plus Title/Date for signatory blocks) — as the source
+          contracts set it. sigCaptionLines is shared with the editor, email and PDF. */}
+      <div className="mt-2 flex gap-9">
+        {(block.columns || []).map((c, i) => (
+          <div key={i} className="flex-1">
+            <div className="flex min-h-[46px] flex-col justify-end border-b border-black pb-1">
+              {c.script && <div><ScriptSign text={c.script} height="28px" /></div>}
+            </div>
+            {sigCaptionLines(c).map((line, j) => (
+              <div key={j} className="font-semibold leading-snug text-slate-900">{line}</div>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -203,6 +227,16 @@ function renderBlock(b, i) {
       return <p key={i}><ScriptSign text={b.text} height="30px" /></p>
     case 'signature':
       return <Signature key={i} block={b} />
+    case 'row':
+      // Two stacks level with each other, as the source letters set the salutation and the date.
+      return (
+        <div key={i} className="flex items-start gap-4">
+          <div className="min-w-0 flex-1">{(b.left || []).map(renderBlock)}</div>
+          <div className="shrink-0 text-right">{(b.right || []).map(renderBlock)}</div>
+        </div>
+      )
+    case 'space':
+      return <div key={i} style={{ height: Number(b.points) || 40 }} />
     case 'divider':
       return <hr key={i} className="my-4 border-slate-200" />
     default:

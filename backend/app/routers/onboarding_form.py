@@ -26,8 +26,8 @@ from starlette.datastructures import UploadFile as FormUpload
 from .. import models
 from ..config import settings
 from ..database import get_db
-from ..deps import current_user
-from ..services import security, storage
+from ..deps import current_user, require_roles
+from ..services import security, storage, upload_safety
 from ..services.documents import TEMPLATES
 from ..services.recruitment import log
 
@@ -114,6 +114,7 @@ def prefill(candidate_id: int, t: str = "", db: Session = Depends(get_db)):
 
 
 def _store(db: Session, submission: models.OnboardingSubmission, field_key: str, up: UploadFile) -> None:
+    upload_safety.reject_dangerous_upload(up.content_type)
     data = up.file.read(MAX_FILE_BYTES + 1)
     if len(data) > MAX_FILE_BYTES:
         raise HTTPException(413, f"{up.filename or field_key} is over 5 MB.")
@@ -122,7 +123,8 @@ def _store(db: Session, submission: models.OnboardingSubmission, field_key: str,
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", up.filename or field_key)[:120]
     row = models.OnboardingUpload(
         submission_id=submission.id, field_key=field_key, filename=safe,
-        mime=up.content_type or "application/octet-stream", size=len(data),
+        # Record a type derived from the extension, not the applicant's declared one.
+        mime=upload_safety.stored_mime(safe), size=len(data),
     )
     if settings.s3_enabled:
         import io
@@ -282,8 +284,10 @@ def update_submission(sub_id: int, body: SubmissionPatch, db: Session = Depends(
 
 @router.get("/uploads/{upload_id}")
 def get_upload(upload_id: int, db: Session = Depends(get_db),
-               _user: models.User = Depends(current_user)):
-    """Stream one uploaded file. Behind the auth gate — these are identity documents."""
+               _user: models.User = Depends(require_roles("recruiter", "manager"))):
+    """Stream one uploaded file. These are identity documents (Aadhaar, PAN, bank proof), so this
+    is restricted to the HR roles that process onboarding — not merely "any logged-in account",
+    which would let a panellist enumerate upload_id and read every joiner's ID papers."""
     u = db.get(models.OnboardingUpload, upload_id)
     if not u:
         raise HTTPException(404, "File not found")
@@ -291,10 +295,9 @@ def get_upload(upload_id: int, db: Session = Depends(get_db),
         return Response(status_code=307, headers={"Location": storage.presigned_get(u.s3_key)})
     if u.data is None:
         raise HTTPException(404, "File not found")
-    safe = re.sub(r'[\r\n"\x00-\x1f]+', "", u.filename or "file") or "file"
-    return Response(content=u.data, media_type=u.mime or "application/octet-stream",
-                    headers={"Content-Disposition": f'inline; filename="{safe}"',
-                             "X-Content-Type-Options": "nosniff"})
+    # The uploader's Content-Type is never used — served under a server-chosen safe type so a
+    # document uploaded as text/html can't execute in the HR reviewer's session.
+    return upload_safety.serve(u.data, u.filename or "file")
 
 
 @router.get("/{candidate_id}/link")

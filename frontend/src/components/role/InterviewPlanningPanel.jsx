@@ -672,7 +672,7 @@ function VideoInterviewReview({ app }) {
         <p className="text-xs text-slate-400">{vi.status === 'completed' ? 'Completed (no recording stored).' : 'Not taken yet.'}</p>
       ) : (
         <>
-          <video ref={vidRef} controls src={api.videoRecordingUrl(vi.id)} className="aspect-video w-full rounded-lg bg-slate-900" />
+          <video ref={vidRef} controls src={vi.recording_url || api.videoRecordingUrl(vi.id)} className="aspect-video w-full rounded-lg bg-slate-900" />
           <div className="flex justify-end">
             <button type="button" onClick={deleteRecording} className="inline-flex items-center gap-1 text-xs font-medium text-rose-500 transition-colors duration-150 ease-snappy hover:text-rose-700 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50"><Trash2 className="h-3.5 w-3.5" /> Delete recording</button>
           </div>

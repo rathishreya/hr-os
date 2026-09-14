@@ -38,25 +38,26 @@ def agency_contract(ctx: dict) -> dict:
     ez_title = ctx["contract_signatory_title"]
 
     return {
-        "title": f"Agency Contract - {agency}",
+        "title": f"Agency Contract - {ctx['agency_name_raw']}",
         "doc_type": "contract",
         "blocks": [
             # ── Cover letter ──────────────────────────────────────────────────────────────
             b.p(f"Ref # {ctx['reference']}", align="right"),
-            b.p(f"Date: {ctx['letter_date']}", align="right"),
-            b.p(f"Dear {ctx['agency_poc_name']},"),
+            # The source sets the salutation and the date on one band, not stacked.
+            b.row([b.p(f"Dear {b.dots(ctx['agency_poc_name'])} (Name of the POC or authorized signatory),")],
+                  [b.p(f"Date: {ctx['letter_date']}", align="right")]),
             b.p(
                 f"We are pleased to confirm our verbal discussion to bring you on as a Service Provider "
-                f"for {ctx['service_type']} at {contracting} (hereinafter referred to as \"**EZ**\"), effective "
-                f"{ctx['commencement_date']}. You are to keep all our client and EZ's information "
+                f"for {b.dots(ctx['service_type'])} (type of Services) at {contracting} (hereinafter referred to as \"**EZ**\"), effective "
+                f"{b.dots(ctx['commencement_date'])} (Start Date). You are to keep all our client and EZ's information "
                 f"confidential. Additional details regarding the work process and a non-disclosure "
                 f"agreement is attached for your review and confirmation."
             ),
             b.p("Additional details of our offer, including the terms and conditions, are attached as Schedule \"A\"."),
             b.p(
                 f"Please take the time to carefully review our offer. This letter, along with the enclosed "
-                f"schedules, outlines the obligations of both EZ and {agency}, represented for the purpose "
-                f"of this Agreement through its authorized signatory, {signatory}."
+                f"schedules, outlines the obligations of both EZ and {b.dots(agency)} (Name of the Agency), represented for the purpose "
+                f"of this Agreement through its authorized signatory, {b.dots(signatory)} (Name of the authorized signatory)."
             ),
             b.p(
                 "Accepting the offer will be conditional upon agreeing to and signing the attached copy of "
@@ -64,8 +65,9 @@ def agency_contract(ctx: dict) -> dict:
                 "corner, and returning it to me upon your earliest convenience, but prior to the first day "
                 "of our business cooperation."
             ),
-            b.p(f"{signatory}, we look forward to welcoming you to the EZ team and wish you all the success."),
+            b.p(f"{b.dots(signatory)} (Name of the authorized signatory), we look forward to welcoming you to the EZ team and wish you all the success."),
             b.p("Sincerely,"),
+            b.space(44),   # room to sign, measured off the source letter
             b.p(f"**{ez_name}**"),
             b.p(ez_title),
             b.divider(),
@@ -260,17 +262,18 @@ def agency_contract(ctx: dict) -> dict:
                 "or unenforceable, that provision shall be deleted and the other provisions shall remain in "
                 "effect.",
             ]),
-            b.p("Signed in the presence of:", align="right"),
             b.signature(
-                ("For Service Provider — Name / Title / Date", ""),
-                (f"For EZ Services — {ez_title} / Date", ez_name.upper()),
+                ("For Service Provider", ""),
+                ("For EZ Services", ez_name.upper(), None, ez_title),
+                heading="Signed in the presence of:",
+                heading_align="right",
             ),
             b.divider(),
 
             # ── Schedule B ────────────────────────────────────────────────────────────────
             b.h(1, "Schedule B"),
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
-            b.p(f"This Agreement is made on this {ctx['effective_date']} by and between:"),
+            b.p(f"This Agreement is made on this **{b.dots(ctx['effective_date'])}** (Date) by and between:"),
             b.p(
                 f"{contracting} (\"**EZ**\"), having its business address at {office}, hereinafter duly "
                 f"represented by **{ez_name}** in his capacity as {ez_title} (hereinafter referred to as "
@@ -278,16 +281,16 @@ def agency_contract(ctx: dict) -> dict:
             ),
             b.p("And"),
             b.p(
-                f"{agency}, a {ctx['service_type']} with its principal office at {ctx['agency_address']}, "
-                f"hereinafter duly represented by {signatory} in his capacity as "
-                f"{ctx['agency_signatory_title']} (hereinafter referred to as \"**Service Provider**\" or "
+                f"**{b.dots(agency)}** (Name of the Agency), a {b.dots(ctx['service_type'])} (type of service) with its principal office at {b.dots(ctx['agency_address'])}, "
+                f"hereinafter duly represented by {b.dots(signatory)} (Name of the Authorized Signatory) in his capacity as "
+                f"{b.dots(ctx['agency_signatory_title'])} (Position/Designation) (hereinafter referred to as \"**Service Provider**\" or "
                 f"\"**Receiving Party**\");"
             ),
             b.p("(Collectively hereinafter referred to as Parties and individually as Party)"),
             b.p("**WHEREAS**:"),
             b.p(
                 f"EZ (**Disclosing Party**) wishes to employ the services of Service Provider (**Receiving "
-                f"Party**) to provide {ctx['service_type']}."
+                f"Party**) to provide {b.dots(ctx['service_type'])} (type of Services)."
             ),
             b.p(
                 "For the purpose of the provision of the translation services by the Receiving Party, EZ will "
@@ -383,8 +386,8 @@ def agency_contract(ctx: dict) -> dict:
                 f"{ctx['effective_date']}."
             ),
             b.signature(
-                ("SIGNED for and on behalf of Service Provider — Name / Title / Date", ""),
-                (f"SIGNED for and on behalf of EZ — {ez_title} / Date", ez_name.upper()),
+                ("SIGNED for and on behalf of Service Provider", ""),
+                ("SIGNED for and on behalf of EZ", ez_name.upper(), None, ez_title),
             ),
             b.divider(),
 
@@ -617,14 +620,15 @@ def nda_tech(ctx: dict) -> dict:
                 f"**IN WITNESS WHEREOF** EZ Lab has caused this Agreement to be executed as of the "
                 f"{ctx['execution_date']}."
             ),
-            b.p("**Signed in the presence of:**"),
             b.signature(
                 ("PARTICIPANT - NAME", "" if who.startswith("[") else who),
                 (
                     "WITNESS to PARTICIPANT - NAME",
-                    f"{ctx['signatory_name'].upper()} - {ctx['signatory_title']}",
-                    ctx['signatory_name'],
+                    ctx["signatory_name"].upper(),
+                    ctx["signatory_name"],
+                    ctx["signatory_title"],
                 ),
+                heading="Signed in the presence of:",
             ),
         ],
     }
@@ -698,18 +702,29 @@ _JD_SECTIONS = [
 ]
 
 
-def _jd_blocks() -> list[dict]:
+def _jd_blocks(responsibilities: list[str] | None = None) -> list[dict]:
+    """Annexure-1's job description.
+
+    `responsibilities` is what the recruiter typed on the generate form. Left blank, the letter
+    keeps the transcribed job description below — which is what the form always claimed it did
+    while actually discarding whatever was entered.
+    """
+    if responsibilities:
+        return [b.ul(list(responsibilities))]
     out: list[dict] = []
     for title, bullets in _JD_SECTIONS:
         out.append(b.p(f"**{title}**"))
-        flat: list[str] = []
+        # A bullet's sub-bullets stay a level of their own, as the source sets them. Joining them
+        # onto the parent with middots ("...for the following brands: EZ · Varnan Films · Ghost
+        # Research · Caspr") read as one run-on sentence rather than a list of four brands.
+        items: list = []
         for item in bullets:
             if isinstance(item, tuple):
                 lead, subs = item
-                flat.append(f"{lead} {' · '.join(subs)}")
+                items.append({"text": lead, "subs": list(subs)})
             else:
-                flat.append(item)
-        out.append(b.ul(flat))
+                items.append(item)
+        out.append(b.ul(items))
     return out
 
 
@@ -725,7 +740,7 @@ def offer_letter(ctx: dict) -> dict:
     """
     who = ctx["name"]
     role = ctx["designation"]
-    annexure = comp.offer_annexure(ctx.get("annual_ctc"))
+    annexure = comp.offer_annexure(ctx.get("annual_ctc"), ctx.get("comp_overrides"))
 
     return {
         "title": f"Offer Letter - {who}",
@@ -833,7 +848,7 @@ def offer_letter(ctx: dict) -> dict:
             # ── Annexure-1 ────────────────────────────────────────────────────────────────
             b.h(1, "ANNEXURE - 1", underline=True),
             b.p("**THE HIGH-LEVEL JOB-DESCRIPTION IS AS BELOW:**"),
-            *_jd_blocks(),
+            *_jd_blocks(ctx["responsibilities"]),
             b.divider(),
 
             # ── Annexure-2 ────────────────────────────────────────────────────────────────
@@ -874,11 +889,15 @@ def offer_letter(ctx: dict) -> dict:
 register(
     "ez_offer_letter",
     offer_letter,
-    label="Offer Letter",
+    label="Offer Letter (retired)",
     description=(
         "EZ Lab full-time offer letter: 11 terms & conditions, Annexure-1 job description, "
-        "Annexure-2 compensation table computed from the CTC, and the Acceptance page."
+        "Annexure-2 compensation table computed from the CTC, and the Acceptance page. "
+        "Withdrawn from the picker; the employment contract is issued as the offer letter instead."
     ),
+    # Retired, not deleted: documents already drafted from this key must keep opening, printing
+    # and emailing. Set hidden=False to offer it again.
+    hidden=True,
     entity="EZ",
     doc_type="offer",
     party_type="individual",
@@ -1164,16 +1183,16 @@ def full_contract(ctx: dict) -> dict:
     role = ctx["designation"]
     start = ctx["start_date"]
     witness = ctx["signatory_name"]
-    annexure = comp.contract_annexure(ctx.get("annual_ctc"))
+    annexure = comp.contract_annexure(ctx.get("annual_ctc"), ctx.get("comp_overrides"))
     execution = [
         b.p(
             f"**IN WITNESS WHEREOF** EZ Lab has caused this Agreement to be executed as of the "
             f"**{start}**."
         ),
-        b.p("**Signed in the presence of:**"),
         b.signature(
             ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
-            ("WITNESS to PARTICIPANT - NAME", f"{witness.upper()} - {ctx['signatory_title']}", witness),
+            ("WITNESS to PARTICIPANT - NAME", witness.upper(), witness, ctx["signatory_title"]),
+            heading="Signed in the presence of:",
         ),
     ]
 
@@ -1182,10 +1201,12 @@ def full_contract(ctx: dict) -> dict:
         "doc_type": "contract",
         "blocks": [
             # ── Cover letter ──────────────────────────────────────────────────────────────
-            b.p(f"Reference: {ctx['reference']}", align="right"),
-            b.p(f"Date: {ctx['letter_date']}", align="right"),
-            b.p(f"**{who}**"),
-            b.p(ctx["address"]),
+            # The source sets the addressee on the left with the reference and date level with it.
+            b.row(
+                [b.p(f"**{who}**"), b.p(ctx["address"])],
+                [b.p(f"Reference: {ctx['reference']}", align="right"),
+                 b.p(f"Date: {ctx['letter_date']}", align="right")],
+            ),
             b.p(f"Dear {who},"),
             b.p(
                 f"We are pleased to confirm this offer of employment to you for a regular full-time "
@@ -1213,6 +1234,7 @@ def full_contract(ctx: dict) -> dict:
                 f"successful and rewarding career with us."
             ),
             b.p("Sincerely,"),
+            b.space(74),   # room to sign, measured off the source letter
             b.p(f"**{witness}**"),
             b.p(ctx["signatory_title"]),
             b.p(
@@ -1240,7 +1262,7 @@ def full_contract(ctx: dict) -> dict:
                 ]),
                 ("Responsibilities", [
                     b.p("Your key responsibilities would include:"),
-                    b.ol(_FC_RESPONSIBILITIES),
+                    b.ol(ctx["responsibilities"] or _FC_RESPONSIBILITIES),
                     b.p(
                         "While employed by EZ Lab, you agree to work on a full-time basis "
                         "exclusively for EZ Lab and agree that you shall not, while you are employed "
@@ -1464,11 +1486,14 @@ def full_contract(ctx: dict) -> dict:
 register(
     "ez_full_contract",
     full_contract,
-    label="Full Employment Contract",
+    # This is what EZ Lab issues as its offer letter. The key stays ez_full_contract: it is stored
+    # on every document already drafted from it, and renaming a key orphans them.
+    label="Offer Letter",
     description=(
-        "EZ Lab full-time employment contract: cover letter with acknowledgement, Schedule A terms "
-        "grid (with the computed compensation table) and Schedule B employee covenants."
+        "EZ Lab full-time offer letter: cover letter with acknowledgement, Schedule A terms grid "
+        "(with the compensation table) and Schedule B employee covenants."
     ),
+    preferred=True,
     entity="EZ",
     doc_type="contract",
     party_type="individual",
@@ -1493,14 +1518,14 @@ def agency_nda(ctx: dict) -> dict:
     ez_title = ctx["contract_signatory_title"]
 
     return {
-        "title": f"Agency NDA - {agency}",
+        "title": f"Agency NDA - {ctx['agency_name_raw']}",
         "doc_type": "nda",
         "blocks": [
             b.p(f"Ref # {ctx['reference']}", align="right"),
             b.p(f"Date: {ctx['letter_date']}", align="right"),
-            b.p("Schedule B"),
+            b.h(1, "Schedule B", underline=True),
             b.h(3, "Confidentiality and Proprietary Information Agreement"),
-            b.p(f"This Agreement is made on this {ctx['effective_date']} by and between:"),
+            b.p(f"This Agreement is made on this **{b.dots(ctx['effective_date'])}** (Date) by and between:"),
             b.p(
                 f"ArabEasy LLC (\"**EZ**\"), having its business address at "
                 f"{ctx['contracting_office']}, hereinafter duly represented by **{ez_name}** in his "
@@ -1509,17 +1534,17 @@ def agency_nda(ctx: dict) -> dict:
             ),
             b.p("And"),
             b.p(
-                f"**{agency}** (Name of the Agency), a {ctx['service_type']} with its principal "
-                f"office at {ctx['agency_address']}, hereinafter duly represented by {signatory} "
+                f"**{b.dots(agency)}** (Name of the Agency), a {b.dots(ctx['service_type'])} (type of service) with its principal "
+                f"office at {b.dots(ctx['agency_address'])}, hereinafter duly represented by {b.dots(signatory)} "
                 f"(Name of the Authorized Signatory) in his capacity as "
-                f"{ctx['agency_signatory_title']} (Position/Designation) (hereinafter referred to as "
+                f"{b.dots(ctx['agency_signatory_title'])} (Position/Designation) (hereinafter referred to as "
                 f"\"**Service Provider**\" or \"**Receiving Party**\");"
             ),
             b.p("(Collectively hereinafter referred to as Parties and individually as Party)"),
             b.p("**WHEREAS**:"),
             b.p(
                 f"EZ (**Disclosing Party**) wishes to employ the services of Service Provider "
-                f"(**Receiving Party**) to provide {ctx['service_type']} (type of Services)."
+                f"(**Receiving Party**) to provide {b.dots(ctx['service_type'])} (type of Services)."
             ),
             b.p(
                 "For the purpose of the provision of the translation services by the Receiving "
@@ -1644,8 +1669,8 @@ def agency_nda(ctx: dict) -> dict:
                 f"{ctx['effective_date']} (Effective Date)."
             ),
             b.signature(
-                ("SIGNED for and on behalf of Service Provider - Name / Title / Date", ""),
-                (f"SIGNED for and on behalf of EZ - {ez_title} / Date", ez_name.upper()),
+                ("SIGNED for and on behalf of Service Provider", ""),
+                ("SIGNED for and on behalf of EZ", ez_name.upper(), None, ez_title),
             ),
         ],
     }
@@ -1825,10 +1850,10 @@ def nda(ctx: dict) -> dict:
                 f"**IN WITNESS WHEREOF** EZ Lab has caused this Agreement to be executed as of the "
                 f"{ctx['execution_date']}."
             ),
-            b.p("**Signed in the presence of:**"),
             b.signature(
                 ("PARTICIPANT - NAME", "" if who.startswith("[") else who.upper()),
-                ("WITNESS to PARTICIPANT - NAME", f"{witness.upper()}-{ctx['signatory_title']}", witness),
+                ("WITNESS to PARTICIPANT - NAME", witness.upper(), witness, ctx["signatory_title"]),
+                heading="Signed in the presence of:",
             ),
         ],
     }
@@ -2011,7 +2036,7 @@ def traineeship_offer(ctx: dict) -> dict:
             # ── Annexure-1 ────────────────────────────────────────────────────────────────
             b.h(1, "ANNEXURE - 1", underline=True),
             b.p("**THE HIGH-LEVEL JOB-DESCRIPTION IS AS BELOW:**"),
-            b.ul(_TRAINEE_JD),
+            b.ul(ctx["responsibilities"] or _TRAINEE_JD),
             *[b.p(t) for t in _TRAINEE_UNDERTAKINGS],
             b.divider(),
 
