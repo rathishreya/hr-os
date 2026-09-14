@@ -1017,6 +1017,8 @@ export default function OfferDocs() {
   const [q, setQ] = useState('')
   const [sortKey, setSortKey] = useState('recent')
   const [page, setPage] = useState(0)
+  // How many CANDIDATES per page — the recruiter's choice, not a fixed document count.
+  const [perPage, setPerPage] = useState(25)
   const [formsOpen, setFormsOpen] = useState(false)
   // Folded by default. A page that opens with every candidate's paperwork already unrolled is a
   // page you have to scroll past to find anybody; clicking a name opens theirs.
@@ -1198,34 +1200,22 @@ export default function OfferDocs() {
     }))
   }, [filteredDocs, people, sortKey, q, colFilters.filters])
 
-  // A page holds whole candidates: splitting someone's letters across a page break would leave
-  // their name, joining date and email on one page and the rest of their documents on the next.
-  const PER_PAGE = 25
+  // Paginate by CANDIDATE, not by document count: a page holds `perPage` whole candidates however
+  // many letters each of them has. The recruiter picks perPage, so they decide how many people to
+  // see at once rather than the list deciding for them based on how much paperwork exists.
   const pages = useMemo(() => {
     const out = []
-    let cur = []
-    let n = 0
-    for (const g of groups) {
-      // A candidate heading occupies a line whether or not it has letters under it, so a page
-      // full of hired-but-undrafted candidates fills up like any other.
-      const height = Math.max(1, g.rows.length)
-      if (n && n + height > PER_PAGE) { out.push(cur); cur = []; n = 0 }
-      cur.push(g)
-      n += height
-    }
-    if (cur.length) out.push(cur)
+    for (let i = 0; i < groups.length; i += perPage) out.push(groups.slice(i, i + perPage))
     return out.length ? out : [[]]
-  }, [groups])
+  }, [groups, perPage])
   const pageIdx = Math.min(page, pages.length - 1)
   // "N documents" stays literally true: a candidate with none is never counted as one. They are
   // reported separately so the extra rows on screen are still accounted for.
   const total = groups.reduce((n, g) => n + g.rows.length, 0)
+  const totalCandidates = groups.length
   const awaitingShown = groups.reduce((n, g) => n + (g.rows.length ? 0 : 1), 0)
-  // A candidate heading takes a line whether or not it has letters under it — the same rule the
-  // pager splits pages by, so "showing 1–25" matches what the page actually holds.
-  const lineCount = (gs) => gs.reduce((n, g) => n + Math.max(1, g.rows.length), 0)
-  const from = pages.slice(0, pageIdx).reduce((n, gs) => n + lineCount(gs), 0)
-  const shownLines = lineCount(pages[pageIdx])
+  const from = pageIdx * perPage
+  const shownCandidates = pages[pageIdx].length
 
 
   async function approveDoc(d) {
@@ -1374,7 +1364,9 @@ export default function OfferDocs() {
               <span className="font-medium tabular-nums text-slate-700">{total}</span>
               {total === 1 ? ' document' : ' documents'}
               {awaitingShown > 0 && <> · <span className="tabular-nums">{awaitingShown}</span> awaiting paperwork</>}
-              {pages.length > 1 && <span className="tabular-nums"> · showing {from + 1}–{from + shownLines}</span>}
+              {pages.length > 1 && (
+                <span className="tabular-nums"> · showing {from + 1}–{from + shownCandidates} of {totalCandidates} candidates</span>
+              )}
             </p>
             {colFilters.active > 0 && (
               <button
@@ -1404,6 +1396,10 @@ export default function OfferDocs() {
                 <option value="updated">Recently updated</option>
                 <option value="waiting">Longest waiting</option>
                 <option value="name">Candidate A–Z</option>
+              </select>
+              <label className="sr-only" htmlFor="od-perpage">Candidates per page</label>
+              <select id="od-perpage" value={perPage} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(0) }} className={TOOLBAR}>
+                {[10, 25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} / page</option>)}
               </select>
             </div>
           </div>
