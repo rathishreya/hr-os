@@ -258,6 +258,8 @@ export const api = {
   onboardingMailsByTemplate: () => req('/onboarding-module/mails/by-template'),
   onboardingPlanMails: (planId) => req(`/onboarding-module/plan/${planId}/mails`),
   onboardingMailDraft: (planId, key) => req(`/onboarding-module/plan/${planId}/mails/${key}`),
+  onboardingMailPreview: (body) =>
+    req('/onboarding-module/mail-preview', { method: 'POST', body: JSON.stringify({ body }) }),
   onboardingSendMail: (planId, key, body) =>
     req(`/onboarding-module/plan/${planId}/mails/${key}/send`, { method: 'POST', body: JSON.stringify(body) }),
   onboardingSessionMailDraft: (occId, key) => req(`/onboarding-module/occurrences/${occId}/mails/${key}`),

@@ -958,6 +958,7 @@ function MailComposer({ planId, occurrenceId, templateKey, onClose, onSent }) {
   const [to, setTo] = useState('')
   const [cc, setCc] = useState('')
   const [showPreview, setShowPreview] = useState(false)
+  const [previewHtml, setPreviewHtml] = useState('')
   const [sending, setSending] = useState(false)
 
   useEffect(() => {
@@ -968,11 +969,23 @@ function MailComposer({ planId, occurrenceId, templateKey, onClose, onSent }) {
       setDraft(d)
       setSubject(d.subject || '')
       setBody(d.body || '')
+      setPreviewHtml(d.html || '')
       setTo(d.to || '')
       setCc((d.cc || []).join(', '))
     }).catch((e) => { toast(e.message, 'error'); onClose() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planId, occurrenceId, templateKey])
+
+  // Preview what is ACTUALLY in the box now, not the original server draft. The old code showed
+  // draft.html, so anything the recruiter typed in — a manager's email, the department head — never
+  // appeared in "as the reader sees it". Re-render the live body through the same server renderer.
+  useEffect(() => {
+    if (!showPreview) return undefined
+    const id = setTimeout(() => {
+      api.onboardingMailPreview(body).then((r) => setPreviewHtml(r.html || '')).catch(() => {})
+    }, 350)
+    return () => clearTimeout(id)
+  }, [body, showPreview])
 
   const recipients = draft?.recipients || []
   const canSend = occurrenceId ? recipients.length > 0 : !!to.trim()
@@ -1056,7 +1069,7 @@ function MailComposer({ planId, occurrenceId, templateKey, onClose, onSent }) {
           </label>
           <RichTextArea value={body} onChange={setBody} />
           {showPreview
-            ? <BodyPreview html={draft.html} />
+            ? <BodyPreview html={previewHtml} />
             : (
               <button type="button" onClick={() => setShowPreview(true)}
                 className={cx('rounded px-1 text-xs font-medium text-brand-700 hover:text-brand-900', focusRing)}>

@@ -909,6 +909,19 @@ class MailSend(BaseModel):
     cc: list[str] | None = None
 
 
+class MailPreview(BaseModel):
+    body: str = ""
+
+
+@router.post("/mail-preview")
+def mail_preview(payload: MailPreview, db: Session = Depends(get_db),
+                 _user: models.User = Depends(current_user)):
+    """Render an edited mail body to HTML with the SAME renderer used to send it. The composer's
+    'as the reader sees it' pane needs this: it used to show the original server draft, so any value
+    the recruiter typed in (a manager's email, the department head) never appeared in the preview."""
+    return {"html": rt.to_html(payload.body or "", _link_overrides(db))}
+
+
 @router.post("/plan/{plan_id}/mails/{template_key}/send")
 def send_mail(plan_id: int, template_key: str, payload: MailSend, db: Session = Depends(get_db),
               user: models.User = Depends(current_user)):
