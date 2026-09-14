@@ -131,23 +131,42 @@ _SIG_TAGS = ["p", "br", "strong", "b", "em", "i", "u", "span", "div", "a"]
 _SIG_TAG_RE = re.compile(r"<[^>]+>")
 
 
+# Inline CSS a pasted signature is allowed to keep — the colours and fonts that make it look like
+# the sender's, minus anything that could reflow or hide content in the reader's inbox.
+_SIG_CSS_PROPS = [
+    "color", "background-color", "font-family", "font-size", "font-weight", "font-style",
+    "text-decoration", "text-align", "line-height", "letter-spacing", "vertical-align",
+    "margin", "margin-top", "margin-bottom", "margin-left", "margin-right",
+    "padding", "padding-top", "padding-bottom", "padding-left", "padding-right",
+]
+
+
 def sanitize_signature(html: str) -> str:
     """Allow-list sanitize a user's signature HTML before storing it. Self-service (it only ever
     goes on that user's own outgoing mail), but still sanitized so a pasted signature can't smuggle
-    a script into every mail. Links are kept; everything dangerous is stripped."""
+    a script into every mail. Links AND the inline colours/fonts that make a signature look like the
+    sender's are kept (via a CSS allow-list); everything dangerous is stripped."""
     html = (html or "").strip()
     if not html:
         return ""
     try:
         import bleach
-        return bleach.clean(
-            html, tags=_SIG_TAGS,
-            attributes={"a": ["href", "target", "rel"], "span": ["class"], "div": ["class"]},
-            protocols=["http", "https", "mailto", "tel"], strip=True, strip_comments=True,
-        )
     except ImportError:
         from html import escape
         return escape(html)
+    # Only permit inline `style` when a CSS sanitiser is available to validate it — an unchecked
+    # style attribute is exactly the kind of thing this function exists to strip.
+    attributes = {"*": ["class"], "a": ["href", "target", "rel", "class"]}
+    kwargs = dict(tags=_SIG_TAGS, attributes=attributes,
+                  protocols=["http", "https", "mailto", "tel"], strip=True, strip_comments=True)
+    try:
+        from bleach.css_sanitizer import CSSSanitizer
+        kwargs["css_sanitizer"] = CSSSanitizer(allowed_css_properties=_SIG_CSS_PROPS)
+        attributes["*"] = ["class", "style"]
+        attributes["a"] = ["href", "target", "rel", "class", "style"]
+    except ImportError:
+        pass
+    return bleach.clean(html, **kwargs)
 
 
 def _signature_text(html: str) -> str:

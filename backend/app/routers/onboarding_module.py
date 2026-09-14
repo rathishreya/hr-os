@@ -603,7 +603,7 @@ def _notify_moved(db: Session, occ: models.SessionOccurrence, was, user) -> dict
 
     moved_from = ctxs.pretty_date(was) if was else ""
     notice = (
-        f"**Please note this session has been rescheduled.** It was earlier on {moved_from}, "
+        f"*Please note this session has been rescheduled.* It was earlier on {moved_from}, "
         f"and now takes place on {ctx.get('Session Date', '')}"
         f"{', ' + ctx['Session Time'] if ctx.get('Session Time') else ''}. "
         "The details below are the current ones.\n\n"
