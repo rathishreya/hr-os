@@ -30,6 +30,8 @@ FIELDS: dict[str, list[dict]] = {
         _f("manager_role", "Reporting manager's position", placeholder="Head of Engineering", required=True),
         _f("validity_date", "Offer valid till", placeholder="30 September 2026", required=True),
         _f("start_date", "Joining date", placeholder="1 October 2026", required=True),
+        _f("responsibilities", "Job description (one duty per line)",
+           placeholder="Leave blank to keep the standard write-up, or list the role's key duties", type="lines"),
         _f("annual_ctc", "Annual CTC", placeholder="9 LPA or 900000", required=True, type="money"),
         _f("comp_basic", "Basic salary (monthly)", placeholder="Leave blank to compute from the CTC", type="money"),
         _f("comp_hra", "HRA (monthly)", placeholder="Leave blank to compute from the CTC", type="money"),

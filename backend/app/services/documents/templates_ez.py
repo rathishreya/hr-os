@@ -889,15 +889,14 @@ def offer_letter(ctx: dict) -> dict:
 register(
     "ez_offer_letter",
     offer_letter,
-    label="Offer Letter (retired)",
+    label="Offer Letter",
     description=(
         "EZ Lab full-time offer letter: 11 terms & conditions, Annexure-1 job description, "
-        "Annexure-2 compensation table computed from the CTC, and the Acceptance page. "
-        "Withdrawn from the picker; the employment contract is issued as the offer letter instead."
+        "Annexure-2 compensation table computed from the CTC, and the Acceptance page."
     ),
-    # Retired, not deleted: documents already drafted from this key must keep opening, printing
-    # and emailing. Set hidden=False to offer it again.
-    hidden=True,
+    # The offer letter is the first document sent, so it is the picker's default; the fuller FTE
+    # Contract is the second document, issued once the offer is accepted.
+    preferred=True,
     entity="EZ",
     doc_type="offer",
     party_type="individual",
@@ -1197,7 +1196,7 @@ def full_contract(ctx: dict) -> dict:
     ]
 
     return {
-        "title": f"Employment Contract - {who}",
+        "title": f"FTE Contract - {who}",
         "doc_type": "contract",
         "blocks": [
             # ── Cover letter ──────────────────────────────────────────────────────────────
@@ -1486,14 +1485,14 @@ def full_contract(ctx: dict) -> dict:
 register(
     "ez_full_contract",
     full_contract,
-    # This is what EZ Lab issues as its offer letter. The key stays ez_full_contract: it is stored
-    # on every document already drafted from it, and renaming a key orphans them.
-    label="Offer Letter",
+    # The full-time EMPLOYMENT CONTRACT, offered as its own document (the "FTE Contract") alongside
+    # the shorter offer letter. The key stays ez_full_contract: it is stored on every document
+    # already drafted from it, and renaming a key orphans them.
+    label="FTE Contract",
     description=(
-        "EZ Lab full-time offer letter: cover letter with acknowledgement, Schedule A terms grid "
-        "(with the compensation table) and Schedule B employee covenants."
+        "EZ Lab full-time employment contract: cover letter with acknowledgement, Schedule A terms "
+        "grid (with the compensation table) and Schedule B employee covenants."
     ),
-    preferred=True,
     entity="EZ",
     doc_type="contract",
     party_type="individual",
