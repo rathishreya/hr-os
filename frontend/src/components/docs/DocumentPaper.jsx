@@ -119,22 +119,29 @@ function paginate(el) {
       continue
     }
     if (!height) continue
-    if (kid.tagName === 'TABLE' && kid.tBodies[0] && kid.tBodies[0].rows.length >= 2
-        && height > CONTENT_H && top + height > pageBottom + 1) {
+    // A content table that runs past the bottom of this page: split it so the first chunk FILLS the
+    // page and the rest flows onto the next, exactly as the PDF does. The old code only split tables
+    // taller than a whole page; a table that merely didn't fit in the space LEFT got shoved down
+    // whole, leaving a half-blank page — the reported "blank page while editing". Now any oversized
+    // table is split. The signature is never split (small, structural — it moves as one block).
+    const splittable = kid.tagName === 'TABLE' && kid.tBodies[0]
+      && kid.tBodies[0].rows.length >= 2 && !kid.classList.contains('sig')
+    if (splittable && top + height > pageBottom + 1) {
       const remaining = pageBottom - top
-      if (remaining >= MIN_ROOM) {
-        const cont = _splitTableToFit(el, kid, remaining)
-        if (cont) {
-          const kidBottom = kid.offsetTop + kid.offsetHeight
-          el.insertBefore(_spacer((page + 1) * PITCH - kidBottom), cont)
-          page += 1
-          i += 1
-          continue
-        }
-      } else {
-        el.insertBefore(_spacer((page + 1) * PITCH - top), kid)
+      const cont = remaining >= MIN_ROOM ? _splitTableToFit(el, kid, remaining) : null
+      if (cont) {
+        const kidBottom = kid.offsetTop + kid.offsetHeight
+        el.insertBefore(_spacer((page + 1) * PITCH - kidBottom), cont)
         page += 1
         i += 1
+        continue
+      }
+      // Not even one row fits in the space left. If moving to a fresh page gains room, do that and
+      // re-measure the whole table there (it will then split to fill it). If we're already at a page
+      // top and still can't split, let it overflow rather than loop forever.
+      if (remaining < CONTENT_H - 1) {
+        el.insertBefore(_spacer((page + 1) * PITCH - top), kid)
+        page += 1
         continue
       }
     }
