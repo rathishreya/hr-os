@@ -2140,6 +2140,12 @@ function SittingModal({ session, occurrence, onClose, onSaved }) {
   })
   const [entity, setEntity] = useState(occurrence?.entity || session?.entities?.[0] || 'EZ')
   const [location, setLocation] = useState(occurrence?.location || '')
+  // A sitting is one concrete thing — in campus OR remote — even when the session offers either.
+  // That choice picks the right invite mail (campus vs remote) and whether a meeting link is made.
+  const srcMode = occurrence?.mode || session?.mode
+  const offersChoice = ['both', 'either', '', undefined, null].includes(session?.mode)
+    || occurrence?.mode === 'both'
+  const [mode, setMode] = useState(srcMode === 'remote' ? 'remote' : 'campus')
   const [busy, setBusy] = useState(false)
 
   async function save() {
@@ -2147,9 +2153,9 @@ function SittingModal({ session, occurrence, onClose, onSaved }) {
     setBusy(true)
     try {
       const saved = editing
-        ? await api.onboardingUpdateOccurrence(occurrence.id, { starts_at: new Date(when).toISOString(), location })
+        ? await api.onboardingUpdateOccurrence(occurrence.id, { starts_at: new Date(when).toISOString(), location, mode })
         : await api.onboardingCreateOccurrence({
-          session_key: session.key, entity, starts_at: new Date(when).toISOString(), location,
+          session_key: session.key, entity, starts_at: new Date(when).toISOString(), location, mode,
         })
       if (editing) {
         // Moving a sitting now mails the people already invited. Saying so is the point: a send
@@ -2195,13 +2201,32 @@ function SittingModal({ session, occurrence, onClose, onSaved }) {
             </select>
           </label>
         )}
+        {offersChoice && (
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-slate-800">How</span>
+            <div className="flex gap-2">
+              {[['campus', 'In campus'], ['remote', 'Remote']].map(([v, l]) => (
+                <button key={v} type="button" onClick={() => setMode(v)}
+                  className={cx('h-9 flex-1 rounded-xl border text-sm transition-colors duration-150 ease-snappy',
+                    mode === v ? 'border-brand-500 bg-brand-50 font-medium text-brand-800'
+                      : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400', focusRing)}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </label>
+        )}
         <label className="block">
           <span className="mb-1 block text-sm font-medium text-slate-800">Where</span>
           <input value={location} onChange={(e) => setLocation(e.target.value)}
-            placeholder={session?.mode === 'remote' ? 'A meeting link' : 'Room or office'} className={inputClass} />
+            placeholder={mode === 'remote' ? 'A meeting link (auto-created if Google is connected)' : 'Room or office'}
+            className={inputClass} />
         </label>
         <p className="text-xs leading-relaxed text-slate-500">
-          The invite is due at 10:00 on the Friday a week before, and moves with the sitting.
+          {mode === 'remote'
+            ? 'A Google Meet link is created for a remote sitting if your Google is connected; a typed-in link wins.'
+            : 'An in-campus sitting meets in the room above — no video link is made.'}
+          {' '}The invite is due at 10:00 on the Friday a week before, and moves with the sitting.
         </p>
       </div>
     </Modal>
@@ -2295,9 +2320,12 @@ function AttendanceModal({ occurrence, onClose, onSaved }) {
 function SessionMailsModal({ occurrence, mails, onClose, onSent }) {
   const [composing, setComposing] = useState(null)   // a session role, e.g. "invite"
   // One chip per PART the mail plays. A session that has an in-campus and a remote version of its
-  // invite is still one invite here; which version goes out is decided by where the sitting is.
+  // invite is still one invite here; which version goes out is decided by where the sitting is. A
+  // sitting is campus unless it is explicitly remote (older sittings stored "both" — treat those as
+  // campus so their invite still shows rather than vanishing).
+  const occMode = occurrence.mode === 'remote' ? 'remote' : 'campus'
   const mine = mails.filter((m) => m.session_key === occurrence.session_key
-    && (m.mode === 'both' || m.mode === (occurrence.mode || 'campus')))
+    && (m.mode === 'both' || m.mode === occMode))
 
   return (
     <Modal open onClose={onClose} title={`${occurrence.name} — mails`}>

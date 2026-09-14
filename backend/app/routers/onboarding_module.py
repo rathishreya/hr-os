@@ -618,18 +618,24 @@ def create_occurrence(body: OccurrenceIn, db: Session = Depends(get_db),
     entity = body.entity.upper()
     if entity not in d.entities:
         raise HTTPException(409, f"{d.name} does not run for {entity}.")
+    # A sitting happens ONE way. "Either" is the session's option, not a place, so a sitting must be
+    # a concrete campus/remote — that is what picks the right invite (campus vs remote) and decides
+    # whether a video link is needed. Fall back to campus rather than storing "both".
+    mode = (body.mode or d.mode or "campus").lower()
+    if mode not in ("campus", "remote"):
+        mode = "campus"
     o = models.SessionOccurrence(
         session_key=body.session_key, entity=entity, starts_at=body.starts_at,
-        ends_at=body.ends_at, mode=body.mode or d.mode, location=body.location,
+        ends_at=body.ends_at, mode=mode, location=body.location,
         meet_link=body.meet_link, notes=body.notes,
     )
     db.add(o)
     db.flush()
-    # One calendar event for the sitting, and with it one Meet link everybody uses. Attendees are
-    # added to that single event rather than sent separate ones: guestsCanSeeOtherGuests is off
-    # (services/gcal.py), so each person sees only their own invitation and never the roster of
-    # who else is joining. A typed-in link wins — somebody who pasted a Zoom room meant it.
-    if not (o.meet_link or "").strip():
+    # A Google Meet link is only for a REMOTE sitting: an in-campus one meets in a room and needs no
+    # video event. One event, one link everybody uses; attendees are added to that single event
+    # (guestsCanSeeOtherGuests off in services/gcal.py) so nobody sees the roster. A typed-in link
+    # always wins — somebody who pasted a Zoom room meant it.
+    if mode == "remote" and not (o.meet_link or "").strip():
         made = _calendar_event_for_sitting(db, o, d, user)
         o.meet_link, o.calendar_event_id = made["link"], made["id"]
     log(db, "onboarding.session_scheduled", "session_occurrence", o.id,
