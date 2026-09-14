@@ -1769,6 +1769,27 @@ def send_session_catalogue_mail(session_key: str, role: str, payload: SessionMai
         occ.audience = payload.audience.model_dump()
         if t.session_role == "invite":
             occ.invites_sent_at = stamp
+            # Record everyone the invite reached as an attendee of this sitting. Without this the
+            # register stays empty and the joiner's checklist never links to the sitting (it is
+            # matched by SessionAttendee.candidate_id), so the session step reads "pending" forever.
+            # Skip anyone already on the sitting — matched by candidate, or by address for a guest
+            # who has no candidate record.
+            existing = db.scalars(select(models.SessionAttendee)
+                                  .where(models.SessionAttendee.occurrence_id == occ.id)).all()
+            have_cand = {a.candidate_id for a in existing if a.candidate_id}
+            have_email = {(a.email or "").lower() for a in existing if a.email}
+            for p in people:
+                cid = p.get("candidate_id")
+                email = (p.get("email") or "").strip()
+                if (cid and cid in have_cand) or (not cid and email and email.lower() in have_email):
+                    continue
+                db.add(models.SessionAttendee(
+                    occurrence_id=occ.id, candidate_id=cid,
+                    name=p.get("display_name") or p.get("name") or "", email=email))
+                if cid:
+                    have_cand.add(cid)
+                if email:
+                    have_email.add(email.lower())
         else:
             ids = {p.get("attendee_id") for p in people if p.get("attendee_id")}
             if ids:
