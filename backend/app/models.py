@@ -633,6 +633,10 @@ class SessionAttendee(Base):
     #: states are distinct on purpose: audience.sitting_absent chases only those marked absent,
     #: never those nobody has looked at.
     attended: Mapped[bool | None] = mapped_column(nullable=True)
+    #: The register mark verbatim — Attended | Did not attend | Informed | NA | (null = Not marked)
+    #: — so "Informed" and "NA" stay distinct from a no-show, which the bool above cannot express.
+    #: `attended` is kept as the derived did-they-come flag the feedback mail reads.
+    attendance: Mapped[str | None] = mapped_column(String(20), nullable=True)
     #: Why they missed it, or anything the register needs to carry alongside the tick.
     comment: Mapped[str] = mapped_column(Text, default="")
     feedback_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

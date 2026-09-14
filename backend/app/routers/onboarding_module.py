@@ -98,6 +98,10 @@ def _states_for(db: Session, plan_ids: list[int]) -> dict[int, dict[str, models.
 
 #: checklist step key -> session key, for the sessions that appear on a joiner's checklist.
 _STEP_TO_SESSION = {d.step_key: d.key for d in sess.CATALOGUE if d.step_key}
+_SESSION_TO_STEP = {v: k for k, v in _STEP_TO_SESSION.items()}
+# The register label -> the derived did-they-come flag the feedback mail reads. "Informed" and "NA"
+# and "Not marked" are all "not a yes": only someone marked Attended is counted as having come.
+_ATTENDED_FROM = {"Attended": True, "Did not attend": False, "Informed": False}
 
 
 def _sittings_for(db: Session, candidate_id: int) -> dict[str, dict]:
@@ -389,6 +393,7 @@ def update_step(plan_id: int, step_key: str, body: StepPatch, db: Session = Depe
             attendee = db.get(models.SessionAttendee, sitting["attendee_id"])
             if attendee:
                 attendee.attended = row.attended
+                attendee.attendance = row.attendance
     if body.scheduled_at is not None:
         row.scheduled_at = body.scheduled_at
     if body.due_override is not None:
@@ -431,6 +436,9 @@ def _occurrence_out(db: Session, o: models.SessionOccurrence) -> dict:
         "attendees": [
             {"id": p.id, "candidate_id": p.candidate_id, "name": p.name, "email": p.email,
              "attended": p.attended, "comment": p.comment or "",
+             "attendance": (p.attendance if p.attendance
+                            else "Attended" if p.attended is True
+                            else "Did not attend" if p.attended is False else "Not marked"),
              "feedback_sent_at": p.feedback_sent_at}
             for p in people
         ],
@@ -727,10 +735,11 @@ def add_attendee(occ_id: int, body: AttendeeIn, db: Session = Depends(get_db),
 
 class AttendancePatch(BaseModel):
     """Either half can be sent on its own: taking the register and writing why somebody missed it
-    are separate acts. `attended` is three-state — null means nobody has looked yet, which is not
-    the same as marked absent, and the chase-up mail depends on the difference."""
+    are separate acts. `attendance` is the label as chosen — Attended | Did not attend | Informed |
+    NA | Not marked — and `attended` the derived did-they-come flag; sending either is enough."""
 
     attended: bool | None = None
+    attendance: str | None = None
     comment: str | None = None
 
 
@@ -743,10 +752,35 @@ def mark_attendance(attendee_id: int, body: AttendancePatch, db: Session = Depen
         raise HTTPException(404, "Attendee not found")
     # Only touch what was actually sent: a PATCH carrying just a comment must not silently clear
     # the register, and one carrying just the register must not wipe the note.
-    if "attended" in body.model_fields_set:
+    marked = False
+    if "attendance" in body.model_fields_set:
+        p.attendance = body.attendance or None
+        p.attended = _ATTENDED_FROM.get(body.attendance)
+        marked = True
+    elif "attended" in body.model_fields_set:
         p.attended = body.attended
+        p.attendance = ("Attended" if body.attended is True
+                        else "Did not attend" if body.attended is False else None)
+        marked = True
     if body.comment is not None:
         p.comment = body.comment.strip()
+    # Keep the candidate's checklist step in step with the register they were just marked on, so the
+    # two views never disagree about whether somebody turned up. Best-effort: the register is the
+    # source of truth here, and a missing plan/step must not fail the mark.
+    if marked and p.candidate_id:
+        occ = db.get(models.SessionOccurrence, p.occurrence_id)
+        step_key = _SESSION_TO_STEP.get(occ.session_key) if occ else None
+        if step_key:
+            plan = db.scalar(select(models.OnboardingPlan)
+                             .where(models.OnboardingPlan.candidate_id == p.candidate_id))
+            if plan:
+                row = db.scalar(select(models.OnboardingStepState).where(
+                    models.OnboardingStepState.plan_id == plan.id,
+                    models.OnboardingStepState.step_key == step_key))
+                if not row:
+                    row = models.OnboardingStepState(plan_id=plan.id, step_key=step_key)
+                    db.add(row)
+                row.attendance, row.attended = p.attendance, p.attended
     db.commit()
     return _occurrence_out(db, db.get(models.SessionOccurrence, p.occurrence_id))
 

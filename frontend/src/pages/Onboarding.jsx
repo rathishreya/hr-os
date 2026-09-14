@@ -2251,14 +2251,9 @@ function AttendanceModal({ occurrence, onClose, onSaved }) {
     } catch (e) { toast(e.message, 'error') } finally { setBusy(0) }
   }
 
-  // Three states, not a tick. A checkbox can only say came / did-not-come, and "nobody has taken
-  // the register yet" is a third thing — the chase-up mail goes to the people marked absent, so
-  // reading unmarked as absent would chase somebody nobody has looked at.
-  const CAME = [
-    { v: 'null', label: 'Not marked' },
-    { v: 'true', label: 'Attended' },
-    { v: 'false', label: 'Did not attend' },
-  ]
+  // Five states, not a tick: "nobody has taken the register yet" (Not marked) is not "they did not
+  // come", and "Informed" (told us in advance) is not a plain no-show. Same options as the checklist
+  // step, so the register and the checklist speak the same language.
 
   return (
     <Modal open onClose={onClose} size="lg" title={`${occ.name} — who came`}>
@@ -2282,13 +2277,11 @@ function AttendanceModal({ occurrence, onClose, onSaved }) {
                   <td className={cx(TD, 'text-slate-600')}>{a.email || <span className={EMPTY}>—</span>}</td>
                   <td className={TD}>
                     <select
-                      value={a.attended === true ? 'true' : a.attended === false ? 'false' : 'null'}
+                      value={a.attendance || 'Not marked'}
                       disabled={busy === a.id}
-                      onChange={(e) => mark(a.id, {
-                        attended: e.target.value === 'null' ? null : e.target.value === 'true',
-                      })}
+                      onChange={(e) => mark(a.id, { attendance: e.target.value })}
                       className={cx(inputClass, 'w-40 py-1.5 text-sm')}>
-                      {CAME.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                      {ATTENDANCE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </td>
                   <td className={TD}>

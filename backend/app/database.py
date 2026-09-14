@@ -113,6 +113,7 @@ def _ensure_sqlite_columns() -> None:
         ],
         "session_attendees": [
             ("comment", "TEXT DEFAULT ''"),
+            ("attendance", "VARCHAR"),
         ],
         "email_messages": [
             ("message_id", "TEXT DEFAULT ''"),
@@ -180,6 +181,7 @@ def _ensure_pg_columns() -> None:
             "ALTER TABLE session_occurrences ADD COLUMN IF NOT EXISTS audience JSONB DEFAULT '{}'::jsonb",
             "ALTER TABLE session_occurrences ADD COLUMN IF NOT EXISTS calendar_event_id VARCHAR(200) DEFAULT ''",
             "ALTER TABLE session_attendees ADD COLUMN IF NOT EXISTS comment TEXT DEFAULT ''",
+            "ALTER TABLE session_attendees ADD COLUMN IF NOT EXISTS attendance VARCHAR",
             "ALTER TABLE email_messages ADD COLUMN IF NOT EXISTS message_id VARCHAR(200) DEFAULT ''",
             "ALTER TABLE email_messages ADD COLUMN IF NOT EXISTS thread_key VARCHAR(120) DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS signature TEXT DEFAULT ''",
